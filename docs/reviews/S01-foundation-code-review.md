@@ -50,3 +50,9 @@ Code Review is **not approved**. Fix findings in priority order, run exact-HEAD 
 - Exact-head runs 38131112923 and 38131109324: SUCCESS.
 - Frontend CI uses `npm ci`, builds three separate RTL bundles, and runs Chromium Playwright smoke tests against headquarters, center and audience previews. This closes the Foundation browser smoke subfinding of F04, not future domain-specific browser coverage.
 - F01 lockfile reproducibility remains verified by `npm ci`; F02 independent deployment and F03 complete dependency graph remain open. F04 broader authenticated/domain tests remain open. No Stage/Production evidence is claimed.
+
+## Solution and dependency graph follow-up — 9a36c48
+- Exact-head CI runs 38132787744 and 38132784486: SUCCESS.
+- Added `backend/Kanoonyar.slnx` containing API, Contracts and API Tests; CI builds/tests the complete solution.
+- API now has an explicit dependency on the dependency-free Contracts project. `ProjectGraphBoundaryTests` validates existing production project-reference edges and rejects unauthorized edges, with corrected negative fixture (2f811303). This is current-project graph enforcement, not enforcement of future modules, package dependencies or runtime data flows. F03 remains open for expanded module graph governance.
+- F06 solution-file subfinding resolved; module/BuildingBlocks skeleton still incomplete. PR remains Draft/Open; no Stage or Production acceptance.
