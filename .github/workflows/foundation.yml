@@ -15,8 +15,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Verify pinned .NET SDK
-        run: dotnet --version | grep -E '^10\\.0\\.1[0-9]{2}        run: dotnet build backend/Kanoonyar.slnx --configuration Release
+      - name: Build API
+        run: dotnet build backend/Kanoonyar.slnx --configuration Release
       - name: Test foundation
         run: dotnet test backend/Kanoonyar.slnx --configuration Release --no-build
   frontend:
@@ -34,53 +34,6 @@ jobs:
       - name: Audit frontend production dependencies
         working-directory: frontend
         run: npm audit --omit=dev --audit-level=high
-      - name: Typecheck frontend
-        working-directory: frontend
-        run: npm run typecheck
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
-      - name: Verify isolated RTL experience artifacts
-        working-directory: frontend
-        run: npm run test:experiences
-      - name: Install Playwright Chromium
-        working-directory: frontend
-        run: npx playwright install --with-deps chromium
-      - name: Browser smoke tests
-        working-directory: frontend
-        run: npm run test:browser
-  ai-contracts:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install AI skeleton
-        working-directory: ai
-        run: python -m pip install -e .
-      - name: Run AI contract tests
-        working-directory: ai
-        run: python -m unittest discover -s tests -v
-
-      - name: Build API
-        run: dotnet build backend/Kanoonyar.slnx --configuration Release
-      - name: Test foundation
-        run: dotnet test backend/Kanoonyar.slnx --configuration Release --no-build
-  frontend:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci --no-audit --no-fund
       - name: Typecheck frontend
         working-directory: frontend
         run: npm run typecheck
