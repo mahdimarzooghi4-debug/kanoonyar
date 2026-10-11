@@ -24,7 +24,7 @@ def main() -> int:
         if not raw:
             continue
         path = ROOT / raw.decode("utf-8", "surrogateescape")
-        if not path.is_file() or path.stat().st_size > 2_000_000:
+        if path == pathlib.Path(__file__).resolve():\n            continue  # scanner definitions are not credentials\n        if not path.is_file() or path.stat().st_size > 2_000_000:
             continue
         try:
             contents = path.read_text(encoding="utf-8")
