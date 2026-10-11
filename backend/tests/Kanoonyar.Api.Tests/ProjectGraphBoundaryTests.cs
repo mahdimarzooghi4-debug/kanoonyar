@@ -12,6 +12,9 @@ public sealed class ProjectGraphBoundaryTests
     [Theory]
     [InlineData("Kanoonyar.Contracts", "Kanoonyar.Api", false)]
     [InlineData("Kanoonyar.Api", "Kanoonyar.Contracts", true)]
+    [InlineData("Kanoonyar.BuildingBlocks", "Kanoonyar.Api", false)]
+    [InlineData("Kanoonyar.BuildingBlocks", "Kanoonyar.Contracts", false)]
+    [InlineData("Kanoonyar.Contracts", "Kanoonyar.BuildingBlocks", false)]
     [InlineData("Kanoonyar.Contracts", "Kanoonyar.PrivatePersistence", false)]
     [InlineData("Kanoonyar.Api", "Kanoonyar.Contracts", true)]
     public void Boundary_detector_rejects_disallowed_project_edges(string source, string target, bool allowed)
@@ -41,7 +44,7 @@ public sealed class ProjectGraphBoundaryTests
     }
 
     private static bool IsAllowed(string source, string target) =>
-        source == "Kanoonyar.Api" && target == "Kanoonyar.Contracts";
+        source == "Kanoonyar.Api" && (target == "Kanoonyar.Contracts" || target == "Kanoonyar.BuildingBlocks");
 
     private static string FindRepositoryRoot()
     {
