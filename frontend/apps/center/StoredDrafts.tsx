@@ -1,0 +1,51 @@
+import React, { useState } from 'react';
+
+type Membership = { centerId: string; displayName: string; roleCode: string };
+type Draft = { draftId: string; revision: number; programId: string; nationalVersion: number; localTitle: string; localActivities: unknown[] };
+function validDraft(value: unknown): value is Draft {
+  if (!value || typeof value !== 'object') return false;
+  const d = value as Record<string, unknown>;
+  return typeof d.draftId === 'string' && typeof d.programId === 'string' &&
+    typeof d.localTitle === 'string' && Number.isInteger(d.revision) && Number(d.revision) > 0 &&
+    Number.isInteger(d.nationalVersion) && Number(d.nationalVersion) > 0 && Array.isArray(d.localActivities);
+}
+export function StoredDrafts({ token, memberships }: { token: string; memberships: Membership[] }) {
+  const [centerId, setCenterId] = useState('');
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const selectedCenter = memberships.some(m => m.centerId === centerId) ? centerId : '';
+  async function load() {
+    if (!selectedCenter || !token.trim()) return;
+    setDrafts([]);
+    setStatus('loading');
+    try {
+      const response = await fetch('/api/v1/centers/' + encodeURIComponent(selectedCenter) + '/local-plan-drafts', {
+        headers: { Authorization: 'Bearer ' + token.trim() }, cache: 'no-store'
+      });
+      if (!response.ok) throw new Error('Unavailable');
+      const body: unknown = await response.json();
+      if (!body || typeof body !== 'object' || !('drafts' in body) || !Array.isArray(body.drafts) ||
+          !body.drafts.every(validDraft)) throw new Error('Invalid drafts');
+      setDrafts(body.drafts);
+      setStatus('ready');
+    } catch { setStatus('error'); }
+  }
+  return <section aria-label="پیش‌نویس‌های ثبت‌شده" style={{ marginTop: '2rem' }}>
+    <h2>آخرین نسخه پیش‌نویس‌های ثبت‌شده</h2>
+    <p>فقط خواندنی؛ عضویت نمایش‌داده‌شده به معنی مجوز ویرایش نیست.</p>
+    <label>انتخاب کانون <select aria-label="انتخاب کانون برای پیش‌نویس‌ها" value={selectedCenter}
+      onChange={e => { setCenterId(e.target.value); setDrafts([]); setStatus('idle'); }}>
+      <option value="">انتخاب کنید</option>
+      {Array.from(new Map(memberships.map(m => [m.centerId, m.displayName])).entries()).map(([id, name]) =>
+        <option key={id} value={id}>{name}</option>)}
+    </select></label>
+    <button type="button" disabled={!selectedCenter || status === 'loading'} onClick={() => void load()}>دریافت پیش‌نویس‌های ثبت‌شده</button>
+    {status === 'loading' && <p role="status">در حال دریافت پیش‌نویس‌ها…</p>}
+    {status === 'error' && <p role="alert">دریافت پیش‌نویس‌ها ممکن نشد.</p>}
+    {status === 'ready' && (drafts.length === 0 ? <p role="status">پیش‌نویس ثبت‌شده‌ای وجود ندارد.</p> :
+      <ul>{drafts.map(d => <li key={d.draftId}>
+        <strong>{d.localTitle}</strong> — نسخه محلی {d.revision}، نسخه ملی {d.nationalVersion}
+        <ul>{d.localActivities.map((a, i) => <li key={i}>{typeof a === 'string' ? a : JSON.stringify(a)}</li>)}</ul>
+      </li>)}</ul>)}
+  </section>;
+}
