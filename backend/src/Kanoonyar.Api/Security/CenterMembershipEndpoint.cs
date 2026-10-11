@@ -19,7 +19,18 @@ public static class CenterMembershipEndpoint
 
         var memberships = new List<object>();
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync(cancellationToken);
+        try
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+        catch (NpgsqlException)
+        {
+            return Results.Problem(statusCode: 503, title: "Center membership storage unavailable");
+        }
+        catch (TimeoutException)
+        {
+            return Results.Problem(statusCode: 503, title: "Center membership storage unavailable");
+        }
         await using var command = new NpgsqlCommand(
             "SELECT center_id, display_name, role_code FROM centers.list_active_memberships_for_subject(@subject)", connection);
         command.Parameters.AddWithValue("subject", subject);
