@@ -39,4 +39,6 @@ BEGIN
                                'national_version', p_version, 'plan_id', p_plan_id));
 END;
 $fn$;
+-- PostgreSQL grants EXECUTE on new functions to PUBLIC by default; revoke explicitly.
+REVOKE ALL ON FUNCTION programs.create_local_plan_with_audit(text,uuid,text,integer,text,jsonb,text,uuid,uuid,text) FROM PUBLIC;
 COMMIT;
