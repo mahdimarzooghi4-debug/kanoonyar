@@ -1,11 +1,32 @@
+using Kanoonyar.Api.Security;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHealthChecks();
 builder.Services.AddProblemDetails();
+var oidcConfigured = builder.AddConfiguredOidc();
 
 var app = builder.Build();
 app.UseExceptionHandler();
+if (oidcConfigured)
+{
+    app.UseAuthentication();
+    app.UseAuthorization();
+    app.MapGet("/api/v1/identity/me", (ClaimsPrincipal user) =>
+    {
+        var subject = user.FindFirstValue("sub");
+        return string.IsNullOrWhiteSpace(subject)
+            ? Results.Problem(statusCode: 403, title: "Subject claim required")
+            : Results.Ok(new { subjectId = subject });
+    }).RequireAuthorization();
+}
+else
+{
+    app.MapGet("/api/v1/identity/me", () =>
+        Results.Problem(statusCode: 503, title: "OIDC not configured"));
+}
+
 app.UseStatusCodePages(async context =>
 {
     if (!context.HttpContext.Request.Path.StartsWithSegments("/api")) return;
