@@ -17,10 +17,11 @@ public sealed class CenterRegistryContractTests
     [Fact]
     public void Membership_is_scoped_to_a_specific_center_and_subject()
     {
-        var membership = new CenterMembership("center-042", "oidc-subject-1", "center-manager");
+        var membership = new CenterMembership("center-042", "oidc-subject-1", "center-manager", true);
         Assert.Equal("center-042", membership.CenterId);
         Assert.Equal("oidc-subject-1", membership.SubjectId);
         Assert.Equal("center-manager", membership.RoleCode);
+        Assert.True(membership.IsActive);
     }
 
     [Theory]
@@ -37,6 +38,6 @@ public sealed class CenterRegistryContractTests
     [InlineData("center", "subject", " ")]
     public void Invalid_membership_is_rejected(string center, string subject, string role)
     {
-        Assert.Throws<ArgumentException>(() => new CenterMembership(center, subject, role));
+        Assert.Throws<ArgumentException>(() => new CenterMembership(center, subject, role, false));
     }
 }
