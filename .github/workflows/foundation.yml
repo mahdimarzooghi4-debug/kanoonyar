@@ -34,6 +34,9 @@ jobs:
       - name: Audit frontend production dependencies
         working-directory: frontend
         run: npm audit --omit=dev --audit-level=high
+      - name: Audit all frontend dependencies (including development tools)
+        working-directory: frontend
+        run: npm audit --audit-level=high
       - name: Typecheck frontend
         working-directory: frontend
         run: npm run typecheck
