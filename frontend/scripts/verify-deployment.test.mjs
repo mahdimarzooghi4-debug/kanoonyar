@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
@@ -51,4 +51,14 @@ test('duplicate manifest entries are rejected', () => fixture(root => {
   data.files.push(data.files[0]);
   writeFileSync(path, JSON.stringify(data));
   assert.throws(() => verifyManifest(root, 'audience'), /duplicate artifact path/);
+}));
+
+test('unlisted release artifact is rejected', () => fixture(root => {
+  writeFileSync(resolve(root, 'dist', 'headquarters', 'unexpected.js'), 'unreviewed');
+  assert.throws(() => verifyManifest(root, 'headquarters'), /unlisted or missing release artifact/);
+}));
+
+test('symlink inside release root is rejected', () => fixture(root => {
+  symlinkSync(resolve(root, 'dist', 'center', 'app.js'), resolve(root, 'dist', 'audience', 'linked.js'));
+  assert.throws(() => verifyManifest(root, 'audience'), /symlink artifact is not allowed/);
 }));
