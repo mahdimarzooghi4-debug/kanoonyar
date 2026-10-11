@@ -38,6 +38,7 @@ public static class CenterAccessBoundary
         if (!evidence.Center.IsActive ||
             !StringComparer.Ordinal.Equals(evidence.RequestedCenterId, evidence.Center.CenterId) ||
             evidence.Membership is null ||
+            !evidence.Membership.IsActive ||
             !StringComparer.Ordinal.Equals(evidence.RequestedCenterId, evidence.Membership.CenterId) ||
             !StringComparer.Ordinal.Equals(evidence.AuthenticatedSubjectId, evidence.Membership.SubjectId))
             return CenterAccessResult.Denied;
