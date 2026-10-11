@@ -25,8 +25,10 @@ public static class RestrictedDraftDatabaseRole
               OR has_table_privilege(current_user, 'centers.memberships', 'INSERT')
               OR has_table_privilege(current_user, 'centers.memberships', 'UPDATE')
               OR has_table_privilege(current_user, 'centers.memberships', 'DELETE')
-              OR has_table_privilege(current_user, 'governance.command_audit', 'INSERT')
-              OR has_table_privilege(current_user, 'governance.outbox_events', 'INSERT')
+              OR has_table_privilege(current_user, (SELECT cls.oid FROM pg_class cls JOIN pg_namespace ns ON ns.oid = cls.relnamespace
+                 WHERE ns.nspname = 'governance' AND cls.relname = 'command_audit'), 'INSERT')
+              OR has_table_privilege(current_user, (SELECT cls.oid FROM pg_class cls JOIN pg_namespace ns ON ns.oid = cls.relnamespace
+                 WHERE ns.nspname = 'governance' AND cls.relname = 'outbox_events'), 'INSERT')
               OR has_function_privilege(current_user,
                 'programs.append_local_plan_draft_revision(text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)',
                 'EXECUTE')
