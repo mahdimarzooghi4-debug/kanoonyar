@@ -23,8 +23,9 @@ public sealed record CenterMembership
     public string CenterId { get; }
     public string SubjectId { get; }
     public string RoleCode { get; }
+    public bool IsActive { get; }
 
-    public CenterMembership(string centerId, string subjectId, string roleCode)
+    public CenterMembership(string centerId, string subjectId, string roleCode, bool isActive)
     {
         if (string.IsNullOrWhiteSpace(centerId)) throw new ArgumentException("Center ID is required.", nameof(centerId));
         if (string.IsNullOrWhiteSpace(subjectId)) throw new ArgumentException("Subject ID is required.", nameof(subjectId));
@@ -32,5 +33,6 @@ public sealed record CenterMembership
         CenterId = centerId;
         SubjectId = subjectId;
         RoleCode = roleCode;
+        IsActive = isActive;
     }
 }
