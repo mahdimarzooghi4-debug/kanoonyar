@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json;
+using Kanoonyar.Api.Security;
 using Npgsql;
 
 namespace Kanoonyar.Api.Programs;
@@ -26,6 +27,8 @@ public static class LocalPlanDraftReadEndpoint
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken);
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            if (!await RestrictedDraftDatabaseRole.VerifyAsync(connection, transaction, cancellationToken))
+                return Results.Problem(statusCode: 503, title: "Unsafe draft database role");
             // Tenant scope is deliberately transaction-local; the caller DB role must not be able to bypass RLS.
             // This alone does NOT prove center membership. The query additionally checks live membership evidence.
             await using (var scope = new NpgsqlCommand(

@@ -7,6 +7,8 @@ builder.Services.AddHealthChecks();
 builder.Services.AddProblemDetails();
 var oidcConfigured = builder.AddConfiguredOidc();
 
+builder.Services.AddSingleton<ILocalPlanDraftWriteAuthorization, UnapprovedLocalPlanDraftWriteAuthorization>();
+
 var app = builder.Build();
 app.UseExceptionHandler();
 if (oidcConfigured)
@@ -16,6 +18,7 @@ if (oidcConfigured)
     app.MapGet("/api/v1/identity/me", AuthenticatedSubjectEndpoint.GetSubject).RequireAuthorization();
     app.MapGet("/api/v1/identity/center-memberships", CenterMembershipEndpoint.GetMine).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts", LocalPlanDraftReadEndpoint.ListMine).RequireAuthorization();
+    app.MapPost("/api/v1/centers/{centerId}/local-plan-drafts/revisions", LocalPlanDraftWriteEndpoint.Append).RequireAuthorization();
 }
 else
 {
@@ -24,6 +27,8 @@ else
     app.MapGet("/api/v1/identity/center-memberships", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts", () =>
+        Results.Problem(statusCode: 503, title: "OIDC not configured"));
+    app.MapPost("/api/v1/centers/{centerId}/local-plan-drafts/revisions", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
 }
 
