@@ -89,3 +89,9 @@ Code Review is **not approved**. Fix findings in priority order, run exact-HEAD 
 - Added value-object tests and expanded project-graph negative fixtures; API may reference Contracts or BuildingBlocks, while BuildingBlocks and Contracts must not depend on each other or on API.
 - Previous exact-head 2aa2a65 CI runs 38136844948 and 38136841571 both SUCCESS. The subsequent architecture-test and documentation commits require their own exact-head CI.
 - F06 BuildingBlocks assembly subfinding is addressed; future bounded modules remain to be implemented and reviewed. F03 remains open for runtime and cross-module data-flow enforcement.
+
+## Independent frontend static artifacts — d48546b6
+- Exact-head CI 38138140607 and 38138138056: SUCCESS. Frontend CI builds all three experiences, runs SHA-256 static release manifest tests, checks RTL artifacts and executes Chromium smoke tests; backend, AI and security gates also passed.
+- F02 build/deployment artifact subfinding is addressed: separate static document roots and per-experience file inventories now exist, with negative tests for missing bundles and unknown experience.
+- This does NOT establish separately hosted deployments, production origin/session security, or authenticated tenant access. F02 remains open for operational deployment verification, and F04 remains open for authenticated/domain tests.
+- Review remains NOT ACCEPTED; no Stage, Release or Production approval.
