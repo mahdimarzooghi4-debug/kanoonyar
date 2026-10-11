@@ -18,7 +18,7 @@ public sealed class PublishedCenterProgramBoundaryTests
         var request = new CenterProgramAdoptionRequest("center-a", "subject-a", "program-a", 1, "Local");
         var evidence = new CenterAccessEvidence("subject-a", "center-a",
             new CenterRegistryEntry("center-a", "Center", true),
-            new CenterMembership("center-a", "subject-a", "uninterpreted-role"));
+            new CenterMembership("center-a", "subject-a", "uninterpreted-role", true));
         Assert.False(PublishedCenterProgramBoundary.Matches(request, evidence, plan, catalog, publication));
         publication.Record(new NationalProgramPublication("program-a", 1, "headquarters-subject", DateTimeOffset.UnixEpoch), catalog);
         Assert.True(PublishedCenterProgramBoundary.Matches(request, evidence, plan, catalog, publication));
