@@ -15,12 +15,15 @@ if (oidcConfigured)
     app.UseAuthorization();
     app.MapGet("/api/v1/identity/me", AuthenticatedSubjectEndpoint.GetSubject).RequireAuthorization();
     app.MapGet("/api/v1/identity/center-memberships", CenterMembershipEndpoint.GetMine).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts", LocalPlanDraftReadEndpoint.ListMine).RequireAuthorization();
 }
 else
 {
     app.MapGet("/api/v1/identity/me", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapGet("/api/v1/identity/center-memberships", () =>
+        Results.Problem(statusCode: 503, title: "OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
 }
 
