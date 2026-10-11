@@ -9,6 +9,7 @@
 \ir ../migrations/0008_center_membership_read_boundary.sql
 \ir ../migrations/0009_center_membership_db_session_boundary.sql
 \ir ../migrations/0010_local_plan_revision_foundation.sql
+\ir ../migrations/0011_local_plan_atomic_revision_command.sql
 DO $test$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='programs' AND tablename='center_plan_draft_revisions' AND policyname='center_plan_draft_scope') THEN
@@ -16,6 +17,9 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='draft_revision_immutable' AND NOT tgisinternal) THEN
     RAISE EXCEPTION 'Immutable revision trigger missing';
+  END IF;
+  IF has_function_privilege('public', 'programs.append_local_plan_draft_revision(text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'PUBLIC must not execute draft command';
   END IF;
   IF has_table_privilege('public', 'programs.center_plan_draft_revisions', 'INSERT') THEN
     RAISE EXCEPTION 'PUBLIC must not insert drafts';
