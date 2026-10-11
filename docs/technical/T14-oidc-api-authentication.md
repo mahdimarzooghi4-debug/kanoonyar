@@ -1,0 +1,5 @@
+# T14 — OIDC authentication entry point
+
+The API now accepts an explicitly configured HTTPS `OIDC_AUTHORITY` and `OIDC_AUDIENCE` for ASP.NET Core JWT Bearer authentication. The JWT middleware validates issuer, audience, signature, lifetime and signing key using issuer discovery. Anonymous requests to `GET /api/v1/identity/me` return 401 when configured. Without both settings, the endpoint returns 503 and does not expose a synthetic identity. Insecure HTTP issuer configuration is rejected. CI tests these cases without requiring an external identity service.
+
+The identity endpoint only returns the verified token subject; it does **not** grant access to center programs or memberships. Keycloak realm, client, user provisioning and real discovery verification are external deployment prerequisites. No credentials or fabricated identities are committed. Future center APIs must bind this verified subject to current active center membership, explicit operation-specific permission, scoped transaction/RLS and audit/outbox before accepting a request. This change does not enable public writes, auto-provision accounts or grant headquarters permissions.
