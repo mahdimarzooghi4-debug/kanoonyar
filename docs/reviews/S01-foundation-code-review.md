@@ -61,3 +61,8 @@ Code Review is **not approved**. Fix findings in priority order, run exact-HEAD 
 - Exact-head runs 38133454567 and 38133451052: SUCCESS.
 - Workflow has read-only default token permissions and a blocking `npm audit --omit=dev --audit-level=high` step for frontend production dependencies. Existing backend, frontend Chromium and AI jobs remained green.
 - F05 remains open: GitHub Actions still use mutable major tags, SDK/toolchains are not fully immutable, npm development dependency and Python/.NET advisory scans and secret scanning are not yet covered. The npm audit is a narrow control, not a comprehensive security clearance.
+
+## Immutable Actions follow-up — a7034487
+- Exact-head CI runs 38133971829 and 38133968850: SUCCESS.
+- All `actions/checkout`, `actions/setup-dotnet`, `actions/setup-node`, and `actions/setup-python` uses in Foundation CI are pinned to verified full upstream commit SHAs rather than mutable major tags.
+- F05 remains open: comprehensive Python/.NET dependency advisories, development-dependency auditing, secret scanning and exact toolchain verification are not yet established. Pinning Actions does not itself establish full supply-chain security.
