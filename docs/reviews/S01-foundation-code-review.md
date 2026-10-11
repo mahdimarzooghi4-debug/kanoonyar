@@ -76,3 +76,10 @@ Code Review is **not approved**. Fix findings in priority order, run exact-HEAD 
 - Exact-head CI runs 38136097097 and 38136092538 for d05be355: SUCCESS.
 - Backend CI now restores the solution with NuGetAudit enabled at high severity and restore warnings treated as errors. This checks the resolved NuGet graph during CI.
 - F05 remains open for Python package auditing, secret scanning and exact toolchain controls.
+
+## Security gate and CI evidence — 089f201e
+- Exact-head Foundation runs 38136480634 and 38136478724: SUCCESS across backend, frontend, AI contracts and secret-patterns.
+- Python installed-package audit is blocking; the earlier run identified vulnerable setuptools 79.0.1, corrected by installing setuptools 83.x before audit. The AI package itself is local and not published to PyPI, so the advisory service cannot audit that project as a published dependency.
+- New Python scanner checks tracked text files for selected private-key headers, GitHub tokens and AWS access-key identifiers, with positive and negative unit tests. It intentionally excludes its own pattern definitions. This is a limited tracked-file pattern gate, not historical secret scanning, entropy analysis, credential validity checking or a guarantee that the repository has no secrets.
+- F05 is partially remediated: immutable Action SHAs, frontend production/development audit, NuGet high-severity audit, Python installed-package audit and tracked-file pattern scan are now CI gates. Exact toolchain version pins, historical/entropy-based scanning and wider supply-chain policy remain open.
+- F02 independent deployments, F03 future module/runtime boundaries, F04 authenticated domain tests and F06 BuildingBlocks/module skeleton remain open. Sprint 01 Code Review is NOT accepted; PR stays Draft/Open.
