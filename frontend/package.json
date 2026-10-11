@@ -4,8 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "build": "tsc -b && vite build",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "build": "npm run build:headquarters && npm run build:center && npm run build:audience",
+    "build:headquarters": "KANOONYAR_EXPERIENCE=headquarters vite build",
+    "build:center": "KANOONYAR_EXPERIENCE=center vite build",
+    "build:audience": "KANOONYAR_EXPERIENCE=audience vite build"
   },
   "dependencies": {
     "react": "19.2.0",
