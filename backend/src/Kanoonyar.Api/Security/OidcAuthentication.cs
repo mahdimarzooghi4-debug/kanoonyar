@@ -9,10 +9,12 @@ public static class OidcAuthentication
     {
         var authority = builder.Configuration["OIDC_AUTHORITY"];
         var audience = builder.Configuration["OIDC_AUDIENCE"];
-        if (string.IsNullOrWhiteSpace(authority) || string.IsNullOrWhiteSpace(audience))
-        {
+        var hasAuthority = !string.IsNullOrWhiteSpace(authority);
+        var hasAudience = !string.IsNullOrWhiteSpace(audience);
+        if (hasAuthority != hasAudience)
+            throw new InvalidOperationException("OIDC_AUTHORITY and OIDC_AUDIENCE must be configured together.");
+        if (!hasAuthority)
             return false;
-        }
 
         if (!Uri.TryCreate(authority, UriKind.Absolute, out var issuer) ||
             issuer.Scheme != Uri.UriSchemeHttps ||
