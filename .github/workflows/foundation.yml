@@ -56,6 +56,8 @@ jobs:
           PGDATABASE=kanoonyar_atomic_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/atomic_local_plan_command.psql
           createdb kanoonyar_membership_ci
           PGDATABASE=kanoonyar_membership_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_membership_read.psql
+          createdb kanoonyar_membership_session_ci
+          PGDATABASE=kanoonyar_membership_session_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_membership_session.psql
   frontend:
     runs-on: ubuntu-latest
     permissions:
