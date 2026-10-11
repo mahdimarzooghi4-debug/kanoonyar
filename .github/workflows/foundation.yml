@@ -1,0 +1,19 @@
+name: Foundation CI
+on:
+  push:
+    branches: [main, planning/sprint-01-foundation]
+  pull_request:
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build API
+        run: dotnet build backend/src/Kanoonyar.Api/Kanoonyar.Api.csproj --configuration Release
+      - name: Test foundation
+        run: dotnet test backend/tests/Kanoonyar.Api.Tests/Kanoonyar.Api.Tests.csproj --configuration Release
