@@ -45,6 +45,9 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+      - name: Verify standalone static deployment manifests and isolation tests
+        working-directory: frontend
+        run: npm run test:deployment
       - name: Verify isolated RTL experience artifacts
         working-directory: frontend
         run: npm run test:experiences
