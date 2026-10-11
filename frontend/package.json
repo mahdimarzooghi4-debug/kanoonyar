@@ -10,10 +10,10 @@
     "build:center": "KANOONYAR_EXPERIENCE=center vite build",
     "build:audience": "KANOONYAR_EXPERIENCE=audience vite build",
     "test:experiences": "node scripts/check-experiences.mjs",
-    "preview:headquarters": "vite preview --outDir dist/headquarters --host 127.0.0.1 --port 4173",
+    "preview:headquarters": "vite preview --host 127.0.0.1 --port 4173",
     "test:browser": "node scripts/run-browser-tests.mjs",
-    "preview:center": "vite preview --outDir dist/center --host 127.0.0.1 --port 4173",
-    "preview:audience": "vite preview --outDir dist/audience --host 127.0.0.1 --port 4173"
+    "preview:center": "vite preview --host 127.0.0.1 --port 4173",
+    "preview:audience": "vite preview --host 127.0.0.1 --port 4173"
   },
   "dependencies": {
     "react": "19.2.0",
