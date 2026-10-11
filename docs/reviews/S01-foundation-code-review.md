@@ -100,3 +100,8 @@ Code Review is **not approved**. Fix findings in priority order, run exact-HEAD 
 - Exact-head a7f178e CI runs 38138361858 and 38138358528 both SUCCESS, including digest verification and negative fixtures for altered content, cross-experience manifest, path traversal and duplicate entries.
 - Release verification now also compares the full filesystem inventory with the manifest and rejects symbolic links; manifest generation itself rejects symlinks. New negative fixtures cover unlisted files and symlinks. These changes require exact-head CI validation.
 - These checks are not signed provenance or external deployment admission. F02 remains open for real hosted independent deployment and origin isolation.
+
+## API error contract follow-up
+- Exact-head 419b8c0 CI runs 38139473347 and 38139470347: SUCCESS. Added ASP.NET Core Problem Details handling for unknown `/api` routes, with integration coverage for safe 404 responses; added opaque CorrelationId primitive.
+- Follow-up negative tests verify non-API paths are not rewritten as API problems and diagnostic identifiers reject blank values. These tests require exact-head CI verification.
+- No authentication, request tracing middleware, tenant authorization or domain endpoints are claimed. F04 remains open for authenticated business-domain tests.
