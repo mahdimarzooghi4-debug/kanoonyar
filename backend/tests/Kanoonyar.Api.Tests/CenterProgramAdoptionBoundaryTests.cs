@@ -9,7 +9,7 @@ public sealed class CenterProgramAdoptionBoundaryTests
 {
     private static CenterAccessEvidence Evidence() => new("subject-1", "center-1",
         new CenterRegistryEntry("center-1", "Center", true),
-        new CenterMembership("center-1", "subject-1", "uninterpreted-role"));
+        new CenterMembership("center-1", "subject-1", "uninterpreted-role", true));
 
     [Fact]
     public void Exact_actor_and_center_are_structurally_matched()
