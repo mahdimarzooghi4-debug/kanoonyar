@@ -66,3 +66,8 @@ Code Review is **not approved**. Fix findings in priority order, run exact-HEAD 
 - Exact-head CI runs 38133971829 and 38133968850: SUCCESS.
 - All `actions/checkout`, `actions/setup-dotnet`, `actions/setup-node`, and `actions/setup-python` uses in Foundation CI are pinned to verified full upstream commit SHAs rather than mutable major tags.
 - F05 remains open: comprehensive Python/.NET dependency advisories, development-dependency auditing, secret scanning and exact toolchain verification are not yet established. Pinning Actions does not itself establish full supply-chain security.
+
+## Vite security follow-up
+- Vite updated from 7.1.12 to 7.3.7 with regenerated npm lockfile.
+- Exact-head Foundation CI 38135913185 and 38135917448: SUCCESS, including full npm audit and Chromium tests.
+- F05 remains open for Python/.NET advisory checks and secret scanning.
