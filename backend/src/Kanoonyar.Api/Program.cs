@@ -2,8 +2,17 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHealthChecks();
+builder.Services.AddProblemDetails();
 
 var app = builder.Build();
+app.UseExceptionHandler();
+app.UseStatusCodePages(async context =>
+{
+    if (!context.HttpContext.Request.Path.StartsWithSegments("/api")) return;
+    var response = context.HttpContext.Response;
+    if (response.StatusCode != StatusCodes.Status404NotFound) return;
+    await Results.Problem(statusCode: 404, title: "Not Found").ExecuteAsync(context.HttpContext);
+});
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
     Predicate = _ => false
