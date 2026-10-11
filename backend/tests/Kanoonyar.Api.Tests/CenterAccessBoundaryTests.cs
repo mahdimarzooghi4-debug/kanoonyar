@@ -8,9 +8,9 @@ public sealed class CenterAccessBoundaryTests
 {
     private static CenterAccessEvidence Evidence(string subject = "user-a", string requested = "center-a",
         string actualCenter = "center-a", string memberCenter = "center-a",
-        string memberSubject = "user-a", bool active = true, bool membership = true) =>
+        string memberSubject = "user-a", bool active = true, bool membership = true, bool memberActive = true) =>
         new(subject, requested, new CenterRegistryEntry(actualCenter, "Center", active),
-            membership ? new CenterMembership(memberCenter, memberSubject, "uninterpreted-role") : null);
+            membership ? new CenterMembership(memberCenter, memberSubject, "uninterpreted-role", memberActive) : null);
 
     [Fact]
     public void Exact_active_center_and_authenticated_subject_match_is_only_structurally_matched()
@@ -37,6 +37,10 @@ public sealed class CenterAccessBoundaryTests
         Assert.Equal(CenterAccessResult.Denied, CenterAccessBoundary.Check(Evidence(membership: false)));
         Assert.Equal(CenterAccessResult.Denied, CenterAccessBoundary.Check(Evidence(active: false)));
     }
+
+    [Fact]
+    public void Revoked_membership_fails_closed_even_when_center_is_active() =>
+        Assert.Equal(CenterAccessResult.Denied, CenterAccessBoundary.Check(Evidence(memberActive: false)));
 
     [Fact]
     public void Identifiers_use_exact_ordinal_comparison()
