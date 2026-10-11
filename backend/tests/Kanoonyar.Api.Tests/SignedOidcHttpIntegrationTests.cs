@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
@@ -98,7 +99,11 @@ public sealed class SignedOidcHttpIntegrationTests
                         {
                             var configuration = new OpenIdConnectConfiguration { Issuer = Issuer };
                             configuration.SigningKeys.Add(_key);
-                            options.Configuration = configuration;
+                            // Set the runtime configuration manager explicitly. JwtBearer's
+                            // post-configuration may otherwise install a network discovery
+                            // manager for Authority and ignore this offline fixture.
+                            options.ConfigurationManager =
+                                new StaticConfigurationManager<OpenIdConnectConfiguration>(configuration);
                         });
                     if (syntheticDbGrants)
                     {
