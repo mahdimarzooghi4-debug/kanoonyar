@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { relative, resolve, sep } from 'node:path';
 import { experiences } from './package-experiences.mjs';
 
 export function verifyManifest(root, name) {
@@ -24,6 +24,18 @@ export function verifyManifest(root, name) {
     assert.equal(contents.length, file.bytes, 'artifact size mismatch: ' + file.path);
     assert.equal(createHash('sha256').update(contents).digest('hex'), file.sha256, 'artifact digest mismatch: ' + file.path);
   }
+  const actual = [];
+  function visit(dir) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = resolve(dir, entry.name);
+      assert.ok(!entry.isSymbolicLink(), 'symlink artifact is not allowed');
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile()) actual.push(relative(directory, path).split(sep).join('/'));
+      else assert.fail('unsupported artifact type');
+    }
+  }
+  visit(directory);
+  assert.deepEqual(actual.sort(), [...seen].sort(), 'unlisted or missing release artifact');
   assert.ok(seen.has('index.html'), 'missing entry document');
   return manifest.files.length;
 }
