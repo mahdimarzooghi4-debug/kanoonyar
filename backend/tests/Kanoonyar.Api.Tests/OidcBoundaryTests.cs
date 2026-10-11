@@ -38,4 +38,21 @@ public sealed class OidcBoundaryTests
             using var client = factory.CreateClient();
         });
     }
+
+    [Theory]
+    [InlineData("https://identity.example.test/realms/kanoonyar", null)]
+    [InlineData(null, "kanoonyar-api")]
+    public void Rejects_partial_oidc_configuration(string? authority, string? audience)
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            using var factory = new WebApplicationFactory<Program>()
+                .WithWebHostBuilder(builder =>
+                {
+                    if (authority is not null) builder.UseSetting("OIDC_AUTHORITY", authority);
+                    if (audience is not null) builder.UseSetting("OIDC_AUDIENCE", audience);
+                });
+            using var client = factory.CreateClient();
+        });
+    }
 }
