@@ -16,8 +16,14 @@ VALUES ('national-a',1,'National','[]','[]','hq',now()),
 INSERT INTO programs.national_program_publications(program_id,version,publisher_subject,published_at)
 VALUES ('national-a',1,'hq',now());
 
+CREATE ROLE kanoonyar_untrusted_test NOLOGIN;
+GRANT USAGE ON SCHEMA programs TO kanoonyar_untrusted_test;
 DO $test$
 BEGIN
+    IF has_function_privilege('kanoonyar_untrusted_test',
+      'programs.create_local_plan_with_audit(text,uuid,text,integer,text,jsonb,text,uuid,uuid,text)', 'EXECUTE') THEN
+        RAISE EXCEPTION 'untrusted role can execute local plan command';
+    END IF;
     PERFORM programs.create_local_plan_with_audit(
       'center-a','00000000-0000-0000-0000-000000000001','national-a',1,'Local','[]',
       'actor-a','10000000-0000-0000-0000-000000000001',
