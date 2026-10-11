@@ -8,7 +8,10 @@ export const experiences = Object.freeze(['headquarters', 'center', 'audience'])
 function filesUnder(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
     const path = resolve(dir, entry.name);
-    return entry.isDirectory() ? filesUnder(path) : entry.isFile() ? [path] : [];
+    assert.ok(!entry.isSymbolicLink(), 'symlink artifact is not allowed');
+    if (entry.isDirectory()) return filesUnder(path);
+    assert.ok(entry.isFile(), 'unsupported artifact type');
+    return [path];
   });
 }
 
