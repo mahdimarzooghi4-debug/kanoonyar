@@ -11,7 +11,7 @@ test('center can inspect national objectives and mandatory requirements without 
   await expect(page.getByRole('heading', { name: 'برنامه ملی آزمایشی — نسخه 1' })).toBeVisible();
   await expect(page.getByText('هدف ملی', { exact: true })).toBeVisible();
   await expect(page.getByText('الزام اجباری', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: /ثبت برنامه اجرایی/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /ثبت برنامه اجرایی/ })).toBeDisabled();
 });
 
 test('center shows safe error and clears catalog after failed refresh', async ({ page }) => {
@@ -20,9 +20,9 @@ test('center shows safe error and clears catalog after failed refresh', async ({
     contentType: 'application/json', body: failed ? '{}' : '{"programs":[{"programId":"p","version":1,"title":"برنامه اول","nationalObjectives":[],"mandatoryRequirements":[]}]}' }));
   await page.goto('/');
   await page.getByRole('button', { name: 'نمایش برنامه‌های ملی' }).click();
-  await expect(page.getByText('برنامه اول')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'برنامه اول — نسخه 1' })).toBeVisible();
   failed = true;
   await page.getByRole('button', { name: 'نمایش برنامه‌های ملی' }).click();
   await expect(page.getByRole('alert')).toContainText('دریافت برنامه‌های ملی ممکن نشد.');
-  await expect(page.getByText('برنامه اول')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'برنامه اول — نسخه 1' })).toHaveCount(0);
 });
