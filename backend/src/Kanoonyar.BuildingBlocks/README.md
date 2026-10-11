@@ -9,3 +9,6 @@ This assembly contains small dependency-free technical primitives shared by the 
 - The current project graph tests reject unapproved project references; new module edges require reviewed architecture changes and negative tests.
 
 Sprint 01 foundation only; no operational multi-tenant security is claimed.
+
+## CorrelationId
+`CorrelationId` is a nonblank opaque diagnostic value only. It is not generated from a user-provided authority claim and must never be treated as a login identity, tenant identifier, audit actor, permission grant, or security token. Future request correlation middleware must validate input size and trust boundaries separately.
