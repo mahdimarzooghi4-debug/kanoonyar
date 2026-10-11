@@ -278,6 +278,62 @@ public sealed class SignedOidcHttpIntegrationTests
         Assert.Equal(2, reader.GetInt64(2));
     }
 
+    [Fact]
+    public async Task Signed_jwt_history_stays_denied_without_business_grant()
+    {
+        using var fixture = new SignedJwtFixture();
+        await using var server = fixture.Server();
+        using var client = server.CreateClient();
+        var url = "/api/v1/centers/center-a/local-plan-drafts/" +
+            Guid.NewGuid().ToString("D") + "/revisions";
+        using var request = Request(HttpMethod.Get, url, fixture.Token(roleClaim: true));
+        using var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Signed_http_history_reads_persisted_revisions_only_under_test_grant()
+    {
+        if (!DbAvailable()) return;
+        using var fixture = new SignedJwtFixture();
+        await using var server = fixture.Server(syntheticDbGrants: true);
+        using var client = server.CreateClient();
+        var draft = Guid.NewGuid();
+        for (long revision = 0; revision < 2; revision++)
+        {
+            using var write = Request(HttpMethod.Post,
+                "/api/v1/centers/center-a/local-plan-drafts/revisions", fixture.Token());
+            write.Content = JsonContent.Create(new {
+                draftId = draft, expectedRevision = revision,
+                programId = "national-1", nationalVersion = 1,
+                localTitle = "History", localActivities = new[] { "Workshop" }
+            });
+            using var accepted = await client.SendAsync(write);
+            Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
+        }
+        var url = "/api/v1/centers/center-a/local-plan-drafts/" + draft.ToString("D") + "/revisions";
+        using (var request = Request(HttpMethod.Get, url, fixture.Token()))
+        using (var response = await client.SendAsync(request))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var revisions = payload.RootElement.GetProperty("revisions");
+            Assert.Equal(2, revisions.GetArrayLength());
+            Assert.Equal(2, revisions[0].GetProperty("revision").GetInt64());
+            Assert.Equal(1, revisions[1].GetProperty("revision").GetInt64());
+        }
+        using (var request = Request(HttpMethod.Get, url, fixture.Token(subject: "actor-b")))
+        using (var response = await client.SendAsync(request))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Empty(payload.RootElement.GetProperty("revisions").EnumerateArray());
+        }
+        using (var request = Request(HttpMethod.Get, url + "?beforeRevision=0", fixture.Token()))
+        using (var response = await client.SendAsync(request))
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     private sealed class TestOnlyWriteGrant : ILocalPlanDraftWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal, string centerId,

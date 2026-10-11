@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { StoredDraftHistory } from './StoredDraftHistory';
 
 type Membership = { centerId: string; displayName: string; roleCode: string };
 export type Draft = { draftId: string; revision: number; programId: string; nationalVersion: number; localTitle: string; localActivities: unknown[] };
@@ -15,11 +16,13 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
 }) {
   const readEpoch = useRef(0);
   const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [historyDraftId, setHistoryDraftId] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'denied' | 'error'>('idle');
   async function load() {
     if (!selectedCenter || !token.trim()) return;
     const epoch = ++readEpoch.current;
     setDrafts([]);
+    setHistoryDraftId(null);
     setStatus('loading');
     try {
       const response = await fetch('/api/v1/centers/' + encodeURIComponent(selectedCenter) + '/local-plan-drafts', {
@@ -40,7 +43,7 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
     <h2>آخرین نسخه پیش‌نویس‌های ثبت‌شده</h2>
     <p>مشاهده پیش‌نویس‌ها نیز به مجوز مستقل نیاز دارد؛ عضویت کانون به‌تنهایی مجوز مشاهده یا ویرایش نیست.</p>
     <label>انتخاب کانون <select aria-label="انتخاب کانون برای پیش‌نویس‌ها" value={selectedCenter}
-      onChange={e => { readEpoch.current++; onCenterChange(e.target.value); setDrafts([]); setStatus('idle'); }}>
+      onChange={e => { readEpoch.current++; onCenterChange(e.target.value); setDrafts([]); setHistoryDraftId(null); setStatus('idle'); }}>
       <option value="">انتخاب کنید</option>
       {Array.from(new Map(memberships.map(m => [m.centerId, m.displayName])).entries()).map(([id, name]) =>
         <option key={id} value={id}>{name}</option>)}
@@ -52,7 +55,11 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
     {status === 'ready' && (drafts.length === 0 ? <p role="status">پیش‌نویس ثبت‌شده‌ای وجود ندارد.</p> :
       <ul>{drafts.map(d => <li key={d.draftId}>
         <strong>{d.localTitle}</strong> — نسخه محلی {d.revision}، نسخه ملی {d.nationalVersion}{' '}
-        <button type="button" onClick={() => onEditDraft(d)}>ویرایش پیش‌نویس</button>
+        <button type="button" onClick={() => onEditDraft(d)}>ویرایش پیش‌نویس</button>{' '}
+        <button type="button" onClick={() => setHistoryDraftId(d.draftId)}>تاریخچه نسخه‌ها</button>
+        {historyDraftId === d.draftId && <StoredDraftHistory
+          key={d.draftId} draftId={d.draftId} token={token} centerId={selectedCenter}
+          onClose={() => setHistoryDraftId(null)} />}
         <ul>{d.localActivities.map((a, i) => <li key={i}>{typeof a === 'string' ? a : JSON.stringify(a)}</li>)}</ul>
       </li>)}</ul>)}
   </section>;

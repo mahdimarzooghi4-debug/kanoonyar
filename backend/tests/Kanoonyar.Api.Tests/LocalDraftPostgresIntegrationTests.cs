@@ -240,6 +240,67 @@ public sealed class LocalDraftPostgresIntegrationTests
         Assert.Equal(503, Status(response));
     }
 
+    private static async Task<IResult> History(Guid draft, string subject = "actor-a",
+        string center = "center-a", long? before = null, bool useDefaultDeny = false) =>
+        await LocalPlanDraftHistoryEndpoint.ListHistory(Principal(subject), Configuration(),
+            useDefaultDeny ? new UnapprovedLocalPlanDraftReadAuthorization() : TestReader,
+            center, draft, before, CancellationToken.None);
+
+    private static (JsonElement Items, long? NextBefore) HistoryPage(IResult result)
+    {
+        Assert.Equal(200, Status(result));
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(
+            Assert.IsAssignableFrom<IValueHttpResult>(result).Value));
+        var root = document.RootElement;
+        return (root.GetProperty("revisions").Clone(),
+            root.GetProperty("nextBeforeRevision").ValueKind == JsonValueKind.Null
+                ? null : root.GetProperty("nextBeforeRevision").GetInt64());
+    }
+
+    [Fact]
+    public async Task Persisted_revision_history_paginates_without_duplicates_or_cross_center_leaks()
+    {
+        if (!Enabled()) return;
+        var draft = Guid.NewGuid();
+        for (long revision = 0; revision < 22; revision++)
+            Assert.Equal(200, Status(await Write(draft, expectedRevision: revision)));
+
+        var first = HistoryPage(await History(draft));
+        Assert.Equal(20, first.Items.GetArrayLength());
+        Assert.Equal(22, first.Items[0].GetProperty("revision").GetInt64());
+        Assert.Equal(3, first.Items[19].GetProperty("revision").GetInt64());
+        Assert.Equal(3L, first.NextBefore);
+
+        var second = HistoryPage(await History(draft, before: first.NextBefore));
+        Assert.Equal(2, second.Items.GetArrayLength());
+        Assert.Equal(2, second.Items[0].GetProperty("revision").GetInt64());
+        Assert.Equal(1, second.Items[1].GetProperty("revision").GetInt64());
+        Assert.Null(second.NextBefore);
+        Assert.Equal((22L, 22L, 22L), await Counts(draft));
+
+        Assert.Empty(HistoryPage(await History(draft, center: "center-b")).Items.EnumerateArray());
+        Assert.Empty(HistoryPage(await History(draft, subject: "actor-b")).Items.EnumerateArray());
+        Assert.Empty(HistoryPage(await History(draft, subject: "actor-revoked")).Items.EnumerateArray());
+        Assert.Equal(403, Status(await History(draft, useDefaultDeny: true)));
+        Assert.Equal(400, Status(await History(draft, before: 0)));
+        Assert.Empty(HistoryPage(await History(Guid.NewGuid())).Items.EnumerateArray());
+    }
+
+    [Fact]
+    public async Task History_rejects_writer_privileged_and_set_role_escalation_connections()
+    {
+        if (!Enabled()) return;
+        foreach (var connection in new[] { RuntimeConnection, AdminConnection, EscalationConnection })
+        {
+            var config = new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?> { ["CENTER_DRAFT_READ_DATABASE_URL"] = connection }).Build();
+            var result = await LocalPlanDraftHistoryEndpoint.ListHistory(
+                Principal("actor-a"), config, TestReader, "center-a", Guid.NewGuid(), null,
+                CancellationToken.None);
+            Assert.Equal(503, Status(result));
+        }
+    }
+
     private sealed class TestOnlyWriteGrant : ILocalPlanDraftWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal, string centerId,
