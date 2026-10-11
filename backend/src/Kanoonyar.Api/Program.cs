@@ -1,4 +1,5 @@
 using Kanoonyar.Api.Security;
+using Kanoonyar.Api.Programs;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,6 +23,8 @@ else
     app.MapGet("/api/v1/identity/center-memberships", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
 }
+
+app.MapGet("/api/v1/programs/published", NationalProgramReadEndpoint.ListPublished);
 
 app.UseStatusCodePages(async context =>
 {
