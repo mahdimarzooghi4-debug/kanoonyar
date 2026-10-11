@@ -71,3 +71,8 @@ Code Review is **not approved**. Fix findings in priority order, run exact-HEAD 
 - Vite updated from 7.1.12 to 7.3.7 with regenerated npm lockfile.
 - Exact-head Foundation CI 38135913185 and 38135917448: SUCCESS, including full npm audit and Chromium tests.
 - F05 remains open for Python/.NET advisory checks and secret scanning.
+
+## NuGet advisory gate
+- Exact-head CI runs 38136097097 and 38136092538 for d05be355: SUCCESS.
+- Backend CI now restores the solution with NuGetAudit enabled at high severity and restore warnings treated as errors. This checks the resolved NuGet graph during CI.
+- F05 remains open for Python package auditing, secret scanning and exact toolchain controls.
