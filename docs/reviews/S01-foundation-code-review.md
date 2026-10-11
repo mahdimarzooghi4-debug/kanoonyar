@@ -40,3 +40,8 @@ Code Review is **not approved**. Fix findings in priority order, run exact-HEAD 
 ## Follow-up after a05090ba
 - Exact-head CI 38129207133 and 38129203700: SUCCESS.
 - Added project-reference guard (355c5d90) for the API csproj, including explicit forbidden and permitted reference fixtures. This is a limited foundation safeguard, **not** full 14-module graph enforcement. F03 remains open.
+
+## Follow-up after 25a71696
+- Exact-head CI 38129908312 and 38129905491: SUCCESS, including ASP.NET Core in-memory HTTP tests for `/health/live` and `/health/ready`.
+- F04 remains open for real browser/UI tests and future authenticated domain behavior; health endpoint HTTP coverage is verified.
+- Frontend artifact checks were strengthened at 286b876a to inspect React entrypoints, shared UI shell imports and isolated JavaScript bundles. These are static/build tests, not real browser rendering tests.
