@@ -35,6 +35,9 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+      - name: Verify isolated RTL experience artifacts
+        working-directory: frontend
+        run: npm run test:experiences
   ai-contracts:
     runs-on: ubuntu-latest
     permissions:
