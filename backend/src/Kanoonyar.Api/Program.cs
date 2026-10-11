@@ -17,7 +17,7 @@ if (oidcConfigured)
     {
         var subject = user.FindFirstValue("sub");
         return string.IsNullOrWhiteSpace(subject)
-            ? Results.Problem(statusCode: 403, title: "Subject claim required")
+            ? (IResult)Results.Problem(statusCode: 403, title: "Subject claim required")
             : Results.Ok(new { subjectId = subject });
     }).RequireAuthorization();
 }
