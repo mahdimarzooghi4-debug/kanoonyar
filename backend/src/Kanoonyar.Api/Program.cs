@@ -1,5 +1,4 @@
 using Kanoonyar.Api.Security;
-using System.Security.Claims;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -13,13 +12,7 @@ if (oidcConfigured)
 {
     app.UseAuthentication();
     app.UseAuthorization();
-    app.MapGet("/api/v1/identity/me", (ClaimsPrincipal user) =>
-    {
-        var subject = user.FindFirstValue("sub");
-        return string.IsNullOrWhiteSpace(subject)
-            ? (IResult)Results.Problem(statusCode: 403, title: "Subject claim required")
-            : Results.Ok(new { subjectId = subject });
-    }).RequireAuthorization();
+    app.MapGet("/api/v1/identity/me", AuthenticatedSubjectEndpoint.GetSubject).RequireAuthorization();
 }
 else
 {
