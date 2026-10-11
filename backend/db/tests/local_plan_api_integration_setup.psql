@@ -51,3 +51,30 @@ BEGIN
   END IF;
 END;
 $test$;
+
+
+-- Independent least-privilege reader. The existing CI-only writer is intentionally
+-- NOT inherited or reachable through SET ROLE. Never mirror these as Production grants.
+CREATE ROLE kanoonyar_draft_read_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_draft_read_ci;
+GRANT USAGE ON SCHEMA programs,centers TO kanoonyar_draft_read_ci;
+GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_draft_read_ci;
+GRANT SELECT ON programs.center_plan_draft_revisions TO kanoonyar_draft_read_ci;
+DO $test$
+BEGIN
+  IF has_table_privilege('kanoonyar_draft_read_ci',
+       'programs.center_plan_draft_revisions', 'INSERT') OR
+     has_table_privilege('kanoonyar_draft_read_ci',
+       'governance.command_audit', 'INSERT') OR
+     has_table_privilege('kanoonyar_draft_read_ci',
+       'governance.outbox_events', 'INSERT') OR
+     has_function_privilege('kanoonyar_draft_read_ci',
+       'programs.append_local_plan_draft_revision(text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)',
+       'EXECUTE') OR
+     pg_has_role('kanoonyar_draft_read_ci','kanoonyar_draft_api_ci','SET') OR
+     pg_has_role('kanoonyar_draft_read_ci','kanoonyar_draft_api_ci','MEMBER') THEN
+    RAISE EXCEPTION 'Reader role must not inherit or acquire write privileges';
+  END IF;
+END;
+$test$;

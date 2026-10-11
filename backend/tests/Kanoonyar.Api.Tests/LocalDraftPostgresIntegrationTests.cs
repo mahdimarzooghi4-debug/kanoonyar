@@ -20,6 +20,8 @@ public sealed class LocalDraftPostgresIntegrationTests
 
     private static string? RuntimeConnection =>
         Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_DATABASE_URL");
+    private static string? ReadConnection =>
+        Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_READ_DATABASE_URL");
     private static string? AdminConnection =>
         Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_ADMIN_URL");
 
@@ -29,16 +31,18 @@ public sealed class LocalDraftPostgresIntegrationTests
         if (required)
         {
             Assert.False(string.IsNullOrWhiteSpace(RuntimeConnection));
+            Assert.False(string.IsNullOrWhiteSpace(ReadConnection));
             Assert.False(string.IsNullOrWhiteSpace(AdminConnection));
         }
-        return !string.IsNullOrWhiteSpace(RuntimeConnection) && !string.IsNullOrWhiteSpace(AdminConnection);
+        return !string.IsNullOrWhiteSpace(RuntimeConnection) && !string.IsNullOrWhiteSpace(ReadConnection) &&
+            !string.IsNullOrWhiteSpace(AdminConnection);
     }
 
     private static IConfiguration Configuration() =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["CENTER_DRAFT_WRITE_DATABASE_URL"] = RuntimeConnection,
-            ["CENTER_DRAFT_READ_DATABASE_URL"] = RuntimeConnection
+            ["CENTER_DRAFT_READ_DATABASE_URL"] = ReadConnection
         }).Build();
 
     private static ClaimsPrincipal Principal(string subject) =>
@@ -163,6 +167,60 @@ public sealed class LocalDraftPostgresIntegrationTests
             new Dictionary<string, string?> { ["CENTER_DRAFT_WRITE_DATABASE_URL"] = AdminConnection }).Build();
         Assert.Equal(503, Status(await Write(draft, configuration: privileged)));
         Assert.Equal((0L, 0L, 0L), await Counts(draft));
+    }
+
+    [Fact]
+    public async Task Read_only_login_rejects_direct_insert_and_function_escalation()
+    {
+        if (!Enabled()) return;
+        await using var db = new NpgsqlConnection(ReadConnection);
+        await db.OpenAsync();
+        var draft = Guid.NewGuid();
+        await using (var insert = new NpgsqlCommand(
+            """
+            INSERT INTO programs.center_plan_draft_revisions
+              (center_id,draft_id,revision,program_id,national_version,local_title,local_activities,actor_subject)
+            VALUES ('center-a',@draft,1,'national-1',1,'Bypassed','[]','forged-actor')
+            """, db))
+        {
+            insert.Parameters.AddWithValue("draft", draft);
+            var denied = await Assert.ThrowsAsync<PostgresException>(
+                () => insert.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.InsufficientPrivilege, denied.SqlState);
+        }
+        await using (var escalate = new NpgsqlCommand(
+            "SET ROLE kanoonyar_draft_api_ci", db))
+        {
+            var denied = await Assert.ThrowsAsync<PostgresException>(
+                () => escalate.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.InsufficientPrivilege, denied.SqlState);
+        }
+        await using (var directFunction = new NpgsqlCommand(
+            """
+            SELECT programs.append_local_plan_draft_revision(
+              'center-a',@draft,0,'national-1',1,'Forged','[]'::jsonb,'forged-actor',
+              gen_random_uuid(),gen_random_uuid(),'forged')
+            """, db))
+        {
+            directFunction.Parameters.AddWithValue("draft", draft);
+            var denied = await Assert.ThrowsAsync<PostgresException>(
+                () => directFunction.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.InsufficientPrivilege, denied.SqlState);
+        }
+        Assert.Equal((0L, 0L, 0L), await Counts(draft));
+    }
+
+    [Fact]
+    public async Task Read_handler_refuses_a_direct_write_capable_role_even_with_a_test_grant()
+    {
+        if (!Enabled()) return;
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> {
+                ["CENTER_DRAFT_READ_DATABASE_URL"] = RuntimeConnection
+            }).Build();
+        var response = await LocalPlanDraftReadEndpoint.ListMine(
+            Principal("actor-a"), configuration, TestReader, "center-a", CancellationToken.None);
+        Assert.Equal(503, Status(response));
     }
 
     private sealed class TestOnlyWriteGrant : ILocalPlanDraftWriteAuthorization

@@ -34,6 +34,8 @@ public sealed class SignedOidcHttpIntegrationTests
         Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_DATABASE_URL");
     private static string? AdminUrl =>
         Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_ADMIN_URL");
+    private static string? ReadUrl =>
+        Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_READ_DATABASE_URL");
 
     private static bool DbAvailable()
     {
@@ -42,8 +44,10 @@ public sealed class SignedOidcHttpIntegrationTests
         {
             Assert.False(string.IsNullOrWhiteSpace(DbUrl));
             Assert.False(string.IsNullOrWhiteSpace(AdminUrl));
+            Assert.False(string.IsNullOrWhiteSpace(ReadUrl));
         }
-        return !string.IsNullOrWhiteSpace(DbUrl) && !string.IsNullOrWhiteSpace(AdminUrl);
+        return !string.IsNullOrWhiteSpace(DbUrl) && !string.IsNullOrWhiteSpace(AdminUrl) &&
+            !string.IsNullOrWhiteSpace(ReadUrl);
     }
 
     private sealed class SignedJwtFixture : IDisposable
@@ -86,7 +90,7 @@ public sealed class SignedOidcHttpIntegrationTests
                 builder.UseSetting("OIDC_AUDIENCE", Audience);
                 if (syntheticDbGrants)
                 {
-                    builder.UseSetting("CENTER_DRAFT_READ_DATABASE_URL", DbUrl);
+                    builder.UseSetting("CENTER_DRAFT_READ_DATABASE_URL", ReadUrl);
                     builder.UseSetting("CENTER_DRAFT_WRITE_DATABASE_URL", DbUrl);
                 }
                 builder.ConfigureTestServices(services =>

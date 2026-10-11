@@ -5,6 +5,42 @@ namespace Kanoonyar.Api.Security;
 /// <summary>Defense in depth: refuse privileged DB sessions. RLS alone is not user authorization.</summary>
 public static class RestrictedDraftDatabaseRole
 {
+    /// <summary>
+    /// Read connections must not be able to mutate draft, membership, audit or outbox
+    /// data, execute the draft command, or SET ROLE to an owning/privileged role.
+    /// This is a DB-capability check, not a user authorization or GUC trust proof.
+    /// </summary>
+    public static async Task<bool> VerifyReadOnlyAsync(NpgsqlConnection connection,
+        NpgsqlTransaction transaction, CancellationToken cancellationToken)
+    {
+        if (!await VerifyAsync(connection, transaction, cancellationToken))
+            return false;
+
+        await using var check = new NpgsqlCommand(
+            """
+            SELECT NOT (
+              has_table_privilege(current_user, 'programs.center_plan_draft_revisions', 'INSERT')
+              OR has_table_privilege(current_user, 'programs.center_plan_draft_revisions', 'UPDATE')
+              OR has_table_privilege(current_user, 'programs.center_plan_draft_revisions', 'DELETE')
+              OR has_table_privilege(current_user, 'centers.memberships', 'INSERT')
+              OR has_table_privilege(current_user, 'centers.memberships', 'UPDATE')
+              OR has_table_privilege(current_user, 'centers.memberships', 'DELETE')
+              OR has_table_privilege(current_user, 'governance.command_audit', 'INSERT')
+              OR has_table_privilege(current_user, 'governance.outbox_events', 'INSERT')
+              OR has_function_privilege(current_user,
+                'programs.append_local_plan_draft_revision(text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)',
+                'EXECUTE')
+              OR pg_has_role(current_user,
+                (SELECT relowner FROM pg_class
+                 WHERE oid='programs.center_plan_draft_revisions'::regclass), 'SET')
+              OR pg_has_role(current_user,
+                (SELECT relowner FROM pg_class
+                 WHERE oid='centers.memberships'::regclass), 'SET')
+            )
+            """, connection, transaction);
+        return await check.ExecuteScalarAsync(cancellationToken) is true;
+    }
+
     public static async Task<bool> VerifyAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
     {
