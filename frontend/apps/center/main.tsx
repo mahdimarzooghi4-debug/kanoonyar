@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Shell } from '../../packages/ui/Shell';
+import { StoredDrafts } from './StoredDrafts';
 
 type Membership = { centerId: string; displayName: string; roleCode: string };
 type State = { status: 'idle' | 'loading' | 'ready' | 'error'; memberships: Membership[]; message: string };
@@ -103,6 +104,7 @@ function CenterWorkspace() {
       {state.status === 'loading' && <p role="status">در حال دریافت…</p>}
       {state.status === 'error' && <p role="alert">{state.message}</p>}
       {state.status === 'ready' && (state.memberships.length ? <ul>{state.memberships.map((m, i) => <li key={`${m.centerId}-${m.roleCode}-${i}`}>{m.displayName} ({m.centerId}) — {m.roleCode}</li>)}</ul> : <p role="status">عضویت فعالی ثبت نشده است.</p>)}
+      {state.status === 'ready' && state.memberships.length > 0 && <StoredDrafts token={token} memberships={state.memberships} />}
       <NationalProgramDiscovery />
     </main>
   </>;
