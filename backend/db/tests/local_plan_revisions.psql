@@ -75,6 +75,10 @@ BEGIN
   END IF;
 END;
 $test$;
+CREATE ROLE kanoonyar_draft_rls_test NOLOGIN NOSUPERUSER NOBYPASSRLS;
+GRANT USAGE ON SCHEMA programs TO kanoonyar_draft_rls_test;
+GRANT SELECT ON programs.center_plan_draft_revisions TO kanoonyar_draft_rls_test;
+SET ROLE kanoonyar_draft_rls_test;
 SELECT set_config('kanoonyar.center_id','center-b',false);
 DO $test$
 BEGIN
@@ -83,3 +87,5 @@ BEGIN
   END IF;
 END;
 $test$;
+
+RESET ROLE;
