@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=75,<81"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kanoonyar-ai"
+version = "0.0.1"
+description = "Non-operational AI boundary foundation for Kanoonyar"
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+where = ["src"]
