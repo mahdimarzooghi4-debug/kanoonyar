@@ -13,7 +13,8 @@
     "preview:headquarters": "vite preview --host 127.0.0.1 --port 4173",
     "test:browser": "node scripts/run-browser-tests.mjs",
     "preview:center": "vite preview --host 127.0.0.1 --port 4173",
-    "preview:audience": "vite preview --host 127.0.0.1 --port 4173"
+    "preview:audience": "vite preview --host 127.0.0.1 --port 4173",
+    "test:deployment": "node --test scripts/package-experiences.test.mjs && node scripts/package-experiences.mjs"
   },
   "dependencies": {
     "react": "19.2.0",
