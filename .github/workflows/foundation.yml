@@ -15,6 +15,8 @@ jobs:
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         with:
           dotnet-version: '10.0.x'
+      - name: Audit NuGet dependencies during restore
+        run: dotnet restore backend/Kanoonyar.slnx -p:NuGetAudit=true -p:NuGetAuditLevel=high -p:TreatWarningsAsErrors=true
       - name: Build API
         run: dotnet build backend/Kanoonyar.slnx --configuration Release
       - name: Test foundation
