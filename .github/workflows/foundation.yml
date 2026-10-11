@@ -3,7 +3,7 @@ permissions:
   contents: read
 on:
   push:
-    branches: [main, planning/sprint-01-foundation, sprint-02-center-membership-read-foundation, sprint-03-center-workspace-ui, sprint-04-national-program-public-read, sprint-05-national-program-catalog-ui, sprint-06-center-national-program-discovery, sprint-07-local-execution-plan-draft]
+    branches: [main, planning/sprint-01-foundation, sprint-02-center-membership-read-foundation, sprint-03-center-workspace-ui, sprint-04-national-program-public-read, sprint-05-national-program-catalog-ui, sprint-06-center-national-program-discovery, sprint-07-local-execution-plan-draft, sprint-08-local-plan-operations]
   pull_request:
 jobs:
   backend:
@@ -58,6 +58,8 @@ jobs:
           PGDATABASE=kanoonyar_membership_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_membership_read.psql
           createdb kanoonyar_membership_session_ci
           PGDATABASE=kanoonyar_membership_session_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_membership_session.psql
+          createdb kanoonyar_local_draft_ci
+          PGDATABASE=kanoonyar_local_draft_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/local_plan_revisions.psql
   frontend:
     runs-on: ubuntu-latest
     permissions:
