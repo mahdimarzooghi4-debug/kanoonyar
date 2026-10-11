@@ -48,7 +48,10 @@ jobs:
           PGPORT: '5432'
           PGUSER: postgres
           PGDATABASE: kanoonyar_ci
-        run: psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/national_program_integrity.psql
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/national_program_integrity.psql
+          createdb kanoonyar_rls_ci
+          PGDATABASE=kanoonyar_rls_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_rls_isolation.psql
   frontend:
     runs-on: ubuntu-latest
     permissions:
