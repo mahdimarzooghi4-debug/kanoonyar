@@ -2,7 +2,6 @@ using Xunit;
 using System.Net;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
 
 namespace Kanoonyar.Api.Tests;
 
@@ -21,12 +20,8 @@ public sealed class OidcBoundaryTests
     public async Task Configured_oidc_rejects_anonymous_identity_requests()
     {
         await using var factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) =>
-                config.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["OIDC_AUTHORITY"] = "https://identity.example.test/realms/kanoonyar",
-                    ["OIDC_AUDIENCE"] = "kanoonyar-api"
-                })));
+            .WithWebHostBuilder(builder => builder.UseSetting("OIDC_AUTHORITY", "https://identity.example.test/realms/kanoonyar")
+                .UseSetting("OIDC_AUDIENCE", "kanoonyar-api"));
         using var client = factory.CreateClient();
         using var response = await client.GetAsync("/api/v1/identity/me");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -38,12 +33,8 @@ public sealed class OidcBoundaryTests
         Assert.Throws<InvalidOperationException>(() =>
         {
             using var factory = new WebApplicationFactory<Program>()
-                .WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) =>
-                    config.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["OIDC_AUTHORITY"] = "http://identity.example.test/realms/kanoonyar",
-                        ["OIDC_AUDIENCE"] = "kanoonyar-api"
-                    })));
+                .WithWebHostBuilder(builder => builder.UseSetting("OIDC_AUTHORITY", "http://identity.example.test/realms/kanoonyar")
+                    .UseSetting("OIDC_AUDIENCE", "kanoonyar-api"));
             using var client = factory.CreateClient();
         });
     }
