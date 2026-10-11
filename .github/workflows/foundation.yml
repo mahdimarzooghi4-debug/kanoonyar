@@ -3,7 +3,7 @@ permissions:
   contents: read
 on:
   push:
-    branches: [main, planning/sprint-01-foundation, sprint-02-center-membership-read-foundation, sprint-03-center-workspace-ui, sprint-04-national-program-public-read, sprint-05-national-program-catalog-ui, sprint-06-center-national-program-discovery]
+    branches: [main, planning/sprint-01-foundation, sprint-02-center-membership-read-foundation, sprint-03-center-workspace-ui, sprint-04-national-program-public-read, sprint-05-national-program-catalog-ui, sprint-06-center-national-program-discovery, sprint-07-local-execution-plan-draft]
   pull_request:
 jobs:
   backend:
