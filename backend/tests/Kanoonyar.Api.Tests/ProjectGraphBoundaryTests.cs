@@ -12,7 +12,7 @@ public sealed class ProjectGraphBoundaryTests
     [Theory]
     [InlineData("Kanoonyar.Contracts", "Kanoonyar.Api", false)]
     [InlineData("Kanoonyar.Api", "Kanoonyar.Contracts", true)]
-    [InlineData("Kanoonyar.Contracts", "Kanoonyar.PrivatePersistence", true)]
+    [InlineData("Kanoonyar.Contracts", "Kanoonyar.PrivatePersistence", false)]
     [InlineData("Kanoonyar.Api", "Kanoonyar.Contracts", true)]
     public void Boundary_detector_rejects_disallowed_project_edges(string source, string target, bool allowed)
     {
