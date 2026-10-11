@@ -56,3 +56,8 @@ Code Review is **not approved**. Fix findings in priority order, run exact-HEAD 
 - Added `backend/Kanoonyar.slnx` containing API, Contracts and API Tests; CI builds/tests the complete solution.
 - API now has an explicit dependency on the dependency-free Contracts project. `ProjectGraphBoundaryTests` validates existing production project-reference edges and rejects unauthorized edges, with corrected negative fixture (2f811303). This is current-project graph enforcement, not enforcement of future modules, package dependencies or runtime data flows. F03 remains open for expanded module graph governance.
 - F06 solution-file subfinding resolved; module/BuildingBlocks skeleton still incomplete. PR remains Draft/Open; no Stage or Production acceptance.
+
+## CI security follow-up — 07a423ed
+- Exact-head runs 38133454567 and 38133451052: SUCCESS.
+- Workflow has read-only default token permissions and a blocking `npm audit --omit=dev --audit-level=high` step for frontend production dependencies. Existing backend, frontend Chromium and AI jobs remained green.
+- F05 remains open: GitHub Actions still use mutable major tags, SDK/toolchains are not fully immutable, npm development dependency and Python/.NET advisory scans and secret scanning are not yet covered. The npm audit is a narrow control, not a comprehensive security clearance.
