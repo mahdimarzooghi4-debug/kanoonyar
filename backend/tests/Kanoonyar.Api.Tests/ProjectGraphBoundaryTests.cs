@@ -17,6 +17,7 @@ public sealed class ProjectGraphBoundaryTests
     [InlineData("Kanoonyar.Contracts", "Kanoonyar.BuildingBlocks", false)]
     [InlineData("Kanoonyar.Contracts", "Kanoonyar.PrivatePersistence", false)]
     [InlineData("Kanoonyar.Api", "Kanoonyar.Contracts", true)]
+    [InlineData("Kanoonyar.Api", "Kanoonyar.BuildingBlocks", true)]
     public void Boundary_detector_rejects_disallowed_project_edges(string source, string target, bool allowed)
     {
         Assert.Equal(allowed, IsAllowed(source, target));
@@ -27,7 +28,9 @@ public sealed class ProjectGraphBoundaryTests
     {
         var root = FindRepositoryRoot();
         var src = Path.Combine(root, "backend", "src");
-        foreach (var project in Directory.GetFiles(src, "*.csproj", SearchOption.AllDirectories))
+        var projects = Directory.GetFiles(src, "*.csproj", SearchOption.AllDirectories);
+        Assert.Contains(projects, p => Path.GetFileNameWithoutExtension(p) == "Kanoonyar.BuildingBlocks");
+        foreach (var project in projects)
         {
             var source = Path.GetFileNameWithoutExtension(project);
             var document = XDocument.Load(project);
