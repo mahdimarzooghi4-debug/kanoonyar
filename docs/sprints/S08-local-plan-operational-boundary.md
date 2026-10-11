@@ -34,3 +34,21 @@ Obtain Business-approved permission×operation×center/resource contract plus gr
 revocation semantics, enforce on each request with trustworthy identity/tenant binding and tests
 including stale access, cross-center ownership, concurrency, and revocation. Follow with integration
 tests against a real restricted login role before claiming write operations are ready for users.
+
+
+## Sprint 08 restricted-database integration extension
+- Both read AND write handlers now require independent operation-specific authorization,
+  implemented as DENY by default. No existing membership can authorize draft reading.
+- The handler refuses PostgreSQL login roles that are privileged, database/table owners,
+  BYPASSRLS, superusers, role administrators or database creators; both memberships and
+  drafts must have ENABLE/FORCE RLS.
+- CI runs a real Npgsql handler-to-PostgreSQL integration against a fresh throwaway
+  database with a LOGIN role that is non-superuser/non-owner/NOBYPASSRLS.
+- Test-only authorization adapters (compiled ONLY in the test assembly) allow the
+  database path to be tested: create/read/revise, stale conflict, concurrent create,
+  denied member/revoked member, cross-center isolation, atomic Audit/Outbox counts,
+  default deny, and privileged-DB refusal.
+- CI grants on the disposable database are not approved runtime privileges and cannot
+  be copied into Production. The integration test exercises handlers directly with
+  test ClaimsPrincipals; it does not verify a signed OIDC token or full browser-to-DB flow.
+- No real grant issuance, permission activation, external IdP or user writes are enabled.
