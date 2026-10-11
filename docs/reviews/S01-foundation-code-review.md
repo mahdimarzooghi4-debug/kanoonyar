@@ -36,3 +36,7 @@ Code Review is **not approved**. Fix findings in priority order, run exact-HEAD 
 ## Follow-up after e112b873
 - F02 partial evidence: both CI runs 38129063525 and 38129060520 passed the three-experience artifact/RTL checks. Build-output isolation is verified; independent app deployment is **not** verified. F02 remains open.
 - F03 detector characterization added at 819719e3 with positive and negative fixtures. This tests only the existing string detector, not real module dependency graph or database isolation. F03 remains open pending structural enforcement.
+
+## Follow-up after a05090ba
+- Exact-head CI 38129207133 and 38129203700: SUCCESS.
+- Added project-reference guard (355c5d90) for the API csproj, including explicit forbidden and permitted reference fixtures. This is a limited foundation safeguard, **not** full 14-module graph enforcement. F03 remains open.
