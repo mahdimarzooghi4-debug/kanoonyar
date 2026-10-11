@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Shell } from '../../packages/ui/Shell';
 import { StoredDrafts } from './StoredDrafts';
+import type { Draft } from './StoredDrafts';
+import { LocalPlanDraftEditor } from './LocalPlanDraftEditor';
 
 type Membership = { centerId: string; displayName: string; roleCode: string };
 type State = { status: 'idle' | 'loading' | 'ready' | 'error'; memberships: Membership[]; message: string };
@@ -14,28 +16,7 @@ function validNationalProgram(item: unknown): item is NationalProgram {
     typeof p.version === 'number' && Number.isInteger(p.version) && p.version > 0 &&
     Array.isArray(p.nationalObjectives) && Array.isArray(p.mandatoryRequirements);
 }
-function LocalPlanDraft({ program }: { program: NationalProgram }) {
-  const [title, setTitle] = useState('');
-  const [activity, setActivity] = useState('');
-  const [activities, setActivities] = useState<string[]>([]);
-  function addActivity() {
-    const value = activity.trim();
-    if (!value) return;
-    setActivities(current => [...current, value]);
-    setActivity('');
-  }
-  return <section aria-label={`پیش‌نویس محلی ${program.title}`} style={{ border: '1px solid #aaa', padding: '1rem', margin: '1rem 0' }}>
-    <h4>پیش‌نویس برنامه اجرایی محلی</h4>
-    <p>برنامه ملی: {program.title} — نسخه {program.version}. اهداف و الزامات ملی قابل تغییر نیستند.</p>
-    <label>عنوان محلی <input aria-label={`عنوان محلی ${program.programId}`} value={title} onChange={e => setTitle(e.target.value)} /></label>
-    <div><label>فعالیت محلی <input aria-label={`فعالیت محلی ${program.programId}`} value={activity} onChange={e => setActivity(e.target.value)} /></label>
-      <button type="button" onClick={addActivity} disabled={!activity.trim()}>افزودن فعالیت</button></div>
-    <ul>{activities.map((item, i) => <li key={i}>{item} <button type="button" aria-label={`حذف فعالیت ${i + 1}`} onClick={() => setActivities(old => old.filter((_, index) => index !== i))}>حذف</button></li>)}</ul>
-    <p role="status">این پیش‌نویس فقط در حافظه صفحه است؛ ذخیره، تأیید یا ارسال نشده است.</p>
-    <button type="button" disabled>ثبت برنامه اجرایی (نیازمند مجوز و اتصال امن)</button>
-  </section>;
-}
-function NationalProgramDiscovery() {
+function NationalProgramDiscovery({ token, centerId, editingDraft }: { token: string; centerId: string; editingDraft: Draft | null }) {
   const [programs, setPrograms] = useState<NationalProgram[]>([]);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   async function refresh() {
@@ -62,13 +43,15 @@ function NationalProgramDiscovery() {
         <h3>{p.title} — نسخه {p.version}</h3>
         <strong>اهداف ملی</strong><ul>{p.nationalObjectives.map((item, i) => <li key={i}>{typeof item === 'string' ? item : JSON.stringify(item)}</li>)}</ul>
         <strong>الزامات اجباری</strong><ul>{p.mandatoryRequirements.map((item, i) => <li key={i}>{typeof item === 'string' ? item : JSON.stringify(item)}</li>)}</ul>
-        <LocalPlanDraft program={p} />
+        <LocalPlanDraftEditor key={p.programId + ':' + p.version} program={p} token={token} centerId={centerId} editingDraft={editingDraft} />
       </li>)}</ul>)}
   </section>;
 }
 
 function CenterWorkspace() {
   const [token, setToken] = useState('');
+  const [selectedCenter, setSelectedCenter] = useState('');
+  const [editingDraft, setEditingDraft] = useState<Draft | null>(null);
   const [state, setState] = useState<State>({ status: 'idle', memberships: [], message: '' });
   async function loadMemberships() {
     if (!token.trim()) { setState({ status: 'error', memberships: [], message: 'توکن احراز هویت لازم است.' }); return; }
@@ -104,8 +87,14 @@ function CenterWorkspace() {
       {state.status === 'loading' && <p role="status">در حال دریافت…</p>}
       {state.status === 'error' && <p role="alert">{state.message}</p>}
       {state.status === 'ready' && (state.memberships.length ? <ul>{state.memberships.map((m, i) => <li key={`${m.centerId}-${m.roleCode}-${i}`}>{m.displayName} ({m.centerId}) — {m.roleCode}</li>)}</ul> : <p role="status">عضویت فعالی ثبت نشده است.</p>)}
-      {state.status === 'ready' && state.memberships.length > 0 && <StoredDrafts token={token} memberships={state.memberships} />}
-      <NationalProgramDiscovery />
+      {state.status === 'ready' && state.memberships.length > 0 && <StoredDrafts
+        token={token} memberships={state.memberships}
+        selectedCenter={state.memberships.some(m => m.centerId === selectedCenter) ? selectedCenter : ''}
+        onCenterChange={value => { setSelectedCenter(value); setEditingDraft(null); }}
+        onEditDraft={draft => setEditingDraft(draft)} />}
+      <NationalProgramDiscovery token={token}
+        centerId={state.status === 'ready' && state.memberships.some(m => m.centerId === selectedCenter) ? selectedCenter : ''}
+        editingDraft={editingDraft} />
     </main>
   </>;
 }
