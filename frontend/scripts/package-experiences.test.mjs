@@ -40,6 +40,13 @@ test('missing independent bundle fails closed', () => {
   });
 });
 
+test('non-RTL document fails closed', () => {
+  withFixture(root => {
+    writeFileSync(resolve(root, 'dist', 'audience', 'index.html'), '<html lang="en" dir="ltr"></html>');
+    assert.throws(() => inventory(root, 'audience'), /missing Persian document language/);
+  });
+});
+
 test('unknown experience is rejected', () => {
   withFixture(root => assert.throws(() => inventory(root, 'admin'), /unknown experience/));
 });
