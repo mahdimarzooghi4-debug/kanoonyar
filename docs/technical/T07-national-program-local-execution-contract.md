@@ -1,0 +1,5 @@
+# National Program / Local Execution — first contract slice
+
+The headquarters-owned `NationalProgramVersion` holds an opaque program ID, positive version, national objectives and mandatory requirements. Its collections are defensive read-only copies. `CenterProgramPlan` captures an explicit center ID, a reference to exactly one national version, a local title and local activities; it cannot mutate national goals or requirements. No goal counts, mandatory threshold, program calendar or center assignment are inferred.
+
+This is **only a domain contract and executable invariant tests**. It is not a persistent registry, API, headquarters publishing permission, center membership check, local adoption authorization, approval, audit event or production-ready program workflow. Next implementation must introduce authoritative center identity and human-managed authorization, versioned persistence, then audited national publication and local adoption with tenant scoping. Do not expose mutation endpoints before those gates exist.
