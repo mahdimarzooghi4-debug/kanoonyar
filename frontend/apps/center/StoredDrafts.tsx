@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 
 type Membership = { centerId: string; displayName: string; roleCode: string };
 export type Draft = { draftId: string; revision: number; programId: string; nationalVersion: number; localTitle: string; localActivities: unknown[] };
@@ -13,29 +13,33 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
   token: string; memberships: Membership[]; selectedCenter: string;
   onCenterChange: (centerId: string) => void; onEditDraft: (draft: Draft) => void;
 }) {
+  const readEpoch = useRef(0);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   async function load() {
     if (!selectedCenter || !token.trim()) return;
+    const epoch = ++readEpoch.current;
     setDrafts([]);
     setStatus('loading');
     try {
       const response = await fetch('/api/v1/centers/' + encodeURIComponent(selectedCenter) + '/local-plan-drafts', {
         headers: { Authorization: 'Bearer ' + token.trim() }, cache: 'no-store'
       });
+      if (epoch !== readEpoch.current) return;
       if (!response.ok) throw new Error('Unavailable');
       const body: unknown = await response.json();
+      if (epoch !== readEpoch.current) return;
       if (!body || typeof body !== 'object' || !('drafts' in body) || !Array.isArray(body.drafts) ||
           !body.drafts.every(validDraft)) throw new Error('Invalid drafts');
       setDrafts(body.drafts);
       setStatus('ready');
-    } catch { setStatus('error'); }
+    } catch { if (epoch === readEpoch.current) setStatus('error'); }
   }
   return <section aria-label="پیش‌نویس‌های ثبت‌شده" style={{ marginTop: '2rem' }}>
     <h2>آخرین نسخه پیش‌نویس‌های ثبت‌شده</h2>
     <p>فقط خواندنی؛ عضویت نمایش‌داده‌شده به معنی مجوز ویرایش نیست.</p>
     <label>انتخاب کانون <select aria-label="انتخاب کانون برای پیش‌نویس‌ها" value={selectedCenter}
-      onChange={e => { onCenterChange(e.target.value); setDrafts([]); setStatus('idle'); }}>
+      onChange={e => { readEpoch.current++; onCenterChange(e.target.value); setDrafts([]); setStatus('idle'); }}>
       <option value="">انتخاب کنید</option>
       {Array.from(new Map(memberships.map(m => [m.centerId, m.displayName])).entries()).map(([id, name]) =>
         <option key={id} value={id}>{name}</option>)}

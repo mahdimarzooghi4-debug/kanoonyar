@@ -70,7 +70,16 @@ public static class LocalPlanDraftWriteEndpoint
             if (!await RestrictedDraftDatabaseRole.VerifyAsync(connection, transaction, cancellationToken))
                 return Results.Problem(statusCode: 503, title: "Unsafe draft database role");
 
-            // Live membership is additional evidence; it does not supply the missing grant.
+            // Only AFTER independent authorization, set the scoped transaction variable. This is
+            // necessary for membership RLS, but it is NOT an authorization decision.
+            await using (var scope = new NpgsqlCommand(
+                "SELECT set_config('kanoonyar.center_id', @center, true)", connection, transaction))
+            {
+                scope.Parameters.AddWithValue("center", centerId);
+                await scope.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            // Read live membership under its own RLS. Membership does NOT supply the missing grant.
             await using (var membership = new NpgsqlCommand(
                 """
                 SELECT EXISTS (
@@ -85,13 +94,6 @@ public static class LocalPlanDraftWriteEndpoint
                 membership.Parameters.AddWithValue("center", centerId);
                 if (await membership.ExecuteScalarAsync(cancellationToken) is not true)
                     return Results.Problem(statusCode: 403, title: "Active center membership required");
-            }
-            // Actor is derived from the verified JWT, tenant is derived from the route after authorization.
-            await using (var scope = new NpgsqlCommand(
-                "SELECT set_config('kanoonyar.center_id', @center, true)", connection, transaction))
-            {
-                scope.Parameters.AddWithValue("center", centerId);
-                await scope.ExecuteNonQueryAsync(cancellationToken);
             }
             await using var command = new NpgsqlCommand(
                 """

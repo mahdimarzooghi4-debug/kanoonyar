@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { Draft } from './StoredDrafts';
 
 export type NationalProgram = {
@@ -10,6 +10,7 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'denied' | 'conflict' | 'error';
 type Props = { program: NationalProgram; token: string; centerId: string; editingDraft: Draft | null };
 
 export function LocalPlanDraftEditor({ program, token, centerId, editingDraft }: Props) {
+  const writeEpoch = useRef(0);
   const [draftId, setDraftId] = useState(() => crypto.randomUUID());
   const [revision, setRevision] = useState(0);
   const [title, setTitle] = useState('');
@@ -23,13 +24,14 @@ export function LocalPlanDraftEditor({ program, token, centerId, editingDraft }:
     matches.localActivities.some(a => typeof a !== 'string');
 
   useEffect(() => {
+    writeEpoch.current++;
     setDraftId(matches?.draftId ?? crypto.randomUUID());
     setRevision(matches?.revision ?? 0);
     setTitle(matches?.localTitle ?? '');
     setActivities(matches?.localActivities.filter((a): a is string => typeof a === 'string') ?? []);
     setActivity('');
     setStatus('idle');
-  }, [centerId, program.programId, program.version, matches?.draftId, matches?.revision]);
+  }, [centerId, token, program.programId, program.version, matches?.draftId, matches?.revision]);
 
   function addActivity() {
     const value = activity.trim();
@@ -41,6 +43,7 @@ export function LocalPlanDraftEditor({ program, token, centerId, editingDraft }:
 
   async function save() {
     if (!centerId || !token.trim() || !title.trim() || status === 'saving' || unsupportedActivities) return;
+    const epoch = ++writeEpoch.current;
     setStatus('saving');
     try {
       const response = await fetch('/api/v1/centers/' + encodeURIComponent(centerId) + '/local-plan-drafts/revisions', {
@@ -51,10 +54,12 @@ export function LocalPlanDraftEditor({ program, token, centerId, editingDraft }:
           nationalVersion: program.version, localTitle: title.trim(), localActivities: activities
         })
       });
+      if (epoch !== writeEpoch.current) return;
       if (response.status === 401 || response.status === 403) { setStatus('denied'); return; }
       if (response.status === 409) { setStatus('conflict'); return; }
       if (!response.ok) { setStatus('error'); return; }
       const payload: unknown = await response.json();
+      if (epoch !== writeEpoch.current) return;
       if (!payload || typeof payload !== 'object') throw new Error('Invalid response');
       const value = payload as Record<string, unknown>;
       if (value.draftId !== draftId || !Number.isInteger(value.revision) ||
@@ -63,7 +68,7 @@ export function LocalPlanDraftEditor({ program, token, centerId, editingDraft }:
         throw new Error('Invalid revision acknowledgement');
       setRevision(Number(value.revision));
       setStatus('saved');
-    } catch { setStatus('error'); }
+    } catch { if (epoch === writeEpoch.current) setStatus('error'); }
   }
 
   return <section aria-label={'پیش‌نویس محلی ' + program.title}

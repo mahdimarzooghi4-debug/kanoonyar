@@ -14,11 +14,14 @@ public static class RestrictedDraftDatabaseRole
               SELECT NOT active_role.rolsuper AND NOT active_role.rolbypassrls
                 AND NOT login_role.rolsuper AND NOT login_role.rolbypassrls
                 AND draft.relrowsecurity AND draft.relforcerowsecurity
+                AND membership.relrowsecurity AND membership.relforcerowsecurity
               FROM pg_roles active_role
               CROSS JOIN pg_roles login_role
               CROSS JOIN pg_class draft
+              CROSS JOIN pg_class membership
               WHERE active_role.rolname=current_user AND login_role.rolname=session_user
                 AND draft.oid='programs.center_plan_draft_revisions'::regclass
+                AND membership.oid='centers.memberships'::regclass
             ), false)
             """, connection, transaction);
         return await command.ExecuteScalarAsync(cancellationToken) is true;
