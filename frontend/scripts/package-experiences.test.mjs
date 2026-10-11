@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
@@ -49,4 +49,11 @@ test('non-RTL document fails closed', () => {
 
 test('unknown experience is rejected', () => {
   withFixture(root => assert.throws(() => inventory(root, 'admin'), /unknown experience/));
+});
+
+test('manifest generation rejects symlink artifacts', () => {
+  withFixture(root => {
+    symlinkSync(resolve(root, 'dist', 'center', 'app.js'), resolve(root, 'dist', 'headquarters', 'linked.js'));
+    assert.throws(() => writeManifests(root), /symlink artifact is not allowed/);
+  });
 });
