@@ -1,0 +1,58 @@
+\set ON_ERROR_STOP on
+\ir ../migrations/0001_national_program_foundation.sql
+\ir ../migrations/0002_append_only_national_versions.sql
+\ir ../migrations/0003_center_registry.sql
+\ir ../migrations/0004_command_audit.sql
+\ir ../migrations/0005_transactional_outbox.sql
+\ir ../migrations/0006_center_scope_rls.sql
+
+-- A non-owner, non-BYPASSRLS role must be used for every RLS assertion.
+CREATE ROLE kanoonyar_scope_test NOLOGIN NOBYPASSRLS;
+GRANT USAGE ON SCHEMA programs, centers TO kanoonyar_scope_test;
+GRANT SELECT, INSERT ON programs.center_program_plans TO kanoonyar_scope_test;
+GRANT SELECT ON centers.memberships TO kanoonyar_scope_test;
+
+INSERT INTO centers.registry (center_id, display_name, is_active, registered_by_subject, registered_at)
+VALUES ('center-a', 'Center A', true, 'hq', now()), ('center-b', 'Center B', true, 'hq', now());
+INSERT INTO centers.memberships (center_id, subject_id, role_code, is_active, recorded_by_subject, recorded_at)
+VALUES ('center-a', 'subject-a', 'member', true, 'hq', now()),
+       ('center-b', 'subject-b', 'member', true, 'hq', now());
+INSERT INTO programs.national_program_versions
+(program_id, version, title, national_objectives, mandatory_requirements, created_by_subject, created_at)
+VALUES ('national-a', 1, 'National', '[]', '[]', 'hq', now());
+INSERT INTO programs.national_program_publications
+(program_id, version, publisher_subject, published_at)
+VALUES ('national-a', 1, 'hq', now());
+INSERT INTO programs.center_program_plans
+(center_id, plan_id, program_id, national_version, local_title, local_activities, created_by_subject, created_at)
+VALUES ('center-a', '00000000-0000-0000-0000-000000000001', 'national-a', 1, 'A', '[]', 'subject-a', now()),
+       ('center-b', '00000000-0000-0000-0000-000000000002', 'national-a', 1, 'B', '[]', 'subject-b', now());
+
+SET ROLE kanoonyar_scope_test;
+DO $test$
+BEGIN
+    IF (SELECT count(*) FROM programs.center_program_plans) <> 0 OR
+       (SELECT count(*) FROM centers.memberships) <> 0 THEN
+        RAISE EXCEPTION 'unset tenant scope leaked rows';
+    END IF;
+END;
+$test$;
+SET kanoonyar.center_id = 'center-a';
+DO $test$
+BEGIN
+    IF (SELECT count(*) FROM programs.center_program_plans) <> 1 OR
+       (SELECT count(*) FROM centers.memberships) <> 1 OR
+       EXISTS (SELECT 1 FROM programs.center_program_plans WHERE center_id <> 'center-a') THEN
+        RAISE EXCEPTION 'cross-center rows leaked';
+    END IF;
+    BEGIN
+        INSERT INTO programs.center_program_plans
+        (center_id, plan_id, program_id, national_version, local_title, local_activities, created_by_subject, created_at)
+        VALUES ('center-b', '00000000-0000-0000-0000-000000000003', 'national-a', 1, 'Forbidden', '[]', 'subject-a', now());
+        RAISE EXCEPTION 'cross-center insert was accepted';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+END;
+$test$;
+RESET kanoonyar.center_id;
+RESET ROLE;
