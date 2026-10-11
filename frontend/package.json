@@ -9,7 +9,9 @@
     "build:headquarters": "KANOONYAR_EXPERIENCE=headquarters vite build",
     "build:center": "KANOONYAR_EXPERIENCE=center vite build",
     "build:audience": "KANOONYAR_EXPERIENCE=audience vite build",
-    "test:experiences": "node scripts/check-experiences.mjs"
+    "test:experiences": "node scripts/check-experiences.mjs",
+    "preview:headquarters": "vite preview --outDir dist/headquarters --host 127.0.0.1 --port 4173",
+    "test:browser": "playwright test"
   },
   "dependencies": {
     "react": "19.2.0",
@@ -20,6 +22,7 @@
     "@types/react-dom": "19.2.2",
     "typescript": "5.9.3",
     "vite": "7.1.12",
-    "@types/node": "22.15.30"
+    "@types/node": "22.15.30",
+    "@playwright/test": "1.56.1"
   }
 }
