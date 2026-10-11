@@ -32,3 +32,7 @@ The code currently contains a minimal API project, not the proposed `Kanoonyar.s
 
 ## Decision
 Code Review is **not approved**. Fix findings in priority order, run exact-HEAD CI and repeat review. Do not merge, promote to Stage or claim Sprint acceptance.
+
+## Follow-up after e112b873
+- F02 partial evidence: both CI runs 38129063525 and 38129060520 passed the three-experience artifact/RTL checks. Build-output isolation is verified; independent app deployment is **not** verified. F02 remains open.
+- F03 detector characterization added at 819719e3 with positive and negative fixtures. This tests only the existing string detector, not real module dependency graph or database isolation. F03 remains open pending structural enforcement.
