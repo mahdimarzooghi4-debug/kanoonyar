@@ -95,3 +95,8 @@ Code Review is **not approved**. Fix findings in priority order, run exact-HEAD 
 - F02 build/deployment artifact subfinding is addressed: separate static document roots and per-experience file inventories now exist, with negative tests for missing bundles and unknown experience.
 - This does NOT establish separately hosted deployments, production origin/session security, or authenticated tenant access. F02 remains open for operational deployment verification, and F04 remains open for authenticated/domain tests.
 - Review remains NOT ACCEPTED; no Stage, Release or Production approval.
+
+## Static release manifest integrity follow-up
+- Exact-head a7f178e CI runs 38138361858 and 38138358528 both SUCCESS, including digest verification and negative fixtures for altered content, cross-experience manifest, path traversal and duplicate entries.
+- Release verification now also compares the full filesystem inventory with the manifest and rejects symbolic links; manifest generation itself rejects symlinks. New negative fixtures cover unlisted files and symlinks. These changes require exact-head CI validation.
+- These checks are not signed provenance or external deployment admission. F02 remains open for real hosted independent deployment and origin isolation.
