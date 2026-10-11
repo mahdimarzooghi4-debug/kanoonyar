@@ -42,3 +42,19 @@ Disposition: **technical safety foundation reviewed, not ready for an operationa
 enablement or rollout.** Automated review and CI do not constitute independent human approval.
 Do not mark Ready for Review, merge or deploy Stage/QA Gate/Release/Production without explicit
 owner direction. The final SHA/CI and preliminary review are recorded separately in the PR.
+
+
+## Signed JWT → actual ASP.NET HTTP → restricted PostgreSQL proof (additional Sprint 08 slice)
+- Explicitly set \`JwtBearerOptions.MapInboundClaims=false\` so the signed standard OIDC \`sub\`
+  claim survives into the authenticated principal used by draft handlers.
+- A local test-only RSA signing key and offline OpenID metadata configuration drive the
+  **real JwtBearer middleware and HTTP routing** in WebApplicationFactory tests.
+- Valid signature, verified \`sub\`, and rejection of unknown signer, incorrect issuer,
+  audience, expired token, missing subject, and admin-role-without-grant are tested.
+- The opt-in CI PostgreSQL job exercises signed JWT + HTTP + ASP.NET handler + actual
+  Npgsql connection via disposable restricted LOGIN role, revision concurrency,
+  cross-center/disabled memberships, and exact audit/outbox cardinality.
+- Test-only authorization doubles are installed only in the test hosting container to
+  exercise storage. **Production app remains default DENY for all draft reads/writes.**
+- The issuer/key metadata are offline CI fixtures, NOT an actual Keycloak integration.
+  Browser→real Keycloak→API→PostgreSQL proof and approved business grant policy remain blocked.
