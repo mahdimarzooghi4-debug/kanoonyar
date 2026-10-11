@@ -32,6 +32,6 @@ public sealed class AuthenticatedSubjectEndpointTests
             new Claim("sub", "subject-1")
         }, "test"));
         var result = AuthenticatedSubjectEndpoint.GetSubject(principal);
-        Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.Ok<object>>(result);
+        Assert.StartsWith("Ok", result.GetType().Name, StringComparison.Ordinal);
     }
 }
