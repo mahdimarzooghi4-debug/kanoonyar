@@ -72,6 +72,21 @@ BEGIN
     END;
 
     BEGIN
+        INSERT INTO centers.registry (center_id, display_name, registered_by_subject, registered_at)
+        VALUES ('center-inactive', 'Inactive', 'hq-actor', now());
+        IF (SELECT is_active FROM centers.registry WHERE center_id = 'center-inactive') THEN
+            RAISE EXCEPTION 'new centers must default inactive';
+        END IF;
+        INSERT INTO centers.memberships
+          (center_id, subject_id, role_code, recorded_by_subject, recorded_at)
+        VALUES ('center-inactive', 'actor', 'role', 'hq-actor', now());
+        IF (SELECT is_active FROM centers.memberships
+            WHERE center_id = 'center-inactive' AND subject_id = 'actor') THEN
+            RAISE EXCEPTION 'new memberships must default inactive';
+        END IF;
+    END;
+
+    BEGIN
         INSERT INTO centers.memberships
           (center_id, subject_id, role_code, is_active, recorded_by_subject, recorded_at)
         VALUES ('unknown-center', 'actor', 'role', true, 'hq-actor', now());
