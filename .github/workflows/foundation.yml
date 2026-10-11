@@ -52,6 +52,8 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/national_program_integrity.psql
           createdb kanoonyar_rls_ci
           PGDATABASE=kanoonyar_rls_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_rls_isolation.psql
+          createdb kanoonyar_atomic_ci
+          PGDATABASE=kanoonyar_atomic_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/atomic_local_plan_command.psql
   frontend:
     runs-on: ubuntu-latest
     permissions:
