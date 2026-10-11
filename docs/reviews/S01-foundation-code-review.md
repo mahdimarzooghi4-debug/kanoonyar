@@ -1,12 +1,13 @@
 # Sprint 01 — Foundation Code Review (first pass)
 Status: REVIEWED WITH OPEN FINDINGS — NOT ACCEPTED
+Follow-up: F01 RESOLVED on a064b47185319a149769bc439cd2308aca25e55f; CI 38126763262 and 38126760705 SUCCESS.
 Reviewed HEAD: c3619fb34dc1835549bd207ad23a844135048a83
 CI: 38123384134 SUCCESS; 38123382741 SUCCESS
 Scope: Backend skeleton, Frontend, AI skeleton, CI, architecture test and local instructions.
 
 ## Findings
-### F01 — High: frontend dependencies are not lockfile-reproducible
-The frontend CI uses `npm install` and no committed `package-lock.json` was observed in the authored package. Exact top-level version declarations do not lock transitive dependencies. Remedy: commit lockfile and use `npm ci` in CI; test exact-head build.
+### F01 — RESOLVED: frontend dependencies are lockfile-reproducible
+A generated `frontend/package-lock.json` is committed; CI uses `npm ci`. Both exact-head runs for a064b471 succeeded. Do not remove the lockfile or revert to `npm install`.
 
 ### F02 — Medium: three frontend experiences are build entries, not independent apps
 Vite multi-page inputs create three HTML entrypoints within one workspace and one build artifact. The root demo entry still exists. T06's three apps with shared packages is not fully realized. Remedy: define independent build/test commands and output isolation, or explicitly approve a shared multipage deployment architecture.
