@@ -37,7 +37,7 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
   }
   return <section aria-label="پیش‌نویس‌های ثبت‌شده" style={{ marginTop: '2rem' }}>
     <h2>آخرین نسخه پیش‌نویس‌های ثبت‌شده</h2>
-    <p>فقط خواندنی؛ عضویت نمایش‌داده‌شده به معنی مجوز ویرایش نیست.</p>
+    <p>مشاهده پیش‌نویس‌ها نیز به مجوز مستقل نیاز دارد؛ عضویت کانون به‌تنهایی مجوز مشاهده یا ویرایش نیست.</p>
     <label>انتخاب کانون <select aria-label="انتخاب کانون برای پیش‌نویس‌ها" value={selectedCenter}
       onChange={e => { readEpoch.current++; onCenterChange(e.target.value); setDrafts([]); setStatus('idle'); }}>
       <option value="">انتخاب کنید</option>

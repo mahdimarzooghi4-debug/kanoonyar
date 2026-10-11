@@ -5,11 +5,24 @@ using Npgsql;
 
 namespace Kanoonyar.Api.Programs;
 
-/// <summary>Authenticated read-only draft history. No membership-derived write authority.</summary>
+/// <summary>Independent, revocable read permission; membership alone must never grant draft access.</summary>
+public interface ILocalPlanDraftReadAuthorization
+{
+    ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal, string centerId, CancellationToken cancellationToken);
+}
+
+/// <summary>No approved read-operation grant contract exists: default is DENY, never membership-derived.</summary>
+public sealed class UnapprovedLocalPlanDraftReadAuthorization : ILocalPlanDraftReadAuthorization
+{
+    public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal, string centerId,
+        CancellationToken cancellationToken) => ValueTask.FromResult(false);
+}
+
+/// <summary>Authenticated draft read adapter; independent authorization precedes storage access.</summary>
 public static class LocalPlanDraftReadEndpoint
 {
     public static async Task<IResult> ListMine(ClaimsPrincipal user, IConfiguration configuration,
-        string centerId, CancellationToken cancellationToken)
+        ILocalPlanDraftReadAuthorization authorization, string centerId, CancellationToken cancellationToken)
     {
         if (user.Identity?.IsAuthenticated != true)
             return Results.Problem(statusCode: 401, title: "Authentication required");
@@ -18,6 +31,24 @@ public static class LocalPlanDraftReadEndpoint
             return Results.Problem(statusCode: 403, title: "Subject claim required");
         if (string.IsNullOrWhiteSpace(centerId))
             return Results.BadRequest();
+        // Both identity and center scope have to be independently authorized before accessing data.
+        // The persisted membership query below is additional evidence, never the grant itself.
+        bool allowed;
+        try
+        {
+            allowed = await authorization.IsAuthorizedAsync(user, centerId, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            allowed = false;
+        }
+        if (!allowed)
+            return Results.Problem(statusCode: 403, title: "Local draft read permission not granted");
+
         var connectionString = configuration["CENTER_DRAFT_READ_DATABASE_URL"];
         if (string.IsNullOrWhiteSpace(connectionString))
             return Results.Problem(statusCode: 503, title: "Draft storage unavailable");

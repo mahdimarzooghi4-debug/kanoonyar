@@ -8,6 +8,7 @@ builder.Services.AddProblemDetails();
 var oidcConfigured = builder.AddConfiguredOidc();
 
 builder.Services.AddSingleton<ILocalPlanDraftWriteAuthorization, UnapprovedLocalPlanDraftWriteAuthorization>();
+builder.Services.AddSingleton<ILocalPlanDraftReadAuthorization, UnapprovedLocalPlanDraftReadAuthorization>();
 
 var app = builder.Build();
 app.UseExceptionHandler();

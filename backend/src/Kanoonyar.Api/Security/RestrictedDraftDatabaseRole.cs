@@ -12,7 +12,14 @@ public static class RestrictedDraftDatabaseRole
             """
             SELECT COALESCE((
               SELECT NOT active_role.rolsuper AND NOT active_role.rolbypassrls
+                AND NOT active_role.rolcreaterole AND NOT active_role.rolcreatedb
+                AND NOT active_role.rolreplication
                 AND NOT login_role.rolsuper AND NOT login_role.rolbypassrls
+                AND NOT login_role.rolcreaterole AND NOT login_role.rolcreatedb
+                AND NOT login_role.rolreplication AND login_role.rolcanlogin
+                AND current_user=session_user
+                AND draft.relowner <> active_role.oid
+                AND membership.relowner <> active_role.oid
                 AND draft.relrowsecurity AND draft.relforcerowsecurity
                 AND membership.relrowsecurity AND membership.relforcerowsecurity
               FROM pg_roles active_role
