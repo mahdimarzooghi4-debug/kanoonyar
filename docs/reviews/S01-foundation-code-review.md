@@ -83,3 +83,9 @@ Code Review is **not approved**. Fix findings in priority order, run exact-HEAD 
 - New Python scanner checks tracked text files for selected private-key headers, GitHub tokens and AWS access-key identifiers, with positive and negative unit tests. It intentionally excludes its own pattern definitions. This is a limited tracked-file pattern gate, not historical secret scanning, entropy analysis, credential validity checking or a guarantee that the repository has no secrets.
 - F05 is partially remediated: immutable Action SHAs, frontend production/development audit, NuGet high-severity audit, Python installed-package audit and tracked-file pattern scan are now CI gates. Exact toolchain version pins, historical/entropy-based scanning and wider supply-chain policy remain open.
 - F02 independent deployments, F03 future module/runtime boundaries, F04 authenticated domain tests and F06 BuildingBlocks/module skeleton remain open. Sprint 01 Code Review is NOT accepted; PR stays Draft/Open.
+
+## BuildingBlocks foundation — pending exact-head validation
+- Added dependency-free `Kanoonyar.BuildingBlocks` to the .NET solution, with a strict nonblank `TenantId` value object and explicit documentation that it is NOT a trusted tenant resolver or authorization mechanism.
+- Added value-object tests and expanded project-graph negative fixtures; API may reference Contracts or BuildingBlocks, while BuildingBlocks and Contracts must not depend on each other or on API.
+- Previous exact-head 2aa2a65 CI runs 38136844948 and 38136841571 both SUCCESS. The subsequent architecture-test and documentation commits require their own exact-head CI.
+- F06 BuildingBlocks assembly subfinding is addressed; future bounded modules remain to be implemented and reviewed. F03 remains open for runtime and cross-module data-flow enforcement.
