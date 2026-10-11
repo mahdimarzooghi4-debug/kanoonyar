@@ -74,3 +74,34 @@ test('mocked server acknowledgments advance expected revision only after valid r
   await expect(page.getByRole('status').last()).toContainText('نسخه 2 توسط API ثبت شد');
   expect(expected).toEqual([0, 1]);
 });
+
+
+test('switching identity clears center and previously loaded private draft state', async ({ page }) => {
+  const draftId = '11111111-1111-4111-8111-111111111111';
+  await page.route('**/api/v1/centers/*/local-plan-drafts', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ drafts: [{ draftId, revision: 2, programId: 'p1', nationalVersion: 3,
+      localTitle: 'پرونده هویت قبل', localActivities: ['کارگاه'] }] })
+  }));
+  await start(page);
+  await page.getByRole('button', { name: 'دریافت پیش‌نویس‌های ثبت‌شده' }).click();
+  await page.getByRole('button', { name: 'ویرایش پیش‌نویس' }).click();
+  await expect(page.getByRole('textbox', { name: 'عنوان محلی p1' })).toHaveValue('پرونده هویت قبل');
+  await page.getByRole('textbox', { name: 'توکن دسترسی' }).fill('different-identity-token');
+  await expect(page.getByText('پرونده هویت قبل')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'ثبت برنامه اجرایی (نیازمند مجوز و اتصال امن)' })).toBeDisabled();
+});
+
+test('structured activities cannot be overwritten by string-only editor', async ({ page }) => {
+  await page.route('**/api/v1/centers/*/local-plan-drafts', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ drafts: [{ draftId: '11111111-1111-4111-8111-111111111111',
+      revision: 2, programId: 'p1', nationalVersion: 3,
+      localTitle: 'برنامه ساختاریافته', localActivities: [{ title: 'جزئیات' }] }] })
+  }));
+  await start(page);
+  await page.getByRole('button', { name: 'دریافت پیش‌نویس‌های ثبت‌شده' }).click();
+  await page.getByRole('button', { name: 'ویرایش پیش‌نویس' }).click();
+  await expect(page.getByRole('alert')).toContainText('فعالیت‌های غیرمتنی');
+  await expect(page.getByRole('button', { name: 'ثبت پیش‌نویس نسخه‌دار' })).toBeDisabled();
+});

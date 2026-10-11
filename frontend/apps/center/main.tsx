@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Shell } from '../../packages/ui/Shell';
 import { StoredDrafts } from './StoredDrafts';
@@ -50,22 +50,35 @@ function NationalProgramDiscovery({ token, centerId, editingDraft }: { token: st
 
 function CenterWorkspace() {
   const [token, setToken] = useState('');
+  const membershipRequestEpoch = useRef(0);
   const [selectedCenter, setSelectedCenter] = useState('');
   const [editingDraft, setEditingDraft] = useState<Draft | null>(null);
   const [state, setState] = useState<State>({ status: 'idle', memberships: [], message: '' });
+  function changeToken(next: string) {
+    membershipRequestEpoch.current++;
+    setToken(next);
+    setSelectedCenter('');
+    setEditingDraft(null);
+    setState({ status: 'idle', memberships: [], message: '' });
+  }
   async function loadMemberships() {
+    const requestEpoch = ++membershipRequestEpoch.current;
+    setSelectedCenter('');
+    setEditingDraft(null);
     if (!token.trim()) { setState({ status: 'error', memberships: [], message: 'توکن احراز هویت لازم است.' }); return; }
     setState({ status: 'loading', memberships: [], message: '' });
     try {
       const response = await fetch('/api/v1/identity/center-memberships', {
         headers: { Authorization: `Bearer ${token.trim()}` }, cache: 'no-store'
       });
+      if (requestEpoch !== membershipRequestEpoch.current) return;
       if (!response.ok) {
         const message = response.status === 401 ? 'نشست معتبر نیست.' : response.status === 403 ? 'شناسه کاربر معتبر نیست.' : 'دریافت عضویت‌ها ممکن نشد.';
         setState({ status: 'error', memberships: [], message });
         return;
       }
       const body: unknown = await response.json();
+      if (requestEpoch !== membershipRequestEpoch.current) return;
       if (!body || typeof body !== 'object' || !('memberships' in body) || !Array.isArray(body.memberships) ||
         !body.memberships.every((item: unknown) => item !== null && typeof item === 'object' &&
           'centerId' in item && typeof item.centerId === 'string' &&
@@ -73,6 +86,7 @@ function CenterWorkspace() {
           'roleCode' in item && typeof item.roleCode === 'string')) throw new Error('Invalid response');
       setState({ status: 'ready', memberships: body.memberships as Membership[], message: '' });
     } catch {
+      if (requestEpoch !== membershipRequestEpoch.current) return;
       setState({ status: 'error', memberships: [], message: 'ارتباط با سرویس برقرار نشد.' });
     }
   }
@@ -82,7 +96,7 @@ function CenterWorkspace() {
       <h2>عضویت‌های فعال من</h2>
       <p>این صفحه صرفاً عضویت‌های ثبت‌شده را نمایش می‌دهد و مجوز اجرای عملیات صادر نمی‌کند.</p>
       <label htmlFor="center-token">توکن دسترسی آزمایشی</label>
-      <input id="center-token" type="password" autoComplete="off" value={token} onChange={e => setToken(e.target.value)} aria-label="توکن دسترسی" />
+      <input id="center-token" type="password" autoComplete="off" value={token} onChange={e => changeToken(e.target.value)} aria-label="توکن دسترسی" />
       <button type="button" disabled={state.status === 'loading'} onClick={loadMemberships}>دریافت عضویت‌ها</button>
       {state.status === 'loading' && <p role="status">در حال دریافت…</p>}
       {state.status === 'error' && <p role="alert">{state.message}</p>}
