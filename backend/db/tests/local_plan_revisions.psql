@@ -89,3 +89,34 @@ END;
 $test$;
 
 RESET ROLE;
+
+-- Verify the same restricted role can see its own center, not just an empty result.
+SET ROLE kanoonyar_draft_rls_test;
+SELECT set_config('kanoonyar.center_id','center-a',false);
+DO $test$
+BEGIN
+  IF (SELECT count(*) FROM programs.center_plan_draft_revisions
+      WHERE center_id='center-a') <> 2 THEN
+    RAISE EXCEPTION 'Authorized center draft revisions must remain readable';
+  END IF;
+END;
+$test$;
+RESET ROLE;
+-- Verify RLS WITH CHECK denies cross-center INSERT for a restricted role even with table grants.
+GRANT INSERT ON programs.center_plan_draft_revisions TO kanoonyar_draft_rls_test;
+SET ROLE kanoonyar_draft_rls_test;
+SELECT set_config('kanoonyar.center_id','center-b',false);
+DO $test$
+BEGIN
+  BEGIN
+    INSERT INTO programs.center_plan_draft_revisions
+      (center_id,draft_id,revision,program_id,national_version,local_title,local_activities,actor_subject)
+    VALUES ('center-a','22222222-2222-4222-8222-222222222222',1,
+      'national-1',1,'Forbidden','[]','actor');
+    RAISE EXCEPTION 'Expected cross-center write rejection';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+END;
+$test$;
+RESET ROLE;
+REVOKE INSERT ON programs.center_plan_draft_revisions FROM kanoonyar_draft_rls_test;
