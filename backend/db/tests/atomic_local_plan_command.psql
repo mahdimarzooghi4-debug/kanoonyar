@@ -1,0 +1,65 @@
+\set ON_ERROR_STOP on
+\ir ../migrations/0001_national_program_foundation.sql
+\ir ../migrations/0002_append_only_national_versions.sql
+\ir ../migrations/0003_center_registry.sql
+\ir ../migrations/0004_command_audit.sql
+\ir ../migrations/0005_transactional_outbox.sql
+\ir ../migrations/0006_center_scope_rls.sql
+\ir ../migrations/0007_atomic_local_plan_command.sql
+
+INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
+VALUES ('center-a','A',true,'hq',now());
+INSERT INTO programs.national_program_versions
+(program_id,version,title,national_objectives,mandatory_requirements,created_by_subject,created_at)
+VALUES ('national-a',1,'National','[]','[]','hq',now()),
+       ('national-a',2,'National v2','[]','[]','hq',now());
+INSERT INTO programs.national_program_publications(program_id,version,publisher_subject,published_at)
+VALUES ('national-a',1,'hq',now());
+
+DO $test$
+BEGIN
+    PERFORM programs.create_local_plan_with_audit(
+      'center-a','00000000-0000-0000-0000-000000000001','national-a',1,'Local','[]',
+      'actor-a','10000000-0000-0000-0000-000000000001',
+      '20000000-0000-0000-0000-000000000001','correlation-a');
+
+    IF (SELECT count(*) FROM programs.center_program_plans) <> 1 OR
+       (SELECT count(*) FROM governance.command_audit) <> 1 OR
+       (SELECT count(*) FROM governance.outbox_events) <> 1 THEN
+        RAISE EXCEPTION 'atomic successful command did not write all three records';
+    END IF;
+
+    BEGIN
+        PERFORM programs.create_local_plan_with_audit(
+          'center-a','00000000-0000-0000-0000-000000000002','national-a',2,'Unpublished','[]',
+          'actor-a','10000000-0000-0000-0000-000000000002',
+          '20000000-0000-0000-0000-000000000002','correlation-b');
+        RAISE EXCEPTION 'unpublished command was accepted';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    BEGIN
+        PERFORM programs.create_local_plan_with_audit(
+          'center-a','00000000-0000-0000-0000-000000000003','national-a',1,'Duplicate audit','[]',
+          'actor-a','10000000-0000-0000-0000-000000000001',
+          '20000000-0000-0000-0000-000000000003','correlation-c');
+        RAISE EXCEPTION 'duplicate audit was accepted';
+    EXCEPTION WHEN unique_violation THEN NULL;
+    END;
+
+    BEGIN
+        PERFORM programs.create_local_plan_with_audit(
+          'center-a','00000000-0000-0000-0000-000000000004','national-a',1,'Duplicate event','[]',
+          'actor-a','10000000-0000-0000-0000-000000000004',
+          '20000000-0000-0000-0000-000000000001','correlation-d');
+        RAISE EXCEPTION 'duplicate event was accepted';
+    EXCEPTION WHEN unique_violation THEN NULL;
+    END;
+
+    IF (SELECT count(*) FROM programs.center_program_plans) <> 1 OR
+       (SELECT count(*) FROM governance.command_audit) <> 1 OR
+       (SELECT count(*) FROM governance.outbox_events) <> 1 THEN
+        RAISE EXCEPTION 'failed commands left partial business/audit/outbox writes';
+    END IF;
+END;
+$test$;
