@@ -8,7 +8,8 @@
     "build": "npm run build:headquarters && npm run build:center && npm run build:audience",
     "build:headquarters": "KANOONYAR_EXPERIENCE=headquarters vite build",
     "build:center": "KANOONYAR_EXPERIENCE=center vite build",
-    "build:audience": "KANOONYAR_EXPERIENCE=audience vite build"
+    "build:audience": "KANOONYAR_EXPERIENCE=audience vite build",
+    "test:experiences": "node scripts/check-experiences.mjs"
   },
   "dependencies": {
     "react": "19.2.0",
