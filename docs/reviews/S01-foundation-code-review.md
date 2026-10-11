@@ -45,3 +45,8 @@ Code Review is **not approved**. Fix findings in priority order, run exact-HEAD 
 - Exact-head CI 38129908312 and 38129905491: SUCCESS, including ASP.NET Core in-memory HTTP tests for `/health/live` and `/health/ready`.
 - F04 remains open for real browser/UI tests and future authenticated domain behavior; health endpoint HTTP coverage is verified.
 - Frontend artifact checks were strengthened at 286b876a to inspect React entrypoints, shared UI shell imports and isolated JavaScript bundles. These are static/build tests, not real browser rendering tests.
+
+## Browser CI acceptance evidence — 5d1d6f49
+- Exact-head runs 38131112923 and 38131109324: SUCCESS.
+- Frontend CI uses `npm ci`, builds three separate RTL bundles, and runs Chromium Playwright smoke tests against headquarters, center and audience previews. This closes the Foundation browser smoke subfinding of F04, not future domain-specific browser coverage.
+- F01 lockfile reproducibility remains verified by `npm ci`; F02 independent deployment and F03 complete dependency graph remain open. F04 broader authenticated/domain tests remain open. No Stage/Production evidence is claimed.
