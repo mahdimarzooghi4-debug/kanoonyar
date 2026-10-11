@@ -58,3 +58,24 @@ owner direction. The final SHA/CI and preliminary review are recorded separately
   exercise storage. **Production app remains default DENY for all draft reads/writes.**
 - The issuer/key metadata are offline CI fixtures, NOT an actual Keycloak integration.
   Browser→real Keycloak→API→PostgreSQL proof and approved business grant policy remain blocked.
+
+
+## Supplemental least-privilege read-login proof
+- Split disposable CI PostgreSQL logins into independent read-only
+  \`kanoonyar_draft_read_ci\` and test-only writer \`kanoonyar_draft_api_ci\`.
+- The read handler's database role guard rejects direct INSERT/UPDATE/DELETE on
+  sensitive tables, execute rights on the draft append function, ownership,
+  superuser/BYPASSRLS, and SET ROLE paths to privileged writer/owner roles.
+- Real PostgreSQL tests verify raw SQL INSERT denial, rejection of direct
+  command execution and SET ROLE, and refusal of writer-capable connections
+  mistakenly supplied to the read endpoint.
+- An additional synthetic role with no inherited writes but a SET ROLE path
+  to the writer must be rejected by the read guard. This tests transitive
+  escalation that checking only current_user can miss.
+- Corrected the guard to inspect catalog OIDs for governance tables so a
+  read-only login does **not** require governance schema USAGE merely to
+  evaluate denied privileges.
+- **Caveat:** SQL readers can still set a spoofable session GUC. These read
+  privileges exist only on a disposable CI database; they are **not** an
+  approved Production permission design. Both application-level operation
+  grants remain default DENY.

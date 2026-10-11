@@ -78,3 +78,25 @@ BEGIN
   END IF;
 END;
 $test$;
+
+
+-- Separate escalation fixture: current privileges are read-only, but SET ROLE
+-- would reach the writer. An API read connection must refuse this login.
+CREATE ROLE kanoonyar_draft_escalation_ci LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_draft_escalation_ci;
+GRANT USAGE ON SCHEMA programs,centers TO kanoonyar_draft_escalation_ci;
+GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_draft_escalation_ci;
+GRANT SELECT ON programs.center_plan_draft_revisions TO kanoonyar_draft_escalation_ci;
+GRANT kanoonyar_draft_api_ci TO kanoonyar_draft_escalation_ci
+  WITH INHERIT FALSE, SET TRUE;
+DO $test$
+BEGIN
+ IF NOT pg_has_role('kanoonyar_draft_escalation_ci',
+        'kanoonyar_draft_api_ci','SET') OR
+    has_table_privilege('kanoonyar_draft_escalation_ci',
+        'programs.center_plan_draft_revisions','INSERT') THEN
+   RAISE EXCEPTION 'Escalation test role must require SET ROLE';
+ END IF;
+END;
+$test$;

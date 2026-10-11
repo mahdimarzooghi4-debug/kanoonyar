@@ -38,6 +38,36 @@ public static class RestrictedDraftDatabaseRole
               OR pg_has_role(current_user,
                 (SELECT relowner FROM pg_class
                  WHERE oid='centers.memberships'::regclass), 'SET')
+              -- A safe-looking login can still become a writer through SET ROLE.
+              -- Check the complete effective SET graph, not merely the active role.
+              OR EXISTS (
+                SELECT 1 FROM pg_roles candidate
+                WHERE candidate.rolname <> current_user
+                  AND pg_has_role(current_user, candidate.oid, 'SET')
+                  AND (
+                    candidate.rolsuper OR candidate.rolbypassrls OR candidate.rolcreaterole
+                    OR candidate.rolcreatedb OR candidate.rolreplication
+                    OR candidate.oid=(SELECT relowner FROM pg_class
+                                      WHERE oid='programs.center_plan_draft_revisions'::regclass)
+                    OR candidate.oid=(SELECT relowner FROM pg_class
+                                      WHERE oid='centers.memberships'::regclass)
+                    OR has_table_privilege(candidate.oid,
+                         'programs.center_plan_draft_revisions'::regclass, 'INSERT')
+                    OR has_table_privilege(candidate.oid,
+                         'centers.memberships'::regclass, 'UPDATE')
+                    OR has_table_privilege(candidate.oid,
+                         (SELECT cls.oid FROM pg_class cls JOIN pg_namespace ns
+                          ON ns.oid=cls.relnamespace
+                          WHERE ns.nspname='governance' AND cls.relname='command_audit'), 'INSERT')
+                    OR has_table_privilege(candidate.oid,
+                         (SELECT cls.oid FROM pg_class cls JOIN pg_namespace ns
+                          ON ns.oid=cls.relnamespace
+                          WHERE ns.nspname='governance' AND cls.relname='outbox_events'), 'INSERT')
+                    OR has_function_privilege(candidate.oid,
+                         'programs.append_local_plan_draft_revision(text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)',
+                         'EXECUTE')
+                  )
+              )
             )
             """, connection, transaction);
         return await check.ExecuteScalarAsync(cancellationToken) is true;

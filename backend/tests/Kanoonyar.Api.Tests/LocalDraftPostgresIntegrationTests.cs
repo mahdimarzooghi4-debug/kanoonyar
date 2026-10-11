@@ -24,6 +24,8 @@ public sealed class LocalDraftPostgresIntegrationTests
         Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_READ_DATABASE_URL");
     private static string? AdminConnection =>
         Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_ADMIN_URL");
+    private static string? EscalationConnection =>
+        Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_ESCALATION_DATABASE_URL");
 
     private static bool Enabled()
     {
@@ -33,9 +35,11 @@ public sealed class LocalDraftPostgresIntegrationTests
             Assert.False(string.IsNullOrWhiteSpace(RuntimeConnection));
             Assert.False(string.IsNullOrWhiteSpace(ReadConnection));
             Assert.False(string.IsNullOrWhiteSpace(AdminConnection));
+            Assert.False(string.IsNullOrWhiteSpace(EscalationConnection));
         }
         return !string.IsNullOrWhiteSpace(RuntimeConnection) && !string.IsNullOrWhiteSpace(ReadConnection) &&
-            !string.IsNullOrWhiteSpace(AdminConnection);
+            !string.IsNullOrWhiteSpace(AdminConnection) &&
+            !string.IsNullOrWhiteSpace(EscalationConnection);
     }
 
     private static IConfiguration Configuration() =>
@@ -220,6 +224,19 @@ public sealed class LocalDraftPostgresIntegrationTests
             }).Build();
         var response = await LocalPlanDraftReadEndpoint.ListMine(
             Principal("actor-a"), configuration, TestReader, "center-a", CancellationToken.None);
+        Assert.Equal(503, Status(response));
+    }
+
+    [Fact]
+    public async Task Read_handler_refuses_login_that_can_set_role_to_writer()
+    {
+        if (!Enabled()) return;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> {
+                ["CENTER_DRAFT_READ_DATABASE_URL"] = EscalationConnection
+            }).Build();
+        var response = await LocalPlanDraftReadEndpoint.ListMine(
+            Principal("actor-a"), config, TestReader, "center-a", CancellationToken.None);
         Assert.Equal(503, Status(response));
     }
 

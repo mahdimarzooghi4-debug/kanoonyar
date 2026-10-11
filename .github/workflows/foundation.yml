@@ -70,6 +70,7 @@ jobs:
           CENTER_DRAFT_INTEGRATION_REQUIRED: '1'
           CENTER_DRAFT_INTEGRATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_draft_api_ci;Pooling=false
           CENTER_DRAFT_INTEGRATION_READ_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_draft_read_ci;Pooling=false
+          CENTER_DRAFT_INTEGRATION_ESCALATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_draft_escalation_ci;Pooling=false
           CENTER_DRAFT_INTEGRATION_ADMIN_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=postgres;Pooling=false
         run: |
           dotnet restore backend/Kanoonyar.slnx -p:NuGetAudit=true -p:NuGetAuditLevel=high -p:TreatWarningsAsErrors=true
