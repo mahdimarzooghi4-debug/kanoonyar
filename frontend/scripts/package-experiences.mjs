@@ -16,6 +16,9 @@ export function inventory(root, name) {
   assert.ok(experiences.includes(name), 'unknown experience');
   const dir = resolve(root, 'dist', name);
   assert.ok(existsSync(resolve(dir, 'index.html')), 'missing independently deployable index.html: ' + name);
+  const html = readFileSync(resolve(dir, 'index.html'), 'utf8');
+  assert.match(html, /lang=[\"']fa[\"']/i, 'missing Persian document language: ' + name);
+  assert.match(html, /dir=[\"']rtl[\"']/i, 'missing RTL document direction: ' + name);
   const files = filesUnder(dir).sort();
   assert.ok(files.some(file => file.endsWith('.js')), 'missing executable bundle: ' + name);
   return {
