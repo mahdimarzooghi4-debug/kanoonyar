@@ -144,6 +144,17 @@ public sealed class LocalDraftPostgresIntegrationTests
     }
 
     [Fact]
+    public async Task Privileged_database_read_connection_is_refused()
+    {
+        if (!Enabled()) return;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["CENTER_DRAFT_READ_DATABASE_URL"] = AdminConnection }).Build();
+        var response = await LocalPlanDraftReadEndpoint.ListMine(
+            Principal("actor-a"), config, TestReader, "center-a", CancellationToken.None);
+        Assert.Equal(503, Status(response));
+    }
+
+    [Fact]
     public async Task Privileged_database_connection_is_refused_before_any_command()
     {
         if (!Enabled()) return;

@@ -15,7 +15,7 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
 }) {
   const readEpoch = useRef(0);
   const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'denied' | 'error'>('idle');
   async function load() {
     if (!selectedCenter || !token.trim()) return;
     const epoch = ++readEpoch.current;
@@ -26,6 +26,7 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
         headers: { Authorization: 'Bearer ' + token.trim() }, cache: 'no-store'
       });
       if (epoch !== readEpoch.current) return;
+      if (response.status === 401 || response.status === 403) { setStatus('denied'); return; }
       if (!response.ok) throw new Error('Unavailable');
       const body: unknown = await response.json();
       if (epoch !== readEpoch.current) return;
@@ -46,6 +47,7 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
     </select></label>
     <button type="button" disabled={!selectedCenter || status === 'loading'} onClick={() => void load()}>دریافت پیش‌نویس‌های ثبت‌شده</button>
     {status === 'loading' && <p role="status">در حال دریافت پیش‌نویس‌ها…</p>}
+    {status === 'denied' && <p role="alert">مجوز مستقل مشاهده پیش‌نویس تأیید نشده است.</p>}
     {status === 'error' && <p role="alert">دریافت پیش‌نویس‌ها ممکن نشد.</p>}
     {status === 'ready' && (drafts.length === 0 ? <p role="status">پیش‌نویس ثبت‌شده‌ای وجود ندارد.</p> :
       <ul>{drafts.map(d => <li key={d.draftId}>
