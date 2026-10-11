@@ -1,0 +1,24 @@
+\set ON_ERROR_STOP on
+\ir ../migrations/0001_national_program_foundation.sql
+\ir ../migrations/0002_append_only_national_versions.sql
+\ir ../migrations/0003_center_registry.sql
+\ir ../migrations/0004_command_audit.sql
+\ir ../migrations/0005_transactional_outbox.sql
+\ir ../migrations/0006_center_scope_rls.sql
+\ir ../migrations/0007_atomic_local_plan_command.sql
+\ir ../migrations/0008_center_membership_read_boundary.sql
+\ir ../migrations/0009_center_membership_db_session_boundary.sql
+\ir ../migrations/0010_local_plan_revision_foundation.sql
+DO $test$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='programs' AND tablename='center_plan_draft_revisions' AND policyname='center_plan_draft_scope') THEN
+    RAISE EXCEPTION 'Center draft RLS policy missing';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='draft_revision_immutable' AND NOT tgisinternal) THEN
+    RAISE EXCEPTION 'Immutable revision trigger missing';
+  END IF;
+  IF has_table_privilege('public', 'programs.center_plan_draft_revisions', 'INSERT') THEN
+    RAISE EXCEPTION 'PUBLIC must not insert drafts';
+  END IF;
+END;
+$test$;
