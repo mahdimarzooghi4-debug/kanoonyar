@@ -3,7 +3,7 @@ permissions:
   contents: read
 on:
   push:
-    branches: [main, planning/sprint-01-foundation]
+    branches: [main, planning/sprint-01-foundation, sprint-02-center-membership-read-foundation]
   pull_request:
 jobs:
   backend:
@@ -54,6 +54,8 @@ jobs:
           PGDATABASE=kanoonyar_rls_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_rls_isolation.psql
           createdb kanoonyar_atomic_ci
           PGDATABASE=kanoonyar_atomic_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/atomic_local_plan_command.psql
+          createdb kanoonyar_membership_ci
+          PGDATABASE=kanoonyar_membership_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_membership_read.psql
   frontend:
     runs-on: ubuntu-latest
     permissions:
