@@ -118,7 +118,8 @@ $test$;
 CREATE ROLE kanoonyar_learning_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
  NOCREATEDB NOCREATEROLE NOREPLICATION;
 GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_learning_api_ci;
-GRANT USAGE ON SCHEMA learning,centers TO kanoonyar_learning_api_ci;
+-- Schema-only name resolution for catalog safety checks; NOT data access.
+GRANT USAGE ON SCHEMA learning,centers,programs TO kanoonyar_learning_api_ci;
 GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_learning_api_ci;
 GRANT EXECUTE ON FUNCTION learning.record_class_plan(text,uuid,text,text,uuid,uuid,text)
  TO kanoonyar_learning_api_ci;
