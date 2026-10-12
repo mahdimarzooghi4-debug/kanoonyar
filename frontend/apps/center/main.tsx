@@ -5,6 +5,45 @@ import { Shell } from '../../packages/ui/Shell';
 type Membership = { centerId: string; displayName: string; roleCode: string };
 type State = { status: 'idle' | 'loading' | 'ready' | 'error'; memberships: Membership[]; message: string };
 
+type NationalProgram = { programId: string; version: number; title: string; nationalObjectives: unknown[]; mandatoryRequirements: unknown[] };
+function validNationalProgram(item: unknown): item is NationalProgram {
+  if (!item || typeof item !== 'object') return false;
+  const p = item as Record<string, unknown>;
+  return typeof p.programId === 'string' && typeof p.title === 'string' &&
+    typeof p.version === 'number' && Number.isInteger(p.version) && p.version > 0 &&
+    Array.isArray(p.nationalObjectives) && Array.isArray(p.mandatoryRequirements);
+}
+function NationalProgramDiscovery() {
+  const [programs, setPrograms] = useState<NationalProgram[]>([]);
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  async function refresh() {
+    setStatus('loading');
+    setPrograms([]);
+    try {
+      const response = await fetch('/api/v1/programs/published', { cache: 'no-store' });
+      if (!response.ok) throw new Error('Unavailable');
+      const body: unknown = await response.json();
+      if (!body || typeof body !== 'object' || !('programs' in body) || !Array.isArray(body.programs) ||
+          !body.programs.every(validNationalProgram)) throw new Error('Invalid response');
+      setPrograms(body.programs);
+      setStatus('ready');
+    } catch { setStatus('error'); }
+  }
+  return <section aria-label="برنامه‌های ملی" style={{ marginTop: '2rem' }}>
+    <h2>برنامه‌های ملی منتشرشده</h2>
+    <p>اطلاعات فقط برای مطالعه است. طراحی و ثبت برنامه اجرایی محلی هنوز فعال نیست.</p>
+    <button type="button" disabled={status === 'loading'} onClick={() => void refresh()}>نمایش برنامه‌های ملی</button>
+    {status === 'loading' && <p role="status">در حال دریافت برنامه‌ها…</p>}
+    {status === 'error' && <p role="alert">دریافت برنامه‌های ملی ممکن نشد.</p>}
+    {status === 'ready' && (programs.length === 0 ? <p role="status">برنامه منتشرشده‌ای وجود ندارد.</p> :
+      <ul>{programs.map(p => <li key={`${p.programId}-${p.version}`}>
+        <h3>{p.title} — نسخه {p.version}</h3>
+        <strong>اهداف ملی</strong><ul>{p.nationalObjectives.map((item, i) => <li key={i}>{typeof item === 'string' ? item : JSON.stringify(item)}</li>)}</ul>
+        <strong>الزامات اجباری</strong><ul>{p.mandatoryRequirements.map((item, i) => <li key={i}>{typeof item === 'string' ? item : JSON.stringify(item)}</li>)}</ul>
+      </li>)}</ul>)}
+  </section>;
+}
+
 function CenterWorkspace() {
   const [token, setToken] = useState('');
   const [state, setState] = useState<State>({ status: 'idle', memberships: [], message: '' });
@@ -42,6 +81,7 @@ function CenterWorkspace() {
       {state.status === 'loading' && <p role="status">در حال دریافت…</p>}
       {state.status === 'error' && <p role="alert">{state.message}</p>}
       {state.status === 'ready' && (state.memberships.length ? <ul>{state.memberships.map((m, i) => <li key={`${m.centerId}-${m.roleCode}-${i}`}>{m.displayName} ({m.centerId}) — {m.roleCode}</li>)}</ul> : <p role="status">عضویت فعالی ثبت نشده است.</p>)}
+      <NationalProgramDiscovery />
     </main>
   </>;
 }
