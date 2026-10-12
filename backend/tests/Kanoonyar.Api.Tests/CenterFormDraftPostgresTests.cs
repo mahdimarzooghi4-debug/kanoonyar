@@ -45,7 +45,8 @@ public sealed class CenterFormDraftPostgresTests
  public async Task Full_form_draft_api_is_atomic_versioned_private_and_cross_center_safe()
  {
   if(!Enabled())return;
-  var formId=Guid.NewGuid(),different=Guid.NewGuid();
+  var formId=Guid.NewGuid();
+  var different=Guid.NewGuid();
   var grant=new Grant();
   Task<IResult> Append(Guid form,long expected,string slug,string title="Synthetic title",
    string actor="actor-a",string center="center-a",IConfiguration? config=null,
