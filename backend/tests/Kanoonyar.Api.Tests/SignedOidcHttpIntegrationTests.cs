@@ -400,6 +400,31 @@ public sealed class SignedOidcHttpIntegrationTests
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
     }
 
+    [Fact]
+    public async Task Signed_admin_role_cannot_configure_capacity_or_submit_registration_intent()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var server=fixture.Server();
+        using var client=server.CreateClient();
+        var cls=Guid.NewGuid();
+        foreach(var path in new[]{
+            $"/api/v1/centers/center-a/classes/{cls}/capacity-revisions",
+            $"/api/v1/centers/center-a/classes/{cls}/registration-intents"
+        })
+        {
+            using var request=Request(HttpMethod.Post,path,fixture.Token(roleClaim:true));
+            request.Content=JsonContent.Create(new {
+                expectedRevision=0,capacity=3,requestId=Guid.NewGuid(),applicantRef=Guid.NewGuid()
+            });
+            using var result=await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.Forbidden,result.StatusCode);
+        }
+        using var read=Request(HttpMethod.Get,
+            $"/api/v1/centers/center-a/classes/{cls}/intake",fixture.Token(roleClaim:true));
+        using var denied=await client.SendAsync(read);
+        Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+    }
+
     private sealed class TestOnlyReportReadGrant : ICenterActivityReportReadAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, string centerId,
