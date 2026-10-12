@@ -17,6 +17,26 @@ public sealed class OidcBoundaryTests
     }
 
     [Fact]
+    public async Task Membership_endpoint_fails_closed_when_oidc_is_not_configured()
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/api/v1/identity/center-memberships");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Configured_oidc_rejects_anonymous_membership_requests()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder => builder.UseSetting("OIDC_AUTHORITY", "https://identity.example.test/realms/kanoonyar")
+                .UseSetting("OIDC_AUDIENCE", "kanoonyar-api"));
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/api/v1/identity/center-memberships");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Configured_oidc_rejects_anonymous_identity_requests()
     {
         await using var factory = new WebApplicationFactory<Program>()

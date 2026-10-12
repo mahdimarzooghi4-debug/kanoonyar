@@ -1,0 +1,43 @@
+\set ON_ERROR_STOP on
+\ir ../migrations/0001_national_program_foundation.sql
+\ir ../migrations/0002_append_only_national_versions.sql
+\ir ../migrations/0003_center_registry.sql
+\ir ../migrations/0004_command_audit.sql
+\ir ../migrations/0005_transactional_outbox.sql
+\ir ../migrations/0006_center_scope_rls.sql
+\ir ../migrations/0007_atomic_local_plan_command.sql
+\ir ../migrations/0008_center_membership_read_boundary.sql
+\ir ../migrations/0009_center_membership_db_session_boundary.sql
+INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
+VALUES ('center-1','One',true,'admin',now()),('center-2','Two',false,'admin',now());
+INSERT INTO centers.memberships(center_id,subject_id,role_code,is_active,recorded_by_subject,recorded_at)
+VALUES ('center-1','subject-1','role-a',true,'admin',now()),
+('center-1','subject-2','role-b',true,'admin',now()),
+('center-1','subject-1','revoked',false,'admin',now()),
+('center-2','subject-1','role-c',true,'admin',now());
+DO $$ BEGIN
+ IF EXISTS(SELECT 1 FROM centers.list_current_session_memberships()) THEN
+  RAISE EXCEPTION 'Missing subject must return empty'; END IF;
+END $$;
+BEGIN;
+SELECT set_config('kanoonyar.authenticated_subject','subject-1',true);
+DO $$ BEGIN
+ IF (SELECT count(*) FROM centers.list_current_session_memberships()) <> 1 THEN
+  RAISE EXCEPTION 'Subject-1 must only see active membership in active center'; END IF;
+END $$;
+COMMIT;
+DO $$ BEGIN
+ IF EXISTS(SELECT 1 FROM centers.list_current_session_memberships()) THEN
+  RAISE EXCEPTION 'Transaction-local identity must not leak'; END IF;
+END $$;
+BEGIN;
+SELECT set_config('kanoonyar.authenticated_subject','subject-2',true);
+DO $$ BEGIN
+ IF (SELECT count(*) FROM centers.list_current_session_memberships()) <> 1 THEN
+  RAISE EXCEPTION 'Subject-2 membership read failed'; END IF;
+END $$;
+ROLLBACK;
+DO $$ BEGIN
+ IF has_function_privilege('public','centers.list_current_session_memberships()','EXECUTE') THEN
+  RAISE EXCEPTION 'PUBLIC execute must be revoked'; END IF;
+END $$;
