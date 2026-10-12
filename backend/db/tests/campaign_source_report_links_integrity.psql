@@ -1,0 +1,82 @@
+\set ON_ERROR_STOP on
+\ir sourced_activity_report_command_integrity.psql
+\ir ../migrations/0025_center_campaign_planning.sql
+\ir ../migrations/0026_campaign_source_report_links.sql
+INSERT INTO campaigns.center_campaigns(center_id,campaign_id,slug,draft_id,
+ pinned_plan_revision,created_by_subject)
+ VALUES('a','11111111-9999-4111-8111-999999999999','culture-month',
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',1,'actor-a');
+INSERT INTO campaigns.center_campaign_revisions(center_id,campaign_id,revision,
+ title,goal_text,audience_description,planned_activities,changed_by_subject)
+ VALUES('a','11111111-9999-4111-8111-999999999999',1,'Culture Month',
+  'Cultural activities','Neighborhood',
+ '[{"activityKey":"workshop","title":"Scheduled workshop"}]'::jsonb,'actor-a');
+CREATE ROLE kanoonyar_campaign_link_sql_ci NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT USAGE ON SCHEMA campaigns TO kanoonyar_campaign_link_sql_ci;
+GRANT EXECUTE ON FUNCTION campaigns.link_unverified_source_report(
+ text,uuid,uuid,bigint,text,uuid,text,uuid,uuid,text)
+ TO kanoonyar_campaign_link_sql_ci;
+SET ROLE kanoonyar_campaign_link_sql_ci;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $test$ DECLARE
+ c uuid:='11111111-9999-4111-8111-999999999999';
+ report uuid:='77777777-9999-4777-8777-000000000001';
+ assoc uuid:='11111111-9999-4111-8111-000000000001';
+BEGIN
+ IF campaigns.link_unverified_source_report('a',assoc,c,1,'workshop',report,
+  'actor-a',gen_random_uuid(),gen_random_uuid(),'s24')<>assoc
+ THEN RAISE EXCEPTION 'Valid association rejected'; END IF;
+ BEGIN
+  PERFORM campaigns.link_unverified_source_report('a',gen_random_uuid(),c,1,'workshop',report,
+   'actor-a',gen_random_uuid(),gen_random_uuid(),'duplicate');
+  RAISE EXCEPTION 'Duplicate original report association allowed';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+ BEGIN
+  PERFORM campaigns.link_unverified_source_report('a',gen_random_uuid(),c,1,'unknown',report,
+   'actor-a',gen_random_uuid(),gen_random_uuid(),'activity');
+  RAISE EXCEPTION 'Missing planned activity accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+  PERFORM campaigns.link_unverified_source_report('a',gen_random_uuid(),c,2,'workshop',report,
+   'actor-a',gen_random_uuid(),gen_random_uuid(),'revision');
+  RAISE EXCEPTION 'Unknown campaign revision accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+  PERFORM campaigns.link_unverified_source_report('a',gen_random_uuid(),c,1,'workshop',gen_random_uuid(),
+   'actor-a',gen_random_uuid(),gen_random_uuid(),'source');
+  RAISE EXCEPTION 'Missing source report accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+  PERFORM campaigns.link_unverified_source_report('a',gen_random_uuid(),c,1,'workshop',report,
+   'actor-b',gen_random_uuid(),gen_random_uuid(),'foreign');
+  RAISE EXCEPTION 'Foreign actor accepted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END;$test$;
+RESET ROLE;
+DO $check$ BEGIN
+ IF (SELECT count(*) FROM campaigns.campaign_report_links)<>1
+ OR (SELECT count(*) FROM programs.center_activity_reports)<2
+ OR (SELECT count(*) FROM governance.command_audit WHERE action_code=
+ 'UNVERIFIED_CAMPAIGN_REPORT_ASSOCIATION_RECORDED')<>1
+ OR (SELECT count(*) FROM governance.outbox_events WHERE event_type='UnverifiedCampaignReportLinked')<>1
+ OR has_table_privilege('kanoonyar_campaign_link_sql_ci','campaigns.campaign_report_links','INSERT')
+ OR pg_has_role('kanoonyar_campaign_link_sql_ci','kanoonyar_campaign_report_link_owner','SET')
+ OR has_function_privilege('public',
+  'campaigns.link_unverified_source_report(text,uuid,uuid,bigint,text,uuid,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Association atomicity/role violation'; END IF;
+ BEGIN
+  UPDATE campaigns.campaign_report_links SET activity_key='changed';
+  RAISE EXCEPTION 'Association history was updated';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+END;$check$;
+CREATE ROLE kanoonyar_campaign_link_reader_ci NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT USAGE ON SCHEMA campaigns TO kanoonyar_campaign_link_reader_ci;
+GRANT SELECT ON campaigns.campaign_report_links TO kanoonyar_campaign_link_reader_ci;
+SET ROLE kanoonyar_campaign_link_reader_ci;
+SELECT set_config('kanoonyar.center_id','b',false);
+DO $isolate$ BEGIN IF EXISTS(SELECT 1 FROM campaigns.campaign_report_links)
+ THEN RAISE EXCEPTION 'Foreign campaign association visible'; END IF; END;$isolate$;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $own$ BEGIN IF (SELECT count(*) FROM campaigns.campaign_report_links)<>1
+ THEN RAISE EXCEPTION 'Own report association invisible'; END IF; END;$own$;
+RESET ROLE;
