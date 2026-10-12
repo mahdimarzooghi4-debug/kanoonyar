@@ -10,6 +10,7 @@
 \ir ../migrations/0009_center_membership_db_session_boundary.sql
 \ir ../migrations/0010_local_plan_revision_foundation.sql
 \ir ../migrations/0011_local_plan_atomic_revision_command.sql
+\ir ../migrations/0012_restricted_draft_command_owner.sql
 DO $test$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='programs' AND tablename='center_plan_draft_revisions' AND policyname='center_plan_draft_scope') THEN
@@ -36,6 +37,8 @@ VALUES ('national-1',1,'National 1','[]','[]','hq',now());
 INSERT INTO programs.national_program_publications
 (program_id,version,publisher_subject,published_at)
 VALUES ('national-1',1,'hq',now());
+INSERT INTO centers.memberships(center_id,subject_id,role_code,is_active,recorded_by_subject,recorded_at)
+VALUES ('center-a','actor','integration-member',true,'fixture',now());
 SELECT set_config('kanoonyar.center_id','center-a',false);
 DO $test$
 DECLARE
@@ -124,15 +127,17 @@ REVOKE INSERT ON programs.center_plan_draft_revisions FROM kanoonyar_draft_rls_t
 
 -- Restricted role integration: grant only within disposable CI and verify accepted writes have
 -- exactly one revision + audit + outbox; a cross-center attempt cannot mutate any of them.
-GRANT USAGE ON SCHEMA governance TO kanoonyar_draft_rls_test;
-GRANT INSERT ON governance.command_audit, governance.outbox_events TO kanoonyar_draft_rls_test;
 GRANT EXECUTE ON FUNCTION programs.append_local_plan_draft_revision(text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)
   TO kanoonyar_draft_rls_test;
-GRANT INSERT ON programs.center_plan_draft_revisions TO kanoonyar_draft_rls_test;
 SET ROLE kanoonyar_draft_rls_test;
 SELECT set_config('kanoonyar.center_id','center-a',false);
 DO $test$
 BEGIN
+  IF has_table_privilege(current_user, 'programs.center_plan_draft_revisions','INSERT')
+      OR has_table_privilege(current_user, 'programs.center_plan_draft_revisions','UPDATE')
+      OR has_table_privilege(current_user, 'programs.center_plan_draft_revisions','DELETE') THEN
+    RAISE EXCEPTION 'Command caller has forbidden direct table writes';
+  END IF;
   IF (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname=current_user) THEN
     RAISE EXCEPTION 'Draft writer test must not bypass RLS';
   END IF;
@@ -177,6 +182,4 @@ END;
 $test$;
 REVOKE EXECUTE ON FUNCTION programs.append_local_plan_draft_revision(text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)
   FROM kanoonyar_draft_rls_test;
-REVOKE INSERT ON programs.center_plan_draft_revisions FROM kanoonyar_draft_rls_test;
-REVOKE INSERT ON governance.command_audit, governance.outbox_events FROM kanoonyar_draft_rls_test;
-REVOKE USAGE ON SCHEMA governance FROM kanoonyar_draft_rls_test;
+-- No INSERT privileges on operational tables were granted to the command caller.

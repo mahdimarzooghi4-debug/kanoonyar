@@ -11,6 +11,7 @@
 \ir ../migrations/0009_center_membership_db_session_boundary.sql
 \ir ../migrations/0010_local_plan_revision_foundation.sql
 \ir ../migrations/0011_local_plan_atomic_revision_command.sql
+\ir ../migrations/0012_restricted_draft_command_owner.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -29,10 +30,9 @@ VALUES ('national-1',1,'fixture',now());
 CREATE ROLE kanoonyar_draft_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
  NOCREATEDB NOCREATEROLE NOREPLICATION;
 GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_draft_api_ci;
-GRANT USAGE ON SCHEMA programs,centers,governance TO kanoonyar_draft_api_ci;
+GRANT USAGE ON SCHEMA programs,centers TO kanoonyar_draft_api_ci;
 GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_draft_api_ci;
-GRANT SELECT,INSERT ON programs.center_plan_draft_revisions TO kanoonyar_draft_api_ci;
-GRANT INSERT ON governance.command_audit,governance.outbox_events TO kanoonyar_draft_api_ci;
+
 GRANT EXECUTE ON FUNCTION programs.append_local_plan_draft_revision(
   text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text) TO kanoonyar_draft_api_ci;
 
@@ -44,6 +44,11 @@ BEGIN
   IF (SELECT rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb
       FROM pg_roles WHERE rolname='kanoonyar_draft_api_ci') THEN
     RAISE EXCEPTION 'Integration role may not have elevated privileges';
+  END IF;
+  IF has_table_privilege('kanoonyar_draft_api_ci','programs.center_plan_draft_revisions','INSERT')
+     OR has_table_privilege('kanoonyar_draft_api_ci','governance.command_audit','INSERT')
+     OR has_table_privilege('kanoonyar_draft_api_ci','governance.outbox_events','INSERT') THEN
+    RAISE EXCEPTION 'SQL command caller must not be able to bypass audit/outbox';
   END IF;
   IF has_function_privilege('public', 'programs.append_local_plan_draft_revision(
     text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)', 'EXECUTE') THEN
@@ -81,7 +86,7 @@ $test$;
 
 
 -- Separate escalation fixture: current privileges are read-only, but SET ROLE
--- would reach the writer. An API read connection must refuse this login.
+-- would reach the command-executing writer. An API read connection must refuse this login.
 CREATE ROLE kanoonyar_draft_escalation_ci LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS
  NOCREATEDB NOCREATEROLE NOREPLICATION;
 GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_draft_escalation_ci;
@@ -94,8 +99,8 @@ DO $test$
 BEGIN
  IF NOT pg_has_role('kanoonyar_draft_escalation_ci',
         'kanoonyar_draft_api_ci','SET') OR
-    has_table_privilege('kanoonyar_draft_escalation_ci',
-        'programs.center_plan_draft_revisions','INSERT') THEN
+    has_function_privilege('kanoonyar_draft_escalation_ci',
+        'programs.append_local_plan_draft_revision(text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)','EXECUTE') THEN
    RAISE EXCEPTION 'Escalation test role must require SET ROLE';
  END IF;
 END;

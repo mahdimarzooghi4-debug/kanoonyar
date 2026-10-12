@@ -67,7 +67,7 @@ public static class LocalPlanDraftWriteEndpoint
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken);
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-            if (!await RestrictedDraftDatabaseRole.VerifyAsync(connection, transaction, cancellationToken))
+            if (!await RestrictedDraftDatabaseRole.VerifyWriteCommandOnlyAsync(connection, transaction, cancellationToken))
                 return Results.Problem(statusCode: 503, title: "Unsafe draft database role");
 
             // Only AFTER independent authorization, set the scoped transaction variable. This is
