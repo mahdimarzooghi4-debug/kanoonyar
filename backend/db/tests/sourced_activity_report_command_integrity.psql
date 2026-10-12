@@ -46,11 +46,6 @@ BEGIN
    'CENTER_EVENT',event,'s17-evidence-2','Unverified event activity',
    NULL,'actor-a',gen_random_uuid(),gen_random_uuid(),'s17-event')<>two THEN
   RAISE EXCEPTION 'Event activity report failed'; END IF;
- IF (SELECT count(*) FROM programs.center_activity_reports WHERE report_id IN(one,two))<>2
-  OR (SELECT count(*) FROM programs.activity_report_source_bindings WHERE report_id IN(one,two))<>2
-  OR (SELECT count(*) FROM governance.command_audit WHERE target_id IN(one::text,two::text))<>2
-  OR (SELECT count(*) FROM governance.outbox_events WHERE aggregate_id IN(one::text,two::text))<>2 THEN
-  RAISE EXCEPTION 'Atomic report/binding/audit/outbox mismatch'; END IF;
 
  BEGIN
   PERFORM programs.record_center_sourced_activity_command('a',rejected,link,draft,
@@ -96,8 +91,23 @@ BEGIN
    gen_random_uuid(),gen_random_uuid(),'s17-replay');
   RAISE EXCEPTION 'Duplicate id accepted';
  EXCEPTION WHEN unique_violation THEN NULL; END;
- IF EXISTS(SELECT 1 FROM programs.center_activity_reports WHERE report_id=rejected)
-  OR EXISTS(SELECT 1 FROM programs.activity_report_source_bindings WHERE report_id=rejected) THEN
-  RAISE EXCEPTION 'Rejected command persisted partial source report'; END IF;
+
 END;$test$;
 RESET ROLE;
+
+-- Inspect all four atomic tables as the fixture administrator, NOT as the
+-- restricted command credential, which must not have report or audit SELECT.
+DO $verify$
+DECLARE one uuid:='77777777-9999-4777-8777-000000000001';
+        two uuid:='77777777-9999-4777-8777-000000000002';
+        rejected uuid:='77777777-9999-4777-8777-000000000003';
+BEGIN
+ IF (SELECT count(*) FROM programs.center_activity_reports WHERE report_id IN(one,two))<>2
+   OR (SELECT count(*) FROM programs.activity_report_source_bindings WHERE report_id IN(one,two))<>2
+   OR (SELECT count(*) FROM governance.command_audit WHERE target_id IN(one::text,two::text))<>2
+   OR (SELECT count(*) FROM governance.outbox_events WHERE aggregate_id IN(one::text,two::text))<>2
+ THEN RAISE EXCEPTION 'Atomic report/binding/audit/outbox mismatch'; END IF;
+ IF EXISTS(SELECT 1 FROM programs.center_activity_reports WHERE report_id=rejected)
+   OR EXISTS(SELECT 1 FROM programs.activity_report_source_bindings WHERE report_id=rejected)
+ THEN RAISE EXCEPTION 'Rejected command persisted partial source report'; END IF;
+END;$verify$;
