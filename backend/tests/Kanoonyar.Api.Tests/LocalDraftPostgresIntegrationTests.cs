@@ -760,10 +760,10 @@ public sealed class LocalDraftPostgresIntegrationTests
                          WHERE center_id='center-a' AND subject_id='actor-a' AND is_active)
                 """,diag,tx))
             {
-                await using var reader=await scope.ExecuteReaderAsync();
-                Assert.True(await reader.ReadAsync());
-                Assert.Equal("center-a",reader.GetString(0));
-                Assert.True(reader.GetBoolean(1));
+                await using var diagReader=await scope.ExecuteReaderAsync();
+                Assert.True(await diagReader.ReadAsync());
+                Assert.Equal("center-a",diagReader.GetString(0));
+                Assert.True(diagReader.GetBoolean(1));
             }
             await using(var command=new NpgsqlCommand(
                 """
