@@ -7,7 +7,7 @@
 -- cluster-scoped roles that must not be recreated by this separate database.
 SELECT set_config('kanoonyar.center_id','a',false);
 DO $fixture$ DECLARE
- cls uuid:='11111111-1111-4111-8111-000000000001';
+ cls uuid:='e1111111-1111-4111-8111-000000000901';
  req uuid:='99111111-1111-4111-8111-000000000001';
 BEGIN
  PERFORM learning.record_class_plan('a',cls,'S19 synthetic class','actor-a',
@@ -25,7 +25,7 @@ GRANT EXECUTE ON FUNCTION learning.request_registration_human_review(
 SET ROLE kanoonyar_review_ci;
 SELECT set_config('kanoonyar.center_id','a',false);
 DO $test$ DECLARE
- cls uuid:='11111111-1111-4111-8111-000000000001';
+ cls uuid:='e1111111-1111-4111-8111-000000000901';
  req uuid:='99111111-1111-4111-8111-000000000001';
  one uuid:='99111111-1111-4111-8111-000000000101';
  two uuid:='99111111-1111-4111-8111-000000000102';
