@@ -70,6 +70,37 @@ public static class RestrictedDraftDatabaseRole
               has_table_privilege(current_user, 'programs.center_plan_draft_revisions', 'INSERT')
               OR has_table_privilege(current_user, 'programs.center_plan_draft_revisions', 'UPDATE')
               OR has_table_privilege(current_user, 'programs.center_plan_draft_revisions', 'DELETE')
+              OR has_table_privilege(current_user,'learning.center_classes'::regclass,'INSERT')
+              OR has_table_privilege(current_user,'learning.center_classes'::regclass,'UPDATE')
+              OR has_table_privilege(current_user,'learning.center_classes'::regclass,'DELETE')
+              OR has_table_privilege(current_user,'learning.class_sessions'::regclass,'INSERT')
+              OR has_table_privilege(current_user,'learning.class_sessions'::regclass,'UPDATE')
+              OR has_table_privilege(current_user,'learning.class_sessions'::regclass,'DELETE')
+              OR has_table_privilege(current_user,'events.center_events'::regclass,'INSERT')
+              OR has_table_privilege(current_user,'events.center_events'::regclass,'UPDATE')
+              OR has_table_privilege(current_user,'events.center_events'::regclass,'DELETE')
+              OR has_table_privilege(current_user,
+                 'programs.activity_report_source_bindings'::regclass,'INSERT')
+              OR has_table_privilege(current_user,
+                 'programs.activity_report_source_bindings'::regclass,'UPDATE')
+              OR has_table_privilege(current_user,
+                 'programs.activity_report_source_bindings'::regclass,'DELETE')
+              OR has_function_privilege(current_user,
+                 'programs.record_center_sourced_activity_report(uuid,text,uuid,uuid,text,uuid,text,text,timestamptz,text,uuid,uuid,text)',
+                 'EXECUTE')
+              OR EXISTS(
+                 SELECT 1 FROM pg_roles candidate
+                 WHERE candidate.rolname<>current_user
+                   AND pg_has_role(current_user,candidate.oid,'SET')
+                   AND (
+                     has_table_privilege(candidate.oid,'learning.class_sessions'::regclass,'INSERT')
+                     OR has_table_privilege(candidate.oid,'events.center_events'::regclass,'INSERT')
+                     OR has_table_privilege(candidate.oid,'programs.activity_report_source_bindings'::regclass,'INSERT')
+                     OR has_function_privilege(candidate.oid,
+                       'programs.record_center_sourced_activity_report(uuid,text,uuid,uuid,text,uuid,text,text,timestamptz,text,uuid,uuid,text)',
+                       'EXECUTE')
+                   )
+              )
               OR has_table_privilege(current_user,
                    'programs.center_activity_reports'::regclass, 'INSERT')
               OR has_table_privilege(current_user,

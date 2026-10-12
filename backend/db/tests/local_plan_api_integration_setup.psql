@@ -15,6 +15,7 @@
 \ir ../migrations/0013_national_program_issuance_foundation.sql
 \ir ../migrations/0014_national_to_local_plan_trace.sql
 \ir ../migrations/0015_activity_report_evidence_lineage.sql
+\ir ../migrations/0016_learning_events_source_ownership.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -66,9 +67,11 @@ $test$;
 CREATE ROLE kanoonyar_draft_read_ci LOGIN NOSUPERUSER NOBYPASSRLS
  NOCREATEDB NOCREATEROLE NOREPLICATION;
 GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_draft_read_ci;
-GRANT USAGE ON SCHEMA programs,centers TO kanoonyar_draft_read_ci;
+GRANT USAGE ON SCHEMA programs,centers,learning,events TO kanoonyar_draft_read_ci;
 GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_draft_read_ci;
-GRANT SELECT ON programs.center_plan_draft_revisions,programs.center_plan_issuance_links,programs.center_activity_reports TO kanoonyar_draft_read_ci;
+GRANT SELECT ON programs.center_plan_draft_revisions,programs.center_plan_issuance_links,
+  programs.center_activity_reports,programs.activity_report_source_bindings TO kanoonyar_draft_read_ci;
+GRANT SELECT ON learning.center_classes,learning.class_sessions,events.center_events TO kanoonyar_draft_read_ci;
 DO $test$
 BEGIN
   IF has_table_privilege('kanoonyar_draft_read_ci',
