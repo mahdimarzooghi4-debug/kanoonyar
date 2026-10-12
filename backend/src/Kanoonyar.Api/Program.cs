@@ -20,6 +20,7 @@ if (oidcConfigured)
     app.MapGet("/api/v1/identity/center-memberships", CenterMembershipEndpoint.GetMine).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts", LocalPlanDraftReadEndpoint.ListMine).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts/{draftId:guid}/revisions", LocalPlanDraftHistoryEndpoint.ListHistory).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts/{draftId:guid}/execution-trace", CenterExecutionTraceEndpoint.GetTrace).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/local-plan-drafts/revisions", LocalPlanDraftWriteEndpoint.Append).RequireAuthorization();
 }
 else
@@ -31,6 +32,8 @@ else
     app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts/{draftId:guid}/revisions", () =>
+        Results.Problem(statusCode: 503, title: "OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts/{draftId:guid}/execution-trace", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/local-plan-drafts/revisions", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
