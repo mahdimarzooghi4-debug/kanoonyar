@@ -194,7 +194,8 @@ END;$guard$;
 CREATE ROLE kanoonyar_sourced_report_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
  NOCREATEDB NOCREATEROLE NOREPLICATION;
 GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_sourced_report_api_ci;
-GRANT USAGE ON SCHEMA programs,centers TO kanoonyar_sourced_report_api_ci;
+-- Name resolution for regclass guard only; no table read/write privileges.
+GRANT USAGE ON SCHEMA programs,centers,learning,events,governance TO kanoonyar_sourced_report_api_ci;
 GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_sourced_report_api_ci;
 GRANT EXECUTE ON FUNCTION programs.record_center_sourced_activity_command(
  text,uuid,uuid,uuid,text,uuid,text,text,timestamptz,text,uuid,uuid,text)
