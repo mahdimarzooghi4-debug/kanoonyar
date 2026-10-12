@@ -18,6 +18,7 @@
 \ir ../migrations/0016_learning_events_source_ownership.sql
 \ir ../migrations/0017_learning_planning_commands.sql
 \ir ../migrations/0018_session_occurrence_attendance_claims.sql
+\ir ../migrations/0019_sourced_activity_report_command.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -188,3 +189,26 @@ BEGIN
   RAISE EXCEPTION 'Session claim fixture has unsafe permissions';
  END IF;
 END;$guard$;
+
+-- CI ONLY: restricted typed-report command login, never a runtime grant.
+CREATE ROLE kanoonyar_sourced_report_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_sourced_report_api_ci;
+-- Name resolution for regclass guard only; no table read/write privileges.
+GRANT USAGE ON SCHEMA programs,centers,learning,events,governance TO kanoonyar_sourced_report_api_ci;
+GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_sourced_report_api_ci;
+GRANT EXECUTE ON FUNCTION programs.record_center_sourced_activity_command(
+ text,uuid,uuid,uuid,text,uuid,text,text,timestamptz,text,uuid,uuid,text)
+ TO kanoonyar_sourced_report_api_ci;
+DO $test$
+BEGIN
+ IF has_table_privilege('kanoonyar_sourced_report_api_ci','programs.center_activity_reports','INSERT')
+    OR has_table_privilege('kanoonyar_sourced_report_api_ci','programs.activity_report_source_bindings','INSERT')
+    OR has_table_privilege('kanoonyar_sourced_report_api_ci','governance.command_audit','INSERT')
+    OR has_function_privilege('kanoonyar_sourced_report_api_ci',
+      'programs.record_center_sourced_activity_report(uuid,text,uuid,uuid,text,uuid,text,text,timestamptz,text,uuid,uuid,text)','EXECUTE')
+    OR pg_has_role('kanoonyar_sourced_report_api_ci','kanoonyar_sourced_report_command_owner','SET')
+    OR has_function_privilege('kanoonyar_draft_read_ci',
+      'programs.record_center_sourced_activity_command(text,uuid,uuid,uuid,text,uuid,text,text,timestamptz,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Unsafe activity report SQL command grant'; END IF;
+END;$test$;

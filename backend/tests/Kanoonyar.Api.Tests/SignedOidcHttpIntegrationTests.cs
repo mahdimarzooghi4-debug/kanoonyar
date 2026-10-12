@@ -375,6 +375,31 @@ public sealed class SignedOidcHttpIntegrationTests
             Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
     }
 
+    [Fact]
+    public async Task Signed_role_claim_never_grants_sourced_activity_report_write()
+    {
+        using var fixture = new SignedJwtFixture();
+        await using var server = fixture.Server();
+        using var client = server.CreateClient();
+        const string route = "/api/v1/centers/center-a/activity-reports/sourced";
+        using (var anonymous = Request(HttpMethod.Post, route, null))
+        {
+            anonymous.Content = JsonContent.Create(new { });
+            using var response = await client.SendAsync(anonymous);
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+        using var request = Request(HttpMethod.Post, route, fixture.Token(roleClaim:true));
+        request.Content = JsonContent.Create(new {
+            reportId = Guid.NewGuid(), draftId = Guid.NewGuid(),
+            linkId = Guid.NewGuid(), sourceKind = "CLASS_SESSION",
+            sourceId = Guid.NewGuid(), evidenceRef = "synthetic-reference",
+            reportedSummary = "Unverified fixture activity",
+            claimedOccurredAt = (DateTimeOffset?)null
+        });
+        using var denied = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+    }
+
     private sealed class TestOnlyReportReadGrant : ICenterActivityReportReadAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, string centerId,
