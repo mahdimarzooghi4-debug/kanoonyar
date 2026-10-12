@@ -1,0 +1,92 @@
+\set ON_ERROR_STOP on
+\ir ../migrations/0001_national_program_foundation.sql
+\ir ../migrations/0002_append_only_national_versions.sql
+\ir ../migrations/0003_center_registry.sql
+\ir ../migrations/0004_command_audit.sql
+\ir ../migrations/0005_transactional_outbox.sql
+\ir ../migrations/0006_center_scope_rls.sql
+\ir ../migrations/0007_atomic_local_plan_command.sql
+\ir ../migrations/0008_center_membership_read_boundary.sql
+\ir ../migrations/0009_center_membership_db_session_boundary.sql
+\ir ../migrations/0010_local_plan_revision_foundation.sql
+\ir ../migrations/0022_center_site_page_drafts.sql
+\ir ../migrations/0023_center_site_design_drafts.sql
+\ir ../migrations/0024_center_form_builder_drafts.sql
+INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
+ VALUES('a','A',true,'fixture',now()),('b','B',true,'fixture',now());
+INSERT INTO centers.memberships(center_id,subject_id,role_code,is_active,recorded_by_subject,recorded_at)
+ VALUES('a','actor-a','fixture',true,'fixture',now()),('b','actor-b','fixture',true,'fixture',now());
+CREATE ROLE kanoonyar_s22_sql_ci NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT USAGE ON SCHEMA web TO kanoonyar_s22_sql_ci;
+GRANT EXECUTE ON FUNCTION web.append_center_form_draft(text,uuid,bigint,text,text,jsonb,text,uuid,uuid,text) TO kanoonyar_s22_sql_ci;
+SET ROLE kanoonyar_s22_sql_ci;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $test$ DECLARE
+ f uuid:='22222222-0000-4000-8000-000000000001';
+ valid jsonb:='[{"key":"topic","label":"Topic","kind":"SHORT_TEXT","required":true,"options":[]},{"key":"choice","label":"Choice","kind":"SINGLE_SELECT","required":false,"options":["First","Second"]}]'::jsonb;
+BEGIN
+ IF web.append_center_form_draft('a',f,0,'private-survey','Survey v1',valid,'actor-a',
+  gen_random_uuid(),gen_random_uuid(),'s22-first')<>1 THEN RAISE EXCEPTION 'Create failed'; END IF;
+ IF web.append_center_form_draft('a',f,1,'private-survey','Survey v2',valid,'actor-a',
+  gen_random_uuid(),gen_random_uuid(),'s22-second')<>2 THEN RAISE EXCEPTION 'Revision failed'; END IF;
+ BEGIN
+  PERFORM web.append_center_form_draft('a',f,1,'private-survey','Old',valid,'actor-a',
+   gen_random_uuid(),gen_random_uuid(),'stale');
+  RAISE EXCEPTION 'Stale form accepted';
+ EXCEPTION WHEN serialization_failure THEN NULL; END;
+ BEGIN
+  PERFORM web.append_center_form_draft('a',f,2,'new-slug','Bad',valid,'actor-a',
+   gen_random_uuid(),gen_random_uuid(),'slug');
+  RAISE EXCEPTION 'Immutable slug changed';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+  PERFORM web.append_center_form_draft('a',gen_random_uuid(),0,'private-survey','Duplicate',valid,
+   'actor-a',gen_random_uuid(),gen_random_uuid(),'dup');
+  RAISE EXCEPTION 'Duplicate slug accepted';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+ BEGIN
+  PERFORM web.append_center_form_draft('a',gen_random_uuid(),0,'bad-form','Bad',
+   '[{"key":"x","label":"X","kind":"SHORT_TEXT","required":true,"options":[]},{"key":"x","label":"Y","kind":"SHORT_TEXT","required":false,"options":[]}]'::jsonb,
+   'actor-a',gen_random_uuid(),gen_random_uuid(),'dup-key');
+  RAISE EXCEPTION 'Duplicate field keys accepted';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+ BEGIN
+  PERFORM web.append_center_form_draft('a',gen_random_uuid(),0,'unsafe-form','Bad',
+   '[{"key":"x","label":"X","kind":"CUSTOM_SCRIPT","required":false,"options":[]}]'::jsonb,
+   'actor-a',gen_random_uuid(),gen_random_uuid(),'script');
+  RAISE EXCEPTION 'Custom field execution accepted';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+ BEGIN
+  PERFORM web.append_center_form_draft('a',gen_random_uuid(),0,'cross-center','Bad',valid,'actor-b',
+   gen_random_uuid(),gen_random_uuid(),'cross');
+  RAISE EXCEPTION 'Foreign actor accepted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END;$test$;
+RESET ROLE;
+DO $verify$ BEGIN
+ IF (SELECT count(*) FROM web.center_forms)<>1
+  OR (SELECT count(*) FROM web.center_form_draft_revisions)<>2
+  OR (SELECT count(*) FROM governance.command_audit WHERE action_code='CENTER_FORM_DRAFT_REVISION_APPENDED')<>2
+  OR (SELECT count(*) FROM governance.outbox_events WHERE event_type='CenterFormDraftRevisionAppended')<>2
+  OR has_table_privilege('kanoonyar_s22_sql_ci','web.center_form_draft_revisions','INSERT')
+  OR pg_has_role('kanoonyar_s22_sql_ci','kanoonyar_form_draft_owner','SET')
+  OR has_function_privilege('public','web.append_center_form_draft(text,uuid,bigint,text,text,jsonb,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Form atomicity or grants failed'; END IF;
+ BEGIN
+  UPDATE web.center_form_draft_revisions SET title='tampered';
+  RAISE EXCEPTION 'Form revision altered';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+END;$verify$;
+CREATE ROLE kanoonyar_s22_reader_ci NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT USAGE ON SCHEMA web TO kanoonyar_s22_reader_ci;
+GRANT SELECT ON web.center_forms,web.center_form_draft_revisions TO kanoonyar_s22_reader_ci;
+SET ROLE kanoonyar_s22_reader_ci;
+SELECT set_config('kanoonyar.center_id','b',false);
+DO $isolate$ BEGIN
+ IF EXISTS(SELECT 1 FROM web.center_forms) OR EXISTS(SELECT 1 FROM web.center_form_draft_revisions)
+ THEN RAISE EXCEPTION 'Form metadata leaked across centers'; END IF;
+END;$isolate$;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $own$ BEGIN IF (SELECT count(*) FROM web.center_form_draft_revisions)<>2
+ THEN RAISE EXCEPTION 'Own form history inaccessible'; END IF; END;$own$;
+RESET ROLE;
