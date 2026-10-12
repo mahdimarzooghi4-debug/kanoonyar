@@ -334,6 +334,22 @@ public sealed class SignedOidcHttpIntegrationTests
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Signed_jwt_without_an_independent_grant_cannot_read_execution_trace()
+    {
+        using var fixture = new SignedJwtFixture();
+        await using var app = fixture.Server();
+        using var client = app.CreateClient();
+        var path = "/api/v1/centers/center-a/local-plan-drafts/" +
+            Guid.NewGuid().ToString("D") + "/execution-trace";
+        using (var anonymous = Request(HttpMethod.Get, path, null))
+        using (var result = await client.SendAsync(anonymous))
+            Assert.Equal(HttpStatusCode.Unauthorized, result.StatusCode);
+        using (var signed = Request(HttpMethod.Get, path, fixture.Token(roleClaim: true)))
+        using (var result = await client.SendAsync(signed))
+            Assert.Equal(HttpStatusCode.Forbidden, result.StatusCode);
+    }
+
     private sealed class TestOnlyWriteGrant : ILocalPlanDraftWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal, string centerId,

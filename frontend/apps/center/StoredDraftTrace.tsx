@@ -36,7 +36,8 @@ export function StoredDraftTrace({ token, centerId, draftId, onClose }: {
       if (response.status === 401 || response.status === 403) { setStatus('denied'); return; }
       if (!response.ok) throw new Error('Unavailable');
       const payload: unknown = await response.json();
-      if (current !== epoch.current || !payload || typeof payload !== 'object') return;
+      if (current !== epoch.current) return;
+      if (!payload || typeof payload !== 'object') throw new Error('Invalid response');
       const data = payload as Record<string, unknown>;
       if (data.draftId !== draftId ||
           (data.trace !== null && !isTrace(data.trace)))
