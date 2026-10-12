@@ -393,6 +393,99 @@ public sealed class LocalDraftPostgresIntegrationTests
         Assert.Equal(true, await command.ExecuteScalarAsync());
     }
 
+    [Fact]
+    public async Task Real_issuance_trace_preserves_original_revision_and_rejects_other_centers()
+    {
+        if (!Enabled()) return;
+        var draft = Guid.NewGuid();
+        var issuance = Guid.NewGuid();
+        var link = Guid.NewGuid();
+        Assert.Equal(200, Status(await Write(draft)));
+        await using (var db = new NpgsqlConnection(AdminConnection))
+        {
+            await db.OpenAsync();
+            await using (var issue = new NpgsqlCommand(
+                """
+                INSERT INTO programs.national_program_issuances
+                 (issuance_id,center_id,program_id,national_version,issued_by_subject,issued_at)
+                VALUES (@issuance,'center-a','national-1',1,'fixture',now())
+                """, db))
+            {
+                issue.Parameters.AddWithValue("issuance", issuance);
+                await issue.ExecuteNonQueryAsync();
+            }
+            await using (var record = new NpgsqlCommand(
+                """
+                SELECT programs.record_center_plan_issuance_link(
+                  @link,'center-a',@draft,1,@issuance,'national-1',1,'fixture',
+                  @audit,@event,'integration-trace')
+                """, db))
+            {
+                record.Parameters.AddWithValue("link", link);
+                record.Parameters.AddWithValue("draft", draft);
+                record.Parameters.AddWithValue("issuance", issuance);
+                record.Parameters.AddWithValue("audit", Guid.NewGuid());
+                record.Parameters.AddWithValue("event", Guid.NewGuid());
+                Assert.Equal(link, await record.ExecuteScalarAsync());
+            }
+        }
+
+        async Task<IResult> Trace(string actor, string center,
+            ILocalPlanDraftReadAuthorization? grant = null)
+            => await CenterExecutionTraceEndpoint.GetTrace(
+                Principal(actor), Configuration(), grant ?? TestReader, center, draft,
+                CancellationToken.None);
+        JsonElement Payload(IResult result)
+        {
+            Assert.Equal(200, Status(result));
+            using var json = JsonDocument.Parse(JsonSerializer.Serialize(
+                Assert.IsAssignableFrom<IValueHttpResult>(result).Value));
+            return json.RootElement.GetProperty("trace").Clone();
+        }
+        var first = Payload(await Trace("actor-a", "center-a"));
+        Assert.Equal(link, first.GetProperty("linkId").GetGuid());
+        Assert.Equal(issuance, first.GetProperty("issuanceId").GetGuid());
+        Assert.Equal(1, first.GetProperty("pinnedRevision").GetInt64());
+        Assert.Equal(1, first.GetProperty("latestRevision").GetInt64());
+        Assert.Equal(200, Status(await Write(draft, expectedRevision: 1)));
+        var updated = Payload(await Trace("actor-a", "center-a"));
+        Assert.Equal(1, updated.GetProperty("pinnedRevision").GetInt64());
+        Assert.Equal(2, updated.GetProperty("latestRevision").GetInt64());
+        Assert.Equal(JsonValueKind.Null, Payload(await Trace("actor-b", "center-a")).ValueKind);
+        Assert.Equal(JsonValueKind.Null, Payload(await Trace("actor-revoked", "center-a")).ValueKind);
+        Assert.Equal(JsonValueKind.Null, Payload(await Trace("actor-a", "center-b")).ValueKind);
+        Assert.Equal(403, Status(await Trace("actor-a", "center-a",
+            new UnapprovedLocalPlanDraftReadAuthorization())));
+        Assert.Equal((2L, 2L, 2L), await Counts(draft));
+        await using var admin = new NpgsqlConnection(AdminConnection);
+        await admin.OpenAsync();
+        await using var cardinality = new NpgsqlCommand(
+            """
+            SELECT (SELECT count(*) FROM governance.command_audit WHERE target_id=@id),
+                   (SELECT count(*) FROM governance.outbox_events WHERE aggregate_id=@id)
+            """, admin);
+        cardinality.Parameters.AddWithValue("id", link.ToString("D"));
+        await using var reader = await cardinality.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(1L, reader.GetInt64(0));
+        Assert.Equal(1L, reader.GetInt64(1));
+    }
+
+    [Fact]
+    public async Task Trace_refuses_a_privileged_or_command_capable_read_login()
+    {
+        if (!Enabled()) return;
+        foreach (var url in new[] { AdminConnection, RuntimeConnection, EscalationConnection })
+        {
+            var cfg = new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string,string?> { ["CENTER_DRAFT_READ_DATABASE_URL"] = url }).Build();
+            var result = await CenterExecutionTraceEndpoint.GetTrace(
+                Principal("actor-a"), cfg, TestReader, "center-a",
+                Guid.NewGuid(), CancellationToken.None);
+            Assert.Equal(503, Status(result));
+        }
+    }
+
     private sealed class TestOnlyWriteGrant : ILocalPlanDraftWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal, string centerId,

@@ -70,6 +70,12 @@ public static class RestrictedDraftDatabaseRole
               has_table_privilege(current_user, 'programs.center_plan_draft_revisions', 'INSERT')
               OR has_table_privilege(current_user, 'programs.center_plan_draft_revisions', 'UPDATE')
               OR has_table_privilege(current_user, 'programs.center_plan_draft_revisions', 'DELETE')
+              OR has_table_privilege(current_user,
+                   'programs.center_plan_issuance_links'::regclass, 'INSERT')
+              OR has_table_privilege(current_user,
+                   'programs.center_plan_issuance_links'::regclass, 'UPDATE')
+              OR has_table_privilege(current_user,
+                   'programs.center_plan_issuance_links'::regclass, 'DELETE')
               OR has_table_privilege(current_user, 'centers.memberships', 'INSERT')
               OR has_table_privilege(current_user, 'centers.memberships', 'UPDATE')
               OR has_table_privilege(current_user, 'centers.memberships', 'DELETE')
