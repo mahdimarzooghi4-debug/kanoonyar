@@ -1,0 +1,138 @@
+\set ON_ERROR_STOP on
+-- All identities and 80 centers below are SYNTHETIC in a disposable CI database.
+\ir ../migrations/0001_national_program_foundation.sql
+\ir ../migrations/0002_append_only_national_versions.sql
+\ir ../migrations/0003_center_registry.sql
+\ir ../migrations/0004_command_audit.sql
+\ir ../migrations/0005_transactional_outbox.sql
+\ir ../migrations/0013_national_program_issuance_foundation.sql
+
+INSERT INTO centers.registry(center_id, display_name, is_active, registered_by_subject, registered_at)
+SELECT 'synthetic-center-' || lpad(n::text,3,'0'),
+       'Synthetic center ' || n, false, 'fixture', now()
+FROM generate_series(1,80) AS n;
+INSERT INTO programs.national_program_versions(
+ program_id,version,title,national_objectives,mandatory_requirements,created_by_subject,created_at)
+VALUES ('national-a',1,'Version One','["goal-v1"]','["required-v1"]','fixture',now()),
+       ('national-a',2,'Version Two','["goal-v2"]','["required-v2"]','fixture',now()),
+       ('national-a',3,'Unpublished','[]','[]','fixture',now());
+INSERT INTO programs.national_program_publications(
+ program_id,version,publisher_subject,published_at)
+VALUES ('national-a',1,'fixture',now()),('national-a',2,'fixture',now());
+
+DO $test$
+DECLARE
+  id1 uuid := '11111111-1111-4111-8111-111111111111';
+  id2 uuid := '22222222-2222-4222-8222-222222222222';
+  id3 uuid := '33333333-3333-4333-8333-333333333333';
+  result uuid;
+BEGIN
+  IF (SELECT count(*) FROM centers.registry) <> 80 THEN
+    RAISE EXCEPTION 'Synthetic 80-center fixture missing';
+  END IF;
+  SELECT programs.record_national_program_issuance(id1,'synthetic-center-001',
+    'national-a',1,'fixture-actor',
+    'a1111111-1111-4111-8111-111111111111',
+    'b1111111-1111-4111-8111-111111111111','correlation-1') INTO result;
+  IF result <> id1 THEN RAISE EXCEPTION 'Issuance identity changed'; END IF;
+  PERFORM programs.record_national_program_issuance(id2,'synthetic-center-002',
+    'national-a',1,'fixture-actor',
+    'a2222222-2222-4222-8222-222222222222',
+    'b2222222-2222-4222-8222-222222222222','correlation-2');
+  PERFORM programs.record_national_program_issuance(id3,'synthetic-center-001',
+    'national-a',2,'fixture-actor',
+    'a3333333-3333-4333-8333-333333333333',
+    'b3333333-3333-4333-8333-333333333333','correlation-3');
+  IF (SELECT count(*) FROM programs.national_program_issuances) <> 3 OR
+     (SELECT count(*) FROM governance.command_audit
+       WHERE action_code='NATIONAL_PROGRAM_ISSUANCE_RECORDED') <> 3 OR
+     (SELECT count(*) FROM governance.outbox_events
+       WHERE event_type='NationalProgramIssuanceRecorded') <> 3 THEN
+    RAISE EXCEPTION 'Issuance / audit / outbox atomic lineage invalid';
+  END IF;
+  IF (SELECT national_version FROM programs.national_program_issuances
+       WHERE issuance_id=id1) <> 1 THEN
+    RAISE EXCEPTION 'Historical version binding was overwritten';
+  END IF;
+  BEGIN
+    PERFORM programs.record_national_program_issuance(
+      '44444444-4444-4444-8444-444444444444','synthetic-center-001',
+      'national-a',1,'fixture-actor',
+      'a4444444-4444-4444-8444-444444444444',
+      'b4444444-4444-4444-8444-444444444444','duplicate');
+    RAISE EXCEPTION 'Duplicate center/version was accepted';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    PERFORM programs.record_national_program_issuance(
+      '55555555-5555-4555-8555-555555555555','synthetic-center-003',
+      'national-a',3,'fixture-actor',
+      'a5555555-5555-4555-8555-555555555555',
+      'b5555555-5555-4555-8555-555555555555','unpublished');
+    RAISE EXCEPTION 'Unpublished version was issued';
+  EXCEPTION WHEN foreign_key_violation THEN NULL;
+  END;
+  BEGIN
+    PERFORM programs.record_national_program_issuance(
+      '66666666-6666-4666-8666-666666666666','missing-center',
+      'national-a',1,'fixture-actor',
+      'a6666666-6666-4666-8666-666666666666',
+      'b6666666-6666-4666-8666-666666666666','unknown');
+    RAISE EXCEPTION 'Unknown center was issued a program';
+  EXCEPTION WHEN foreign_key_violation THEN NULL;
+  END;
+  BEGIN
+    PERFORM programs.record_national_program_issuance(
+      '77777777-7777-4777-8777-777777777777','synthetic-center-003',
+      'national-a',1,'fixture-actor',
+      'a1111111-1111-4111-8111-111111111111',
+      'b7777777-7777-4777-8777-777777777777','duplicate-audit');
+    RAISE EXCEPTION 'Duplicate audit did not roll back issuance';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  IF EXISTS (SELECT 1 FROM programs.national_program_issuances
+             WHERE center_id='synthetic-center-003') THEN
+    RAISE EXCEPTION 'Failed audit left an orphan issuance';
+  END IF;
+  BEGIN
+    UPDATE programs.national_program_issuances SET national_version=2
+      WHERE issuance_id=id1;
+    RAISE EXCEPTION 'Immutable issuance was updated';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    DELETE FROM programs.national_program_issuances WHERE issuance_id=id1;
+    RAISE EXCEPTION 'Immutable issuance was deleted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  IF (SELECT count(*) FROM programs.national_program_issuances) <> 3 OR
+     (SELECT count(*) FROM governance.outbox_events
+       WHERE event_type='NationalProgramIssuanceRecorded') <> 3 THEN
+    RAISE EXCEPTION 'Rejected issuance mutated durable history';
+  END IF;
+  IF has_function_privilege('public',
+    'programs.record_national_program_issuance(uuid,text,text,integer,text,uuid,uuid,text)',
+    'EXECUTE') OR
+    has_table_privilege('public', 'programs.national_program_issuances','INSERT') THEN
+    RAISE EXCEPTION 'Public must never write issuance evidence';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_class WHERE oid='programs.national_program_issuances'::regclass
+      AND relrowsecurity AND relforcerowsecurity
+  ) THEN RAISE EXCEPTION 'Fail-closed RLS not enabled'; END IF;
+END;
+$test$;
+
+-- Negative SQL-role proof: even accidental SELECT grants do not reveal HQ issuance.
+CREATE ROLE kanoonyar_issuance_ci_reader NOLOGIN NOSUPERUSER NOBYPASSRLS;
+GRANT USAGE ON SCHEMA programs TO kanoonyar_issuance_ci_reader;
+GRANT SELECT ON programs.national_program_issuances TO kanoonyar_issuance_ci_reader;
+SET ROLE kanoonyar_issuance_ci_reader;
+DO $test$
+BEGIN
+ IF EXISTS(SELECT 1 FROM programs.national_program_issuances) THEN
+   RAISE EXCEPTION 'HQ issuance leaked through unapproved RLS policy';
+ END IF;
+END;
+$test$;
+RESET ROLE;
