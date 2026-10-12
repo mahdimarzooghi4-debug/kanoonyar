@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { SessionClaimReporter } from './SessionClaimReporter';
 
 type SourceKind = 'CLASS_SESSION' | 'CENTER_EVENT';
 type Source = {
@@ -23,17 +24,18 @@ export function StoredActivitySources({ token, centerId }: { token: string; cent
   const [kind, setKind] = useState<SourceKind>('CLASS_SESSION');
   const [items, setItems] = useState<Source[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
+  const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'denied' | 'error'>('idle');
   useEffect(() => {
     epoch.current++;
-    setItems([]); setCursor(null); setStatus('idle');
+    setItems([]); setCursor(null); setSelectedSession(null); setStatus('idle');
     return () => { epoch.current++; };
   }, [token, centerId]);
 
   async function load(source: SourceKind, before: string | null) {
     if (!centerId || !token.trim()) return;
     const current = ++epoch.current;
-    setKind(source); setStatus('loading');
+    setKind(source); setSelectedSession(null); setStatus('loading');
     if (source !== kind || before === null) { setItems([]); setCursor(null); }
     try {
       const type = source === 'CLASS_SESSION' ? 'class-sessions' : 'events';
@@ -85,6 +87,11 @@ export function StoredActivitySources({ token, centerId }: { token: string; cent
         <strong>{item.title}</strong>
         {kind === 'CLASS_SESSION' && <p>کلاس: {item.classTitle}</p>}
         <p>شناسه منبع: {item.sourceId}</p>
+        {kind === 'CLASS_SESSION' && <button type="button"
+          onClick={() => setSelectedSession(item.sourceId)}>گزارش وقوع و حضور جلسه</button>}
+        {kind === 'CLASS_SESSION' && selectedSession === item.sourceId &&
+          <SessionClaimReporter token={token} centerId={centerId} sessionId={item.sourceId}
+            onClose={() => setSelectedSession(null)} />}
         <p>زمان برنامه‌ریزی: {item.scheduledAt === null ? 'نامشخص' :
           new Date(item.scheduledAt).toLocaleString('fa-IR')}</p>
       </li>)}</ul>)}

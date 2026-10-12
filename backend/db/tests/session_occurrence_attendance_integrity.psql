@@ -1,0 +1,113 @@
+\set ON_ERROR_STOP on
+\ir learning_planning_commands_integrity.psql
+\ir ../migrations/0018_session_occurrence_attendance_claims.sql
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $test$
+DECLARE o uuid:='11111111-4444-4444-8444-111111111111';
+        s uuid:='bbbbbbbb-1111-4111-8111-000000000002';
+        c uuid:='22222222-4444-4444-8444-222222222222';
+BEGIN
+ IF learning.record_session_occurrence_claim(
+   'a',o,s,'Reported meeting','synthetic-evidence',NULL,NULL,'actor-a',
+   gen_random_uuid(),gen_random_uuid(),'occur-1')<>o THEN
+  RAISE EXCEPTION 'Occurrence was not stored';
+ END IF;
+ IF learning.record_session_attendance_claim(
+   'a',c,o,s,'synthetic-participant-1','REPORTED_PRESENT','actor-a',
+   gen_random_uuid(),gen_random_uuid(),'attend-1')<>c THEN
+  RAISE EXCEPTION 'Attendance assertion was not stored';
+ END IF;
+ PERFORM learning.record_session_attendance_claim(
+   'a',gen_random_uuid(),o,s,'synthetic-participant-2','REPORTED_ABSENT','actor-a',
+   gen_random_uuid(),gen_random_uuid(),'attend-2');
+ IF (SELECT count(*) FROM learning.session_occurrence_reports)<>1 OR
+    (SELECT count(*) FROM learning.session_attendance_claims)<>2 OR
+    (SELECT count(*) FROM governance.command_audit
+      WHERE action_code IN('SESSION_OCCURRENCE_CLAIM_RECORDED',
+                           'SESSION_ATTENDANCE_CLAIM_RECORDED'))<>3 OR
+    (SELECT count(*) FROM governance.outbox_events
+      WHERE event_type IN('SessionOccurrenceClaimRecorded',
+                          'SessionAttendanceClaimRecorded'))<>3 THEN
+  RAISE EXCEPTION 'Occurrence/attendance lineage audit count mismatch';
+ END IF;
+ IF EXISTS(SELECT 1 FROM learning.session_occurrence_reports WHERE
+   claimed_started_at IS NOT NULL OR claimed_ended_at IS NOT NULL) THEN
+  RAISE EXCEPTION 'Unknown time was inferred';
+ END IF;
+ BEGIN
+  PERFORM learning.record_session_occurrence_claim(
+   'a',gen_random_uuid(),'44444444-4444-4444-8444-000000000004',
+   'Other center session',NULL,NULL,NULL,'actor-a',
+   gen_random_uuid(),gen_random_uuid(),'cross-center');
+  RAISE EXCEPTION 'Cross-center occurrence accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+  PERFORM learning.record_session_attendance_claim(
+    'a',gen_random_uuid(),o,'44444444-4444-4444-8444-000000000004',
+    'synthetic-other-session','REPORTED_PRESENT','actor-a',
+    gen_random_uuid(),gen_random_uuid(),'bad-session');
+  RAISE EXCEPTION 'Wrong session attendance accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+  PERFORM learning.record_session_attendance_claim(
+    'a',gen_random_uuid(),o,s,'synthetic-participant-1',
+    'REPORTED_ABSENT','actor-a',gen_random_uuid(),gen_random_uuid(),'duplicate');
+  RAISE EXCEPTION 'Conflicting duplicate within report was accepted';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+ BEGIN
+  PERFORM learning.record_session_attendance_claim(
+    'a',gen_random_uuid(),o,s,'synthetic-participant-3',
+    'VERIFIED_PRESENT','actor-a',gen_random_uuid(),gen_random_uuid(),'fabricated');
+  RAISE EXCEPTION 'Unapproved attendance state accepted';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+ BEGIN
+  PERFORM learning.record_session_occurrence_claim(
+    'a','33333333-4444-4444-8444-333333333333',s,
+    'Forced rollback',NULL,NULL,NULL,'actor-a',
+    (SELECT audit_id FROM governance.command_audit WHERE target_id=o::text),
+    gen_random_uuid(),'audit-collision');
+  RAISE EXCEPTION 'Audit collision accepted';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+ IF EXISTS(SELECT 1 FROM learning.session_occurrence_reports
+   WHERE occurrence_report_id='33333333-4444-4444-8444-333333333333') THEN
+  RAISE EXCEPTION 'Failed audit left orphan occurrence'; END IF;
+ BEGIN
+  UPDATE learning.session_attendance_claims SET reported_presence='REPORTED_ABSENT';
+  RAISE EXCEPTION 'Attendance modified';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+  DELETE FROM learning.session_occurrence_reports;
+  RAISE EXCEPTION 'Occurrence deleted';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ IF has_function_privilege('public',
+   'learning.record_session_occurrence_claim(text,uuid,uuid,text,text,timestamptz,timestamptz,text,uuid,uuid,text)',
+   'EXECUTE') OR
+    has_function_privilege('public',
+   'learning.record_session_attendance_claim(text,uuid,uuid,uuid,text,text,text,uuid,uuid,text)',
+   'EXECUTE') THEN
+  RAISE EXCEPTION 'Public can write claimed delivery/attendance'; END IF;
+END;$test$;
+
+DO $role$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='kanoonyar_occurrence_reader_ci') THEN
+  CREATE ROLE kanoonyar_occurrence_reader_ci NOLOGIN NOSUPERUSER NOBYPASSRLS;
+ END IF;
+END;$role$;
+GRANT USAGE ON SCHEMA learning TO kanoonyar_occurrence_reader_ci;
+GRANT SELECT ON learning.session_occurrence_reports,learning.session_attendance_claims
+ TO kanoonyar_occurrence_reader_ci;
+SET ROLE kanoonyar_occurrence_reader_ci;
+SELECT set_config('kanoonyar.center_id','b',false);
+DO $test$ BEGIN
+ IF EXISTS(SELECT 1 FROM learning.session_occurrence_reports)
+    OR EXISTS(SELECT 1 FROM learning.session_attendance_claims) THEN
+  RAISE EXCEPTION 'Cross-center report leak'; END IF;
+END;$test$;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $test$ BEGIN
+ IF (SELECT count(*) FROM learning.session_occurrence_reports)<>1 OR
+    (SELECT count(*) FROM learning.session_attendance_claims)<>2 THEN
+  RAISE EXCEPTION 'Center-scoped read unexpectedly absent'; END IF;
+END;$test$;
+RESET ROLE;
