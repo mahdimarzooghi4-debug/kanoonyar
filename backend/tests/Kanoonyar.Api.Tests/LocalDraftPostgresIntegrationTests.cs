@@ -635,6 +635,104 @@ public sealed class LocalDraftPostgresIntegrationTests
             CancellationToken ct) => ValueTask.FromResult(true);
     }
 
+    [Fact]
+    public async Task Real_source_owner_tables_are_paginated_and_isolated_at_http_handler_boundary()
+    {
+        if (!Enabled()) return;
+        var centerClass = Guid.NewGuid();
+        var eventId = Guid.NewGuid();
+        var prefix = Guid.NewGuid().ToString("N")[..8];
+        var sessions = Enumerable.Range(1, 22).Select(i =>
+            Guid.Parse($"{prefix}-0000-4000-8000-{i:000000000000}")).ToArray();
+        await using (var db = new NpgsqlConnection(AdminConnection))
+        {
+            await db.OpenAsync();
+            await using (var createClass = new NpgsqlCommand(
+                """
+                INSERT INTO learning.center_classes(center_id,class_id,title)
+                VALUES('center-a',@id,'Source class from owner')
+                """,db))
+            {
+                createClass.Parameters.AddWithValue("id", centerClass);
+                await createClass.ExecuteNonQueryAsync();
+            }
+            for (int i=0;i<sessions.Length;i++)
+            {
+                await using var createSession = new NpgsqlCommand(
+                    """
+                    INSERT INTO learning.class_sessions(
+                      center_id,session_id,class_id,session_title,scheduled_at)
+                    VALUES('center-a',@id,@class,@title,NULL)
+                    """,db);
+                createSession.Parameters.AddWithValue("id", sessions[i]);
+                createSession.Parameters.AddWithValue("class", centerClass);
+                createSession.Parameters.AddWithValue("title", $"Synthetic session {i+1}");
+                await createSession.ExecuteNonQueryAsync();
+            }
+            await using var createEvent = new NpgsqlCommand(
+                """
+                INSERT INTO events.center_events(center_id,event_id,event_title,scheduled_at)
+                VALUES('center-a',@id,'Source event from owner',NULL)
+                """,db);
+            createEvent.Parameters.AddWithValue("id", eventId);
+            await createEvent.ExecuteNonQueryAsync();
+        }
+
+        async Task<IResult> ReadSources(string kind, string actor="actor-a",
+            string center="center-a", Guid? before=null,
+            ICenterSourceCatalogReadAuthorization? grant=null, IConfiguration? config=null)
+            => await CenterSourceCatalogEndpoint.ListSources(
+                Principal(actor),config ?? Configuration(),grant ?? new TestSourceGrant(),
+                center,kind,before,CancellationToken.None);
+        (JsonElement Rows, Guid? Next) Page(IResult result,string kind)
+        {
+            Assert.Equal(200,Status(result));
+            using var doc=JsonDocument.Parse(JsonSerializer.Serialize(
+                Assert.IsAssignableFrom<IValueHttpResult>(result).Value));
+            Assert.Equal(kind,doc.RootElement.GetProperty("sourceKind").GetString());
+            var next=doc.RootElement.GetProperty("nextBeforeSourceId");
+            return (doc.RootElement.GetProperty("records").Clone(),
+                next.ValueKind==JsonValueKind.Null ? null : next.GetGuid());
+        }
+        var first=Page(await ReadSources("class-sessions"),"CLASS_SESSION");
+        Assert.Equal(20,first.Rows.GetArrayLength());
+        Assert.Equal(sessions[21],first.Rows[0].GetProperty("sourceId").GetGuid());
+        Assert.Equal(sessions[2],first.Next);
+        Assert.All(first.Rows.EnumerateArray(),row=> {
+            Assert.Equal(centerClass,row.GetProperty("classId").GetGuid());
+            Assert.Equal(JsonValueKind.Null,row.GetProperty("scheduledAt").ValueKind);
+        });
+        var second=Page(await ReadSources("class-sessions",before:first.Next),"CLASS_SESSION");
+        Assert.Equal(2,second.Rows.GetArrayLength());
+        Assert.Equal(sessions[1],second.Rows[0].GetProperty("sourceId").GetGuid());
+        Assert.Equal(sessions[0],second.Rows[1].GetProperty("sourceId").GetGuid());
+        Assert.Null(second.Next);
+        var events=Page(await ReadSources("events"),"CENTER_EVENT");
+        Assert.Single(events.Rows.EnumerateArray());
+        Assert.Equal(eventId,events.Rows[0].GetProperty("sourceId").GetGuid());
+        Assert.Equal(JsonValueKind.Null,events.Rows[0].GetProperty("classId").ValueKind);
+        Assert.Empty(Page(await ReadSources("events",actor:"actor-revoked"),"CENTER_EVENT").Rows.EnumerateArray());
+        Assert.Empty(Page(await ReadSources("class-sessions",actor:"actor-b"),"CLASS_SESSION").Rows.EnumerateArray());
+        Assert.Empty(Page(await ReadSources("events",center:"center-b"),"CENTER_EVENT").Rows.EnumerateArray());
+        Assert.Equal(403,Status(await ReadSources("events",grant:new UnapprovedCenterSourceCatalogReadAuthorization())));
+        Assert.Equal(400,Status(await ReadSources("not-registered")));
+        Assert.Equal(400,Status(await ReadSources("events",before:Guid.Empty)));
+        foreach(var unsafeDb in new []{AdminConnection,RuntimeConnection,EscalationConnection})
+        {
+            var config=new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string,string?> {
+                    ["CENTER_DRAFT_READ_DATABASE_URL"]=unsafeDb
+                }).Build();
+            Assert.Equal(503,Status(await ReadSources("events",config:config)));
+        }
+    }
+
+    private sealed class TestSourceGrant : ICenterSourceCatalogReadAuthorization
+    {
+        public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal, string centerId,
+            CancellationToken ct) => ValueTask.FromResult(true);
+    }
+
     private sealed class TestOnlyWriteGrant : ILocalPlanDraftWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal, string centerId,

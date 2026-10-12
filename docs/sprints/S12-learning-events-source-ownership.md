@@ -1,27 +1,29 @@
-# Sprint 12 — Learning / Events source-owned planning and report binding
+# Sprint 12 — Learning/Events Source Ownership and Source Catalog
 
-## Technical scope
-- KY-LMS-01/02 and KY-EVT-01 structural foundations: independent learning
-  class + class session IDs, and independent event IDs, all center-scoped.
-- Session/event planned schedule may be unknown (NULL); no invented dates,
-  capacity, payment, enrollment, attendance or execution lifecycle.
-- Initial records are immutable until a versioned scheduling contract is designed.
-- Typed report-source binding strictly matches report's center, exact source_kind
-  and canonical UUID source reference against an actual source-owner row.
-- Existing opaque unverified reports remain untouched and are NOT retrospectively
-  inferred to come from classes or events.
-- New atomic sourced-report command calls original report/audit/outbox command,
-  then inserts the exact source-owner binding in one transaction. A broken
-  reference rolls back every write. All reports remain UNVERIFIED.
-- PostgreSQL enforces composite FKs, source type/ref consistency, immutability
-  and RLS; function/public table grants remain DENY.
-- Test fixture uses real disposable PostgreSQL data for same-center, cross-center,
-  missing source, unsupported kind, duplicate report, rollback and RLS.
+## Implemented
+- Independent center-owned Learning classes and scheduled sessions and Events
+  records. Unknown schedule remains NULL; no invented attendance or delivery.
+- Typed, immutable report-source bindings use exact center and canonical UUID
+  with an atomic report/audit/outbox transaction. Unsupported, missing, or
+  cross-center sources fail with no durable partial report/binding.
+- GET /api/v1/centers/{centerId}/activity-sources/{sourceKind} supports the
+  hard-coded kinds class-sessions/events, 20-row exclusive UUID keyset paging,
+  class title lineage and nullable planned schedule.
+- Endpoint requires signed subject, independent source-catalog operation grant,
+  restricted SQL read login, scoped FORCE RLS, and live active same-center membership.
+  The **actual** production authorization implementation always returns DENY.
+- Frontend center workspace shows owner records with explicit 'planned only'
+  semantics. Denied requests, malformed payload, center switch and source type
+  changes do not retain protected stale content.
+- Disposable PostgreSQL proves owner/source FK identity, cross-center isolation,
+  rollback, RLS, 22+ report baseline. Restricted Npgsql handler test proves
+  22 sessions -> 20+2 pages, one event, revoked/cross-center non-disclosure.
+- Signed RSA test JWT and Chromium cases exercise route denial and UI behavior.
 
-## Explicitly not implemented
-- Neither an event record nor a class session schedule proves delivery.
-- No class attendance, enrollment, session-delivered event, verified outcomes,
-  source completion, external evidence validation, real runtime source writer
-  or publication/activation permission is provided.
-- Operation grants and real authentication remain separate and default DENY.
-- No Stage, QA Gate, Release, Production or merges under Draft PR rules.
+## No fabricated operations
+- A scheduled class session is NOT an actual delivered session; an event record
+  is NOT a performed event; the report with typed source stays UNVERIFIED.
+- No source creation HTTP mutations, registration, attendance, participant
+  records, evidence confirmation, approval or operational grants are enabled.
+- No real Keycloak/Production credential trust, Stage, QA, release or deploy.
+- All original stacked PRs remain Draft/Open/unmerged.

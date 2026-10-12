@@ -374,6 +374,24 @@ public sealed class SignedOidcHttpIntegrationTests
             CancellationToken ct) => ValueTask.FromResult(true);
     }
 
+    [Fact]
+    public async Task Signed_jwt_role_claim_cannot_grant_owner_catalog_read()
+    {
+        using var fixture = new SignedJwtFixture();
+        await using var app = fixture.Server();
+        using var client = app.CreateClient();
+        foreach (var kind in new []{"events","class-sessions"})
+        {
+            var path = "/api/v1/centers/center-a/activity-sources/" + kind;
+            using (var anonymous = Request(HttpMethod.Get,path,null))
+            using (var denied = await client.SendAsync(anonymous))
+                Assert.Equal(HttpStatusCode.Unauthorized,denied.StatusCode);
+            using (var signed = Request(HttpMethod.Get,path,fixture.Token(roleClaim:true)))
+            using (var denied = await client.SendAsync(signed))
+                Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        }
+    }
+
     private sealed class TestOnlyWriteGrant : ILocalPlanDraftWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal, string centerId,
