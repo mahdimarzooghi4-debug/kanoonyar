@@ -152,7 +152,7 @@ public sealed class CenterCampaignReportLinkPostgresTests
    Assert.False(rows[0].GetProperty("isExecuted").GetBoolean());
   }
   Assert.Equal(404,Status(await List(center:"center-b",actor:"actor-b")));
-  Assert.Equal(403,Status(await List(center:"center-b")));
+  Assert.Equal(404,Status(await List(center:"center-b")));
   Assert.Equal(403,Status(await List(actor:"actor-revoked")));
   Assert.Equal(503,Status(await List(config:Config(read:Admin))));
   Assert.Equal(503,Status(await List(config:Config(read:Write))));
