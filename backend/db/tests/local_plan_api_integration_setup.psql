@@ -19,6 +19,7 @@
 \ir ../migrations/0017_learning_planning_commands.sql
 \ir ../migrations/0018_session_occurrence_attendance_claims.sql
 \ir ../migrations/0019_sourced_activity_report_command.sql
+\ir ../migrations/0020_class_capacity_intake.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -76,6 +77,7 @@ GRANT SELECT ON programs.center_plan_draft_revisions,programs.center_plan_issuan
   programs.center_activity_reports,programs.activity_report_source_bindings TO kanoonyar_draft_read_ci;
 GRANT SELECT ON learning.center_classes,learning.class_sessions,events.center_events TO kanoonyar_draft_read_ci;
 GRANT SELECT ON learning.session_occurrence_reports,learning.session_attendance_claims TO kanoonyar_draft_read_ci;
+GRANT SELECT ON learning.class_capacity_revisions,learning.class_registration_intents TO kanoonyar_draft_read_ci;
 DO $test$
 BEGIN
   IF has_table_privilege('kanoonyar_draft_read_ci',
@@ -212,3 +214,24 @@ BEGIN
       'programs.record_center_sourced_activity_command(text,uuid,uuid,uuid,text,uuid,text,text,timestamptz,text,uuid,uuid,text)','EXECUTE')
  THEN RAISE EXCEPTION 'Unsafe activity report SQL command grant'; END IF;
 END;$test$;
+
+-- Disposable integration login; never Production authorization.
+CREATE ROLE kanoonyar_class_intake_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_class_intake_api_ci;
+-- Schema lookup for the privilege guard only; no direct data read/write.
+GRANT USAGE ON SCHEMA programs,learning,centers,events,governance TO kanoonyar_class_intake_api_ci;
+GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_class_intake_api_ci;
+GRANT EXECUTE ON FUNCTION learning.append_class_capacity_revision(text,uuid,bigint,integer,text,uuid,uuid,text)
+ TO kanoonyar_class_intake_api_ci;
+GRANT EXECUTE ON FUNCTION learning.record_class_registration_intent(text,uuid,uuid,uuid,text,uuid,uuid,text)
+ TO kanoonyar_class_intake_api_ci;
+DO $guard$ BEGIN
+ IF has_table_privilege('kanoonyar_class_intake_api_ci','learning.class_capacity_revisions','INSERT')
+ OR has_table_privilege('kanoonyar_class_intake_api_ci','learning.class_registration_intents','INSERT')
+ OR has_table_privilege('kanoonyar_class_intake_api_ci','governance.command_audit','INSERT')
+ OR pg_has_role('kanoonyar_class_intake_api_ci','kanoonyar_capacity_intake_owner','SET')
+ OR has_function_privilege('kanoonyar_draft_read_ci',
+   'learning.record_class_registration_intent(text,uuid,uuid,uuid,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Unsafe intake fixture privilege'; END IF;
+END;$guard$;

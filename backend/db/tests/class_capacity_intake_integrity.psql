@@ -1,0 +1,65 @@
+\set ON_ERROR_STOP on
+\ir session_occurrence_attendance_integrity.psql
+\ir ../migrations/0019_sourced_activity_report_command.sql
+\ir ../migrations/0020_class_capacity_intake.sql
+-- Test-only command login is NOLOGIN role used with SET ROLE by fixture administrator.
+CREATE ROLE kanoonyar_capacity_intake_test NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT USAGE ON SCHEMA learning,centers TO kanoonyar_capacity_intake_test;
+GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_capacity_intake_test;
+GRANT EXECUTE ON FUNCTION learning.append_class_capacity_revision(text,uuid,bigint,integer,text,uuid,uuid,text)
+ TO kanoonyar_capacity_intake_test;
+GRANT EXECUTE ON FUNCTION learning.record_class_registration_intent(text,uuid,uuid,uuid,text,uuid,uuid,text)
+ TO kanoonyar_capacity_intake_test;
+SET ROLE kanoonyar_capacity_intake_test;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $test$ DECLARE
+ cls uuid:='11111111-1111-4111-8111-000000000001';
+ req uuid:='99111111-1111-4111-8111-000000000001';
+ who uuid:='99222222-2222-4222-8222-000000000002';
+BEGIN
+ IF learning.append_class_capacity_revision('a',cls,0,1,'actor-a',gen_random_uuid(),gen_random_uuid(),'cap-1')<>1
+ THEN RAISE EXCEPTION 'Initial capacity failed'; END IF;
+ IF learning.append_class_capacity_revision('a',cls,1,2,'actor-a',gen_random_uuid(),gen_random_uuid(),'cap-2')<>2
+ THEN RAISE EXCEPTION 'Revision failed'; END IF;
+ IF learning.record_class_registration_intent('a',req,cls,who,'actor-a',
+   gen_random_uuid(),gen_random_uuid(),'request-1')<>2
+ THEN RAISE EXCEPTION 'Did not pin latest capacity'; END IF;
+ BEGIN
+   PERFORM learning.append_class_capacity_revision('a',cls,0,5,'actor-a',
+      gen_random_uuid(),gen_random_uuid(),'stale');
+   RAISE EXCEPTION 'Stale update accepted';
+ EXCEPTION WHEN serialization_failure THEN NULL; END;
+ BEGIN
+   PERFORM learning.record_class_registration_intent('a',gen_random_uuid(),cls,who,'actor-a',
+      gen_random_uuid(),gen_random_uuid(),'duplicate');
+   RAISE EXCEPTION 'Duplicate class applicant accepted';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+ BEGIN
+   PERFORM learning.record_class_registration_intent('a',gen_random_uuid(),cls,gen_random_uuid(),
+     'actor-b',gen_random_uuid(),gen_random_uuid(),'other-center');
+   RAISE EXCEPTION 'Cross-center actor accepted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ BEGIN
+   PERFORM learning.record_class_registration_intent('a',gen_random_uuid(),gen_random_uuid(),
+      gen_random_uuid(),'actor-a',gen_random_uuid(),gen_random_uuid(),'no-class');
+   RAISE EXCEPTION 'Unconfigured class accepted';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+END;$test$;
+RESET ROLE;
+DO $verify$ BEGIN
+ IF (SELECT count(*) FROM learning.class_capacity_revisions
+    WHERE center_id='a' AND class_id='11111111-1111-4111-8111-000000000001')<>2
+ OR (SELECT count(*) FROM learning.class_registration_intents
+    WHERE center_id='a' AND class_id='11111111-1111-4111-8111-000000000001')<>1
+ OR (SELECT count(*) FROM governance.command_audit WHERE
+    action_code IN('CLASS_CAPACITY_REVISION_APPENDED','CLASS_REGISTRATION_INTENT_REQUESTED'))<>3
+ OR (SELECT count(*) FROM governance.outbox_events WHERE
+    event_type IN('ClassCapacityRevisionAppended','ClassRegistrationIntentRequested'))<>3
+ OR EXISTS(SELECT 1 FROM learning.class_registration_intents WHERE state<>'REQUESTED')
+ THEN RAISE EXCEPTION 'Capacity/intake/audit atomic consistency failed'; END IF;
+ IF has_table_privilege('kanoonyar_capacity_intake_test','learning.class_registration_intents','INSERT')
+ OR pg_has_role('kanoonyar_capacity_intake_test','kanoonyar_capacity_intake_owner','SET')
+ OR has_function_privilege('public',
+  'learning.record_class_registration_intent(text,uuid,uuid,uuid,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Unsafe role privileges'; END IF;
+END;$verify$;

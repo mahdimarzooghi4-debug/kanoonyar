@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { SessionClaimReporter } from './SessionClaimReporter';
+import { ClassCapacityIntake } from './ClassCapacityIntake';
 
 type SourceKind = 'CLASS_SESSION' | 'CENTER_EVENT';
 type Source = {
@@ -25,17 +26,18 @@ export function StoredActivitySources({ token, centerId }: { token: string; cent
   const [items, setItems] = useState<Source[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
+  const [selectedClass, setSelectedClass] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'denied' | 'error'>('idle');
   useEffect(() => {
     epoch.current++;
-    setItems([]); setCursor(null); setSelectedSession(null); setStatus('idle');
+    setItems([]); setCursor(null); setSelectedSession(null); setSelectedClass(null); setStatus('idle');
     return () => { epoch.current++; };
   }, [token, centerId]);
 
   async function load(source: SourceKind, before: string | null) {
     if (!centerId || !token.trim()) return;
     const current = ++epoch.current;
-    setKind(source); setSelectedSession(null); setStatus('loading');
+    setKind(source); setSelectedSession(null); setSelectedClass(null); setStatus('loading');
     if (source !== kind || before === null) { setItems([]); setCursor(null); }
     try {
       const type = source === 'CLASS_SESSION' ? 'class-sessions' : 'events';
@@ -89,6 +91,13 @@ export function StoredActivitySources({ token, centerId }: { token: string; cent
         <p>شناسه منبع: {item.sourceId}</p>
         {kind === 'CLASS_SESSION' && <button type="button"
           onClick={() => setSelectedSession(item.sourceId)}>گزارش وقوع و حضور جلسه</button>}
+        {kind === 'CLASS_SESSION' && item.classId && <button type="button"
+          onClick={() => setSelectedClass(item.classId)}>ظرفیت و درخواست‌های کلاس</button>}
+        {kind === 'CLASS_SESSION' && item.classId && selectedClass === item.classId &&
+          items.find(entry => entry.classId === item.classId)?.sourceId === item.sourceId &&
+          <ClassCapacityIntake key={item.classId} centerId={centerId}
+            classId={item.classId} token={token} onClose={() => setSelectedClass(null)} />}
+
         {kind === 'CLASS_SESSION' && selectedSession === item.sourceId &&
           <SessionClaimReporter token={token} centerId={centerId} sessionId={item.sourceId}
             onClose={() => setSelectedSession(null)} />}
