@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { CenterActivityReportComposer } from './CenterActivityReportComposer';
 
 type Trace = {
   linkId: string; issuanceId: string; pinnedRevision: number; latestRevision: number;
@@ -61,6 +62,8 @@ export function StoredDraftTrace({ token, centerId, draftId, onClose }: {
         <p>ابلاغ: {trace.issuanceId}</p>
         <p>نسخه اولیه متصل: {trace.pinnedRevision} — آخرین نسخه طرح: {trace.latestRevision}</p>
         <p>عنوان طرح: {trace.localTitle}</p>
+        <CenterActivityReportComposer key={centerId+':'+draftId+':'+trace.linkId}
+          centerId={centerId} draftId={draftId} linkId={trace.linkId} token={token} />
         <strong>فعالیت‌های برنامه‌ریزی‌شده، نه اجرای قطعی</strong>
         <ul>{trace.plannedActivities.map((item, i) =>
           <li key={i}>{typeof item === 'string' ? item : JSON.stringify(item)}</li>)}</ul>

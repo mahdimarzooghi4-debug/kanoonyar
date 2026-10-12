@@ -75,11 +75,14 @@ jobs:
           PGDATABASE=kanoonyar_learning_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/learning_planning_commands_integrity.psql
           createdb kanoonyar_occurrence_ci
           PGDATABASE=kanoonyar_occurrence_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/session_occurrence_attendance_integrity.psql
+          createdb kanoonyar_source_command_ci
+          PGDATABASE=kanoonyar_source_command_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/sourced_activity_report_command_integrity.psql
           createdb kanoonyar_draft_api_ci
           PGDATABASE=kanoonyar_draft_api_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/local_plan_api_integration_setup.psql
       - name: Real restricted PostgreSQL to API-handler integration
         env:
           CENTER_DRAFT_INTEGRATION_REQUIRED: '1'
+          CENTER_ACTIVITY_REPORT_INTEGRATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_sourced_report_api_ci;Pooling=false
           CENTER_LEARNING_INTEGRATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_learning_api_ci;Pooling=false
           CENTER_DRAFT_INTEGRATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_draft_api_ci;Pooling=false
           CENTER_DRAFT_INTEGRATION_READ_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_draft_read_ci;Pooling=false

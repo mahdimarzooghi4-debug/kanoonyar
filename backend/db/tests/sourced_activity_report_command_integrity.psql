@@ -1,0 +1,103 @@
+\set ON_ERROR_STOP on
+\ir session_occurrence_attendance_integrity.psql
+\ir ../migrations/0019_sourced_activity_report_command.sql
+
+-- Isolated fixture (not a Production credential). Its only write capability is EXECUTE.
+CREATE ROLE kanoonyar_sourced_report_test_role NOLOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT USAGE ON SCHEMA programs,centers TO kanoonyar_sourced_report_test_role;
+GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_sourced_report_test_role;
+GRANT EXECUTE ON FUNCTION programs.record_center_sourced_activity_command(
+ text,uuid,uuid,uuid,text,uuid,text,text,timestamptz,text,uuid,uuid,text)
+ TO kanoonyar_sourced_report_test_role;
+DO $guard$
+BEGIN
+ IF has_table_privilege('kanoonyar_sourced_report_test_role',
+      'programs.center_activity_reports','INSERT')
+   OR has_table_privilege('kanoonyar_sourced_report_test_role',
+      'programs.activity_report_source_bindings','INSERT')
+   OR has_table_privilege('kanoonyar_sourced_report_test_role',
+      'governance.command_audit','INSERT')
+   OR pg_has_role('kanoonyar_sourced_report_test_role',
+      'kanoonyar_sourced_report_command_owner','SET')
+   OR has_function_privilege('public',
+      'programs.record_center_sourced_activity_command(text,uuid,uuid,uuid,text,uuid,text,text,timestamptz,text,uuid,uuid,text)','EXECUTE') THEN
+  RAISE EXCEPTION 'Unrestricted sourced report grant'; END IF;
+END;$guard$;
+
+SET ROLE kanoonyar_sourced_report_test_role;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $test$
+DECLARE
+  link uuid:='99999999-9999-4999-8999-999999999999';
+  draft uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  session uuid:='33333333-3333-4333-8333-000000000003';
+  event uuid:='55555555-5555-4555-8555-000000000005';
+  one uuid:='77777777-9999-4777-8777-000000000001';
+  two uuid:='77777777-9999-4777-8777-000000000002';
+  rejected uuid:='77777777-9999-4777-8777-000000000003';
+  audit uuid:='77777777-9999-4777-8777-000000000010';
+BEGIN
+ IF programs.record_center_sourced_activity_command('a',one,link,draft,
+   'CLASS_SESSION',session,'s17-evidence-1','Unverified class activity',
+   NULL,'actor-a',audit,gen_random_uuid(),'s17-session')<>one THEN
+  RAISE EXCEPTION 'Session activity report failed'; END IF;
+ IF programs.record_center_sourced_activity_command('a',two,link,draft,
+   'CENTER_EVENT',event,'s17-evidence-2','Unverified event activity',
+   NULL,'actor-a',gen_random_uuid(),gen_random_uuid(),'s17-event')<>two THEN
+  RAISE EXCEPTION 'Event activity report failed'; END IF;
+ IF (SELECT count(*) FROM programs.center_activity_reports WHERE report_id IN(one,two))<>2
+  OR (SELECT count(*) FROM programs.activity_report_source_bindings WHERE report_id IN(one,two))<>2
+  OR (SELECT count(*) FROM governance.command_audit WHERE target_id IN(one::text,two::text))<>2
+  OR (SELECT count(*) FROM governance.outbox_events WHERE aggregate_id IN(one::text,two::text))<>2 THEN
+  RAISE EXCEPTION 'Atomic report/binding/audit/outbox mismatch'; END IF;
+
+ BEGIN
+  PERFORM programs.record_center_sourced_activity_command('a',rejected,link,draft,
+   'CLASS_SESSION',session,'s17-evidence-rejected','Collision',NULL,'actor-a',
+   audit,gen_random_uuid(),'s17-rollback');
+  RAISE EXCEPTION 'Audit collision accepted';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+ BEGIN
+  PERFORM programs.record_center_sourced_activity_command('a',rejected,link,draft,
+   'CLASS_SESSION',session,'s17-evidence-rejected','Wrong center',NULL,'actor-b',
+   gen_random_uuid(),gen_random_uuid(),'s17-cross');
+  RAISE EXCEPTION 'Cross-center actor accepted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ BEGIN
+  PERFORM programs.record_center_sourced_activity_command('a',rejected,link,draft,
+   'CLASS_SESSION','44444444-4444-4444-8444-000000000004','s17-evidence-rejected',
+   'Cross-center source',NULL,'actor-a',
+   gen_random_uuid(),gen_random_uuid(),'s17-cross-source');
+  RAISE EXCEPTION 'Cross-center source accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+  PERFORM programs.record_center_sourced_activity_command('a',rejected,link,draft,
+   'CLASS_SESSION',gen_random_uuid(),'s17-evidence-rejected',
+   'Missing source',NULL,'actor-a',
+   gen_random_uuid(),gen_random_uuid(),'s17-missing-source');
+  RAISE EXCEPTION 'Unknown source accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+  PERFORM programs.record_center_sourced_activity_command('a',rejected,link,gen_random_uuid(),
+   'CLASS_SESSION',session,'s17-evidence-rejected','Wrong pinned plan',
+   NULL,'actor-a',gen_random_uuid(),gen_random_uuid(),'s17-wrong-plan');
+  RAISE EXCEPTION 'Unknown draft link accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+  PERFORM programs.record_center_sourced_activity_command('a',rejected,link,draft,
+   'UNTRUSTED',session,'s17-evidence-rejected','Unsupported source',
+   NULL,'actor-a',gen_random_uuid(),gen_random_uuid(),'s17-unsupported');
+  RAISE EXCEPTION 'Unknown source kind accepted';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+ BEGIN
+  PERFORM programs.record_center_sourced_activity_command('a',one,link,draft,
+   'CLASS_SESSION',session,'s17-new-evidence','Replay',NULL,'actor-a',
+   gen_random_uuid(),gen_random_uuid(),'s17-replay');
+  RAISE EXCEPTION 'Duplicate id accepted';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+ IF EXISTS(SELECT 1 FROM programs.center_activity_reports WHERE report_id=rejected)
+  OR EXISTS(SELECT 1 FROM programs.activity_report_source_bindings WHERE report_id=rejected) THEN
+  RAISE EXCEPTION 'Rejected command persisted partial source report'; END IF;
+END;$test$;
+RESET ROLE;
