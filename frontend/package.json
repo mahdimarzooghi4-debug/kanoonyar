@@ -1,0 +1,31 @@
+{
+  "name": "kanoonyar-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "build": "npm run build:headquarters && npm run build:center && npm run build:audience",
+    "build:headquarters": "KANOONYAR_EXPERIENCE=headquarters vite build",
+    "build:center": "KANOONYAR_EXPERIENCE=center vite build",
+    "build:audience": "KANOONYAR_EXPERIENCE=audience vite build",
+    "test:experiences": "node scripts/check-experiences.mjs",
+    "preview:headquarters": "vite preview --host 127.0.0.1 --port 4173",
+    "test:browser": "node scripts/run-browser-tests.mjs",
+    "preview:center": "vite preview --host 127.0.0.1 --port 4173",
+    "preview:audience": "vite preview --host 127.0.0.1 --port 4173",
+    "test:deployment": "node --test scripts/package-experiences.test.mjs scripts/verify-deployment.test.mjs && node scripts/package-experiences.mjs && node scripts/verify-deployment.mjs"
+  },
+  "dependencies": {
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/node": "22.15.30",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "typescript": "5.9.3",
+    "vite": "7.3.7"
+  }
+}

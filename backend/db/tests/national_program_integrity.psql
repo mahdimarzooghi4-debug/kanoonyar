@@ -1,0 +1,137 @@
+\set ON_ERROR_STOP on
+-- Execute against disposable PostgreSQL only. CI creates and destroys this database.
+\ir ../migrations/0001_national_program_foundation.sql
+\ir ../migrations/0002_append_only_national_versions.sql
+\ir ../migrations/0003_center_registry.sql
+\ir ../migrations/0004_command_audit.sql
+\ir ../migrations/0005_transactional_outbox.sql
+
+DO $test$
+BEGIN
+    INSERT INTO centers.registry (center_id, display_name, is_active, registered_by_subject, registered_at)
+    VALUES ('center-a', 'Center A', true, 'hq-actor', now());
+    INSERT INTO centers.memberships (center_id, subject_id, role_code, is_active, recorded_by_subject, recorded_at)
+    VALUES ('center-a', 'center-actor', 'local-planner', true, 'hq-actor', now());
+    INSERT INTO programs.national_program_versions
+      (program_id, version, title, national_objectives, mandatory_requirements, created_by_subject, created_at)
+    VALUES ('program-a', 1, 'National', '["objective"]', '["requirement"]', 'hq-actor', now());
+    INSERT INTO programs.national_program_versions
+      (program_id, version, title, national_objectives, mandatory_requirements, created_by_subject, created_at)
+    VALUES ('program-a', 2, 'National v2', '["objective"]', '[]', 'hq-actor', now());
+
+    BEGIN
+        INSERT INTO programs.national_program_versions
+          (program_id, version, title, national_objectives, mandatory_requirements, created_by_subject, created_at)
+        VALUES ('program-a', 1, 'Duplicate', '[]', '[]', 'hq-actor', now());
+        RAISE EXCEPTION 'duplicate national version was accepted';
+    EXCEPTION WHEN unique_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO programs.national_program_publications
+          (program_id, version, publisher_subject, published_at)
+        VALUES ('unknown', 1, 'hq-actor', now());
+        RAISE EXCEPTION 'unknown national version was published';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    INSERT INTO programs.national_program_publications
+      (program_id, version, publisher_subject, published_at)
+    VALUES ('program-a', 1, 'hq-actor', now());
+
+    BEGIN
+        INSERT INTO programs.center_program_plans
+          (center_id, plan_id, program_id, national_version, local_title, local_activities, created_by_subject, created_at)
+        VALUES ('center-a', '00000000-0000-0000-0000-000000000002', 'program-a', 2, 'Local', '[]', 'center-actor', now());
+        RAISE EXCEPTION 'unpublished national version was adopted';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    INSERT INTO programs.center_program_plans
+      (center_id, plan_id, program_id, national_version, local_title, local_activities, created_by_subject, created_at)
+    VALUES ('center-a', '00000000-0000-0000-0000-000000000001', 'program-a', 1, 'Local', '[]', 'center-actor', now());
+
+    BEGIN
+        UPDATE programs.national_program_versions SET title = 'Tampered'
+        WHERE program_id = 'program-a' AND version = 1;
+        RAISE EXCEPTION 'national version mutation was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+
+    BEGIN
+        DELETE FROM programs.national_program_publications
+        WHERE program_id = 'program-a' AND version = 1;
+        RAISE EXCEPTION 'publication deletion was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO programs.center_program_plans
+          (center_id, plan_id, program_id, national_version, local_title, local_activities, created_by_subject, created_at)
+        VALUES ('unknown-center', '00000000-0000-0000-0000-000000000003', 'program-a', 1, 'Forged', '[]', 'center-actor', now());
+        RAISE EXCEPTION 'unknown center was accepted';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO centers.registry (center_id, display_name, registered_by_subject, registered_at)
+        VALUES ('center-inactive', 'Inactive', 'hq-actor', now());
+        IF (SELECT is_active FROM centers.registry WHERE center_id = 'center-inactive') THEN
+            RAISE EXCEPTION 'new centers must default inactive';
+        END IF;
+        INSERT INTO centers.memberships
+          (center_id, subject_id, role_code, recorded_by_subject, recorded_at)
+        VALUES ('center-inactive', 'actor', 'role', 'hq-actor', now());
+        IF (SELECT is_active FROM centers.memberships
+            WHERE center_id = 'center-inactive' AND subject_id = 'actor') THEN
+            RAISE EXCEPTION 'new memberships must default inactive';
+        END IF;
+    END;
+
+    BEGIN
+        INSERT INTO centers.memberships
+          (center_id, subject_id, role_code, is_active, recorded_by_subject, recorded_at)
+        VALUES ('unknown-center', 'actor', 'role', true, 'hq-actor', now());
+        RAISE EXCEPTION 'membership for unknown center was accepted';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    INSERT INTO governance.command_audit
+      (audit_id, occurred_at, actor_subject_id, center_id, action_code, target_type, target_id, correlation_id)
+    VALUES ('10000000-0000-0000-0000-000000000001', now(), 'center-actor', 'center-a',
+      'TEST_COMMAND', 'center_plan', 'plan-a', 'correlation-a');
+    INSERT INTO governance.outbox_events
+      (event_id, audit_id, event_type, aggregate_type, aggregate_id, occurred_at, payload)
+    VALUES ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001',
+      'TestEvent', 'center_plan', 'plan-a', now(), '{}');
+
+    BEGIN
+        INSERT INTO governance.outbox_events
+          (event_id, audit_id, event_type, aggregate_type, aggregate_id, occurred_at, payload)
+        VALUES ('20000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000099',
+          'TestEvent', 'center_plan', 'plan-a', now(), '{}');
+        RAISE EXCEPTION 'orphan outbox event was accepted';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    BEGIN
+        UPDATE governance.command_audit SET action_code = 'Tampered';
+        RAISE EXCEPTION 'audit update was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+
+    BEGIN
+        DELETE FROM governance.outbox_events;
+        RAISE EXCEPTION 'outbox deletion was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+
+    IF (SELECT count(*) FROM governance.outbox_events) <> 1 THEN
+        RAISE EXCEPTION 'invalid outbox writes were not rolled back';
+    END IF;
+
+    IF (SELECT count(*) FROM programs.center_program_plans) <> 1 THEN
+        RAISE EXCEPTION 'failed writes were not rolled back';
+    END IF;
+END;
+$test$;

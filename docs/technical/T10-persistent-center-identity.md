@@ -1,0 +1,5 @@
+# T10 — Persistent center identity foundation
+
+Migration `0003_center_registry.sql` creates authoritative center IDs and center-scoped membership records in PostgreSQL. Both centers and memberships default inactive. A composite key prevents duplicate center/subject/role records, and foreign keys prevent membership for unknown centers or local plans referencing unknown centers. CI's disposable PostgreSQL test now applies migrations 0001–0003 and verifies those constraints.
+
+This is a **database identity foundation, not authorization**. Membership role codes are opaque and unapproved; an active membership alone never grants an operation. Current schema intentionally has no identity provider integration, role-policy mapping, audit/outbox, concurrency-safe human approval or row-level security. Runtime must not expose reads/writes until verified OIDC subjects, authoritative membership checks, center-scoped query isolation, headquarters publication policy and transactional audit are implemented and independently tested. No real center inventory, 80 center IDs, or user membership data has been fabricated.

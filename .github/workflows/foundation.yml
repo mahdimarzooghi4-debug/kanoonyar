@@ -1,0 +1,124 @@
+name: Foundation CI
+permissions:
+  contents: read
+on:
+  push:
+    branches: [main, planning/sprint-01-foundation]
+  pull_request:
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          dotnet-version: '10.0.x'
+      - name: Audit NuGet dependencies during restore
+        run: dotnet restore backend/Kanoonyar.slnx -p:NuGetAudit=true -p:NuGetAuditLevel=high -p:TreatWarningsAsErrors=true
+      - name: Build API
+        run: dotnet build backend/Kanoonyar.slnx --configuration Release
+      - name: Test foundation
+        run: dotnet test backend/Kanoonyar.slnx --configuration Release --no-build
+  postgres-integrity:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: kanoonyar_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d kanoonyar_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Verify migrations against disposable database
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGDATABASE: kanoonyar_ci
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/national_program_integrity.psql
+          createdb kanoonyar_rls_ci
+          PGDATABASE=kanoonyar_rls_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_rls_isolation.psql
+          createdb kanoonyar_atomic_ci
+          PGDATABASE=kanoonyar_atomic_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/atomic_local_plan_command.psql
+  frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Audit frontend production dependencies
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit all frontend dependencies (including development tools)
+        working-directory: frontend
+        run: npm audit --audit-level=high
+      - name: Typecheck frontend
+        working-directory: frontend
+        run: npm run typecheck
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Verify standalone static deployment manifests and isolation tests
+        working-directory: frontend
+        run: npm run test:deployment
+      - name: Verify isolated RTL experience artifacts
+        working-directory: frontend
+        run: npm run test:experiences
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Browser smoke tests
+        working-directory: frontend
+        run: npm run test:browser
+  ai-contracts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - name: Install AI skeleton
+        working-directory: ai
+        run: python -m pip install -e .
+      - name: Upgrade Python build tooling to patched setuptools
+        run: python -m pip install 'setuptools>=83,<84'
+      - name: Audit installed Python dependencies
+        working-directory: ai
+        run: |
+          python -m pip install 'pip-audit==2.9.0'
+          python -m pip_audit --local --progress-spinner off
+      - name: Run AI contract tests
+        working-directory: ai
+        run: python -m unittest discover -s tests -v
+  secret-patterns:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Test secret-pattern detector
+        run: python3 -m unittest discover -s scripts/security -p 'test_*.py' -v
+      - name: Scan tracked repository files
+        run: python3 scripts/security/scan_tracked_secrets.py
