@@ -1,0 +1,406 @@
+using System.Security.Claims;
+using System.Text.Json;
+using Kanoonyar.Api.Programs;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Npgsql;
+using Xunit;
+
+namespace Kanoonyar.Api.Tests;
+
+/// <summary>
+/// Real handler -> Npgsql -> disposable PostgreSQL integration. The bypassing permission
+/// adapters are test-only and never registered in the application or production.
+/// This suite does NOT claim real OIDC/browser authorization or production readiness.
+/// </summary>
+public sealed class LocalDraftPostgresIntegrationTests
+{
+    private static readonly ILocalPlanDraftWriteAuthorization TestWriter = new TestOnlyWriteGrant();
+    private static readonly ILocalPlanDraftReadAuthorization TestReader = new TestOnlyReadGrant();
+
+    private static string? RuntimeConnection =>
+        Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_DATABASE_URL");
+    private static string? ReadConnection =>
+        Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_READ_DATABASE_URL");
+    private static string? AdminConnection =>
+        Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_ADMIN_URL");
+    private static string? EscalationConnection =>
+        Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_ESCALATION_DATABASE_URL");
+
+    private static bool Enabled()
+    {
+        var required = Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_REQUIRED") == "1";
+        if (required)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(RuntimeConnection));
+            Assert.False(string.IsNullOrWhiteSpace(ReadConnection));
+            Assert.False(string.IsNullOrWhiteSpace(AdminConnection));
+            Assert.False(string.IsNullOrWhiteSpace(EscalationConnection));
+        }
+        return !string.IsNullOrWhiteSpace(RuntimeConnection) && !string.IsNullOrWhiteSpace(ReadConnection) &&
+            !string.IsNullOrWhiteSpace(AdminConnection) &&
+            !string.IsNullOrWhiteSpace(EscalationConnection);
+    }
+
+    private static IConfiguration Configuration() =>
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["CENTER_DRAFT_WRITE_DATABASE_URL"] = RuntimeConnection,
+            ["CENTER_DRAFT_READ_DATABASE_URL"] = ReadConnection
+        }).Build();
+
+    private static ClaimsPrincipal Principal(string subject) =>
+        new(new ClaimsIdentity(new[] { new Claim("sub", subject) }, "integration-fixture"));
+
+    private static LocalPlanDraftRevisionRequest Request(Guid draftId, long expectedRevision = 0) =>
+        new(draftId, expectedRevision, "national-1", 1, "Local plan", ["Activity"]);
+
+    private static async Task<IResult> Write(Guid draftId, string subject = "actor-a",
+        string center = "center-a", long expectedRevision = 0, bool useDefaultDeny = false,
+        IConfiguration? configuration = null) =>
+        await LocalPlanDraftWriteEndpoint.Append(
+            Principal(subject), configuration ?? Configuration(),
+            useDefaultDeny ? new UnapprovedLocalPlanDraftWriteAuthorization() : TestWriter,
+            center, Request(draftId, expectedRevision), CancellationToken.None);
+
+    private static async Task<IResult> Read(string subject = "actor-a",
+        string center = "center-a", bool useDefaultDeny = false) =>
+        await LocalPlanDraftReadEndpoint.ListMine(Principal(subject), Configuration(),
+            useDefaultDeny ? new UnapprovedLocalPlanDraftReadAuthorization() : TestReader,
+            center, CancellationToken.None);
+
+    private static int? Status(IResult result) => (result as IStatusCodeHttpResult)?.StatusCode;
+
+    private static async Task<(long Revisions, long Audits, long Events)> Counts(Guid draft)
+    {
+        await using var connection = new NpgsqlConnection(AdminConnection);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT
+              (SELECT count(*) FROM programs.center_plan_draft_revisions WHERE draft_id=@id),
+              (SELECT count(*) FROM governance.command_audit WHERE target_id=@target),
+              (SELECT count(*) FROM governance.outbox_events WHERE aggregate_id=@target)
+            """, connection);
+        command.Parameters.AddWithValue("id", draft);
+        command.Parameters.AddWithValue("target", draft.ToString("D"));
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return (reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2));
+    }
+
+    private static JsonElement Drafts(IResult result)
+    {
+        Assert.Equal(200, Status(result));
+        var payload = Assert.IsAssignableFrom<IValueHttpResult>(result).Value;
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        return document.RootElement.GetProperty("drafts").Clone();
+    }
+
+    [Fact]
+    public async Task Real_limited_role_roundtrip_is_versioned_and_audited()
+    {
+        if (!Enabled()) return;
+        var draft = Guid.NewGuid();
+        Assert.Equal(200, Status(await Write(draft)));
+        var stored = Drafts(await Read());
+        Assert.Contains(stored.EnumerateArray(), item =>
+            item.GetProperty("draftId").GetGuid() == draft &&
+            item.GetProperty("revision").GetInt64() == 1);
+        Assert.Equal(403, Status(await Read(useDefaultDeny: true)));
+
+        Assert.Equal(200, Status(await Write(draft, expectedRevision: 1)));
+        Assert.Equal(409, Status(await Write(draft, expectedRevision: 1)));
+        Assert.Equal((2L, 2L, 2L), await Counts(draft));
+    }
+
+    [Fact]
+    public async Task Independent_permission_and_live_membership_prevent_cross_center_and_revoked_writes()
+    {
+        if (!Enabled()) return;
+        var draft = Guid.NewGuid();
+        Assert.Equal(403, Status(await Write(draft, useDefaultDeny: true)));
+        Assert.Equal(403, Status(await Write(draft, subject: "actor-b")));
+        Assert.Equal(403, Status(await Write(draft, subject: "actor-revoked")));
+        Assert.Equal(403, Status(await Write(draft, center: "center-b")));
+        Assert.Equal((0L, 0L, 0L), await Counts(draft));
+    }
+
+    [Fact]
+    public async Task Read_requires_independent_permission_and_live_center_membership()
+    {
+        if (!Enabled()) return;
+        var draft = Guid.NewGuid();
+        Assert.Equal(200, Status(await Write(draft)));
+        Assert.Equal(403, Status(await Read(useDefaultDeny: true)));
+        Assert.Empty(Drafts(await Read(subject: "actor-b")).EnumerateArray());
+        Assert.Empty(Drafts(await Read(subject: "actor-revoked")).EnumerateArray());
+        Assert.Empty(Drafts(await Read(center: "center-b")).EnumerateArray());
+        Assert.Contains(Drafts(await Read()).EnumerateArray(), item =>
+            item.GetProperty("draftId").GetGuid() == draft);
+    }
+
+    [Fact]
+    public async Task Simultaneous_expected_revision_zero_accepts_only_one_with_matching_audit()
+    {
+        if (!Enabled()) return;
+        var draft = Guid.NewGuid();
+        var results = await Task.WhenAll(Write(draft), Write(draft));
+        Assert.Equal(1, results.Count(result => Status(result) == 200));
+        Assert.Equal(1, results.Count(result => Status(result) == 409));
+        Assert.Equal((1L, 1L, 1L), await Counts(draft));
+    }
+
+    [Fact]
+    public async Task Privileged_database_read_connection_is_refused()
+    {
+        if (!Enabled()) return;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["CENTER_DRAFT_READ_DATABASE_URL"] = AdminConnection }).Build();
+        var response = await LocalPlanDraftReadEndpoint.ListMine(
+            Principal("actor-a"), config, TestReader, "center-a", CancellationToken.None);
+        Assert.Equal(503, Status(response));
+    }
+
+    [Fact]
+    public async Task Privileged_database_connection_is_refused_before_any_command()
+    {
+        if (!Enabled()) return;
+        var draft = Guid.NewGuid();
+        var privileged = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["CENTER_DRAFT_WRITE_DATABASE_URL"] = AdminConnection }).Build();
+        Assert.Equal(503, Status(await Write(draft, configuration: privileged)));
+        Assert.Equal((0L, 0L, 0L), await Counts(draft));
+    }
+
+    [Fact]
+    public async Task Read_only_login_rejects_direct_insert_and_function_escalation()
+    {
+        if (!Enabled()) return;
+        await using var db = new NpgsqlConnection(ReadConnection);
+        await db.OpenAsync();
+        var draft = Guid.NewGuid();
+        await using (var insert = new NpgsqlCommand(
+            """
+            INSERT INTO programs.center_plan_draft_revisions
+              (center_id,draft_id,revision,program_id,national_version,local_title,local_activities,actor_subject)
+            VALUES ('center-a',@draft,1,'national-1',1,'Bypassed','[]','forged-actor')
+            """, db))
+        {
+            insert.Parameters.AddWithValue("draft", draft);
+            var denied = await Assert.ThrowsAsync<PostgresException>(
+                () => insert.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.InsufficientPrivilege, denied.SqlState);
+        }
+        await using (var escalate = new NpgsqlCommand(
+            "SET ROLE kanoonyar_draft_api_ci", db))
+        {
+            var denied = await Assert.ThrowsAsync<PostgresException>(
+                () => escalate.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.InsufficientPrivilege, denied.SqlState);
+        }
+        await using (var directFunction = new NpgsqlCommand(
+            """
+            SELECT programs.append_local_plan_draft_revision(
+              'center-a',@draft,0,'national-1',1,'Forged','[]'::jsonb,'forged-actor',
+              gen_random_uuid(),gen_random_uuid(),'forged')
+            """, db))
+        {
+            directFunction.Parameters.AddWithValue("draft", draft);
+            var denied = await Assert.ThrowsAsync<PostgresException>(
+                () => directFunction.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.InsufficientPrivilege, denied.SqlState);
+        }
+        Assert.Equal((0L, 0L, 0L), await Counts(draft));
+    }
+
+    [Fact]
+    public async Task Read_handler_refuses_a_direct_write_capable_role_even_with_a_test_grant()
+    {
+        if (!Enabled()) return;
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> {
+                ["CENTER_DRAFT_READ_DATABASE_URL"] = RuntimeConnection
+            }).Build();
+        var response = await LocalPlanDraftReadEndpoint.ListMine(
+            Principal("actor-a"), configuration, TestReader, "center-a", CancellationToken.None);
+        Assert.Equal(503, Status(response));
+    }
+
+    [Fact]
+    public async Task Read_handler_refuses_login_that_can_set_role_to_writer()
+    {
+        if (!Enabled()) return;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> {
+                ["CENTER_DRAFT_READ_DATABASE_URL"] = EscalationConnection
+            }).Build();
+        var response = await LocalPlanDraftReadEndpoint.ListMine(
+            Principal("actor-a"), config, TestReader, "center-a", CancellationToken.None);
+        Assert.Equal(503, Status(response));
+    }
+
+    private static async Task<IResult> History(Guid draft, string subject = "actor-a",
+        string center = "center-a", long? before = null, bool useDefaultDeny = false) =>
+        await LocalPlanDraftHistoryEndpoint.ListHistory(Principal(subject), Configuration(),
+            useDefaultDeny ? new UnapprovedLocalPlanDraftReadAuthorization() : TestReader,
+            center, draft, before, CancellationToken.None);
+
+    private static (JsonElement Items, long? NextBefore) HistoryPage(IResult result)
+    {
+        Assert.Equal(200, Status(result));
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(
+            Assert.IsAssignableFrom<IValueHttpResult>(result).Value));
+        var root = document.RootElement;
+        return (root.GetProperty("revisions").Clone(),
+            root.GetProperty("nextBeforeRevision").ValueKind == JsonValueKind.Null
+                ? null : root.GetProperty("nextBeforeRevision").GetInt64());
+    }
+
+    [Fact]
+    public async Task Persisted_revision_history_paginates_without_duplicates_or_cross_center_leaks()
+    {
+        if (!Enabled()) return;
+        var draft = Guid.NewGuid();
+        for (long revision = 0; revision < 22; revision++)
+            Assert.Equal(200, Status(await Write(draft, expectedRevision: revision)));
+
+        var first = HistoryPage(await History(draft));
+        Assert.Equal(20, first.Items.GetArrayLength());
+        Assert.Equal(22, first.Items[0].GetProperty("revision").GetInt64());
+        Assert.Equal(3, first.Items[19].GetProperty("revision").GetInt64());
+        Assert.Equal(3L, first.NextBefore);
+
+        var second = HistoryPage(await History(draft, before: first.NextBefore));
+        Assert.Equal(2, second.Items.GetArrayLength());
+        Assert.Equal(2, second.Items[0].GetProperty("revision").GetInt64());
+        Assert.Equal(1, second.Items[1].GetProperty("revision").GetInt64());
+        Assert.Null(second.NextBefore);
+        Assert.Equal((22L, 22L, 22L), await Counts(draft));
+
+        Assert.Empty(HistoryPage(await History(draft, center: "center-b")).Items.EnumerateArray());
+        Assert.Empty(HistoryPage(await History(draft, subject: "actor-b")).Items.EnumerateArray());
+        Assert.Empty(HistoryPage(await History(draft, subject: "actor-revoked")).Items.EnumerateArray());
+        Assert.Equal(403, Status(await History(draft, useDefaultDeny: true)));
+        Assert.Equal(400, Status(await History(draft, before: 0)));
+        Assert.Empty(HistoryPage(await History(Guid.NewGuid())).Items.EnumerateArray());
+    }
+
+    [Fact]
+    public async Task History_rejects_writer_privileged_and_set_role_escalation_connections()
+    {
+        if (!Enabled()) return;
+        foreach (var connection in new[] { RuntimeConnection, AdminConnection, EscalationConnection })
+        {
+            var config = new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?> { ["CENTER_DRAFT_READ_DATABASE_URL"] = connection }).Build();
+            var result = await LocalPlanDraftHistoryEndpoint.ListHistory(
+                Principal("actor-a"), config, TestReader, "center-a", Guid.NewGuid(), null,
+                CancellationToken.None);
+            Assert.Equal(503, Status(result));
+        }
+    }
+
+    [Fact]
+    public async Task Command_login_cannot_insert_unaudited_history_or_assume_definer_role()
+    {
+        if (!Enabled()) return;
+        var draft = Guid.NewGuid();
+        await using var db = new NpgsqlConnection(RuntimeConnection);
+        await db.OpenAsync();
+        await using (var insert = new NpgsqlCommand(
+            """
+            INSERT INTO programs.center_plan_draft_revisions
+              (center_id,draft_id,revision,program_id,national_version,
+               local_title,local_activities,actor_subject)
+            VALUES ('center-a',@draft,1,'national-1',1,'Unaudited','[]','actor-a')
+            """, db))
+        {
+            insert.Parameters.AddWithValue("draft", draft);
+            var denied = await Assert.ThrowsAsync<PostgresException>(() => insert.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.InsufficientPrivilege, denied.SqlState);
+        }
+        await using (var audit = new NpgsqlCommand(
+            """
+            INSERT INTO governance.command_audit
+              (audit_id,occurred_at,actor_subject_id,center_id,action_code,
+               target_type,target_id,correlation_id,metadata)
+            VALUES (gen_random_uuid(),now(),'actor-a','center-a',
+                    'FORGED','draft',@draft,'forged','{}')
+            """, db))
+        {
+            audit.Parameters.AddWithValue("draft", draft.ToString("D"));
+            var denied = await Assert.ThrowsAsync<PostgresException>(() => audit.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.InsufficientPrivilege, denied.SqlState);
+        }
+        await using (var switchRole = new NpgsqlCommand(
+            "SET ROLE kanoonyar_draft_command_owner", db))
+        {
+            var denied = await Assert.ThrowsAsync<PostgresException>(() => switchRole.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.InsufficientPrivilege, denied.SqlState);
+        }
+        Assert.Equal((0L, 0L, 0L), await Counts(draft));
+    }
+
+    [Fact]
+    public async Task Command_rejects_scope_mismatch_and_inactive_member_without_partial_records()
+    {
+        if (!Enabled()) return;
+        var draft = Guid.NewGuid();
+        await using var db = new NpgsqlConnection(RuntimeConnection);
+        await db.OpenAsync();
+        async Task<PostgresException> TryDirectCommand(string center, string actor)
+        {
+            await using var command = new NpgsqlCommand(
+                """
+                SELECT programs.append_local_plan_draft_revision(
+                  @center,@draft,0,'national-1',1,'Rejected','[]'::jsonb,
+                  @actor,gen_random_uuid(),gen_random_uuid(),'raw-sql')
+                """, db);
+            command.Parameters.AddWithValue("center", center);
+            command.Parameters.AddWithValue("draft", draft);
+            command.Parameters.AddWithValue("actor", actor);
+            return await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteScalarAsync());
+        }
+        Assert.Equal(PostgresErrorCodes.InsufficientPrivilege,
+            (await TryDirectCommand("center-a", "actor-a")).SqlState);
+        await using (var scope = new NpgsqlCommand(
+            "SELECT set_config('kanoonyar.center_id','center-a',false)", db))
+            await scope.ExecuteNonQueryAsync();
+        Assert.Equal(PostgresErrorCodes.InsufficientPrivilege,
+            (await TryDirectCommand("center-b", "actor-b")).SqlState);
+        Assert.Equal(PostgresErrorCodes.InsufficientPrivilege,
+            (await TryDirectCommand("center-a", "actor-revoked")).SqlState);
+        Assert.Equal((0L, 0L, 0L), await Counts(draft));
+    }
+
+    [Fact]
+    public async Task Function_owner_is_nonlogin_and_required_function_is_security_definer()
+    {
+        if (!Enabled()) return;
+        await using var db = new NpgsqlConnection(AdminConnection);
+        await db.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT NOT owner.rolcanlogin AND NOT owner.rolsuper AND NOT owner.rolbypassrls
+                   AND p.prosecdef
+                   AND p.proconfig @> ARRAY['search_path=pg_catalog, pg_temp']
+            FROM pg_proc p
+            JOIN pg_roles owner ON owner.oid=p.proowner
+            WHERE p.oid='programs.append_local_plan_draft_revision(
+              text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)'::regprocedure
+            """, db);
+        Assert.Equal(true, await command.ExecuteScalarAsync());
+    }
+
+    private sealed class TestOnlyWriteGrant : ILocalPlanDraftWriteAuthorization
+    {
+        public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal, string centerId,
+            Guid draftId, CancellationToken ct) => ValueTask.FromResult(true);
+    }
+    private sealed class TestOnlyReadGrant : ILocalPlanDraftReadAuthorization
+    {
+        public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal, string centerId,
+            CancellationToken ct) => ValueTask.FromResult(true);
+    }
+}

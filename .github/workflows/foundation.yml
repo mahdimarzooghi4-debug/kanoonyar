@@ -3,7 +3,7 @@ permissions:
   contents: read
 on:
   push:
-    branches: [main, planning/sprint-01-foundation, sprint-02-center-membership-read-foundation, sprint-03-center-workspace-ui, sprint-04-national-program-public-read, sprint-05-national-program-catalog-ui, sprint-06-center-national-program-discovery, sprint-07-local-execution-plan-draft]
+    branches: [main, planning/sprint-01-foundation, sprint-02-center-membership-read-foundation, sprint-03-center-workspace-ui, sprint-04-national-program-public-read, sprint-05-national-program-catalog-ui, sprint-06-center-national-program-discovery, sprint-07-local-execution-plan-draft, sprint-08-local-plan-operations]
   pull_request:
 jobs:
   backend:
@@ -40,6 +40,9 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          dotnet-version: '10.0.x'
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Verify migrations against disposable database
@@ -58,6 +61,20 @@ jobs:
           PGDATABASE=kanoonyar_membership_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_membership_read.psql
           createdb kanoonyar_membership_session_ci
           PGDATABASE=kanoonyar_membership_session_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_membership_session.psql
+          createdb kanoonyar_local_draft_ci
+          PGDATABASE=kanoonyar_local_draft_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/local_plan_revisions.psql
+          createdb kanoonyar_draft_api_ci
+          PGDATABASE=kanoonyar_draft_api_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/local_plan_api_integration_setup.psql
+      - name: Real restricted PostgreSQL to API-handler integration
+        env:
+          CENTER_DRAFT_INTEGRATION_REQUIRED: '1'
+          CENTER_DRAFT_INTEGRATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_draft_api_ci;Pooling=false
+          CENTER_DRAFT_INTEGRATION_READ_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_draft_read_ci;Pooling=false
+          CENTER_DRAFT_INTEGRATION_ESCALATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_draft_escalation_ci;Pooling=false
+          CENTER_DRAFT_INTEGRATION_ADMIN_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=postgres;Pooling=false
+        run: |
+          dotnet restore backend/Kanoonyar.slnx -p:NuGetAudit=true -p:NuGetAuditLevel=high -p:TreatWarningsAsErrors=true
+          dotnet test backend/tests/Kanoonyar.Api.Tests/Kanoonyar.Api.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~LocalDraftPostgresIntegrationTests|FullyQualifiedName~SignedOidcHttpIntegrationTests"
   frontend:
     runs-on: ubuntu-latest
     permissions:

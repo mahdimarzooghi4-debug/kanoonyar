@@ -1,0 +1,185 @@
+\set ON_ERROR_STOP on
+\ir ../migrations/0001_national_program_foundation.sql
+\ir ../migrations/0002_append_only_national_versions.sql
+\ir ../migrations/0003_center_registry.sql
+\ir ../migrations/0004_command_audit.sql
+\ir ../migrations/0005_transactional_outbox.sql
+\ir ../migrations/0006_center_scope_rls.sql
+\ir ../migrations/0007_atomic_local_plan_command.sql
+\ir ../migrations/0008_center_membership_read_boundary.sql
+\ir ../migrations/0009_center_membership_db_session_boundary.sql
+\ir ../migrations/0010_local_plan_revision_foundation.sql
+\ir ../migrations/0011_local_plan_atomic_revision_command.sql
+\ir ../migrations/0012_restricted_draft_command_owner.sql
+DO $test$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='programs' AND tablename='center_plan_draft_revisions' AND policyname='center_plan_draft_scope') THEN
+    RAISE EXCEPTION 'Center draft RLS policy missing';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='draft_revision_immutable' AND NOT tgisinternal) THEN
+    RAISE EXCEPTION 'Immutable revision trigger missing';
+  END IF;
+  IF has_function_privilege('public', 'programs.append_local_plan_draft_revision(text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'PUBLIC must not execute draft command';
+  END IF;
+  IF has_table_privilege('public', 'programs.center_plan_draft_revisions', 'INSERT') THEN
+    RAISE EXCEPTION 'PUBLIC must not insert drafts';
+  END IF;
+END;
+$test$;
+
+-- Exercise the actual command, not only metadata. Disposable CI database only.
+INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
+VALUES ('center-a','Center A',true,'admin',now()),('center-b','Center B',true,'admin',now());
+INSERT INTO programs.national_program_versions
+(program_id,version,title,national_objectives,mandatory_requirements,created_by_subject,created_at)
+VALUES ('national-1',1,'National 1','[]','[]','hq',now());
+INSERT INTO programs.national_program_publications
+(program_id,version,publisher_subject,published_at)
+VALUES ('national-1',1,'hq',now());
+INSERT INTO centers.memberships(center_id,subject_id,role_code,is_active,recorded_by_subject,recorded_at)
+VALUES ('center-a','actor','integration-member',true,'fixture',now());
+SELECT set_config('kanoonyar.center_id','center-a',false);
+DO $test$
+DECLARE
+  v_draft uuid := '11111111-1111-4111-8111-111111111111';
+  v_revision bigint;
+BEGIN
+  SELECT programs.append_local_plan_draft_revision('center-a',v_draft,0,
+    'national-1',1,'First draft','["Activity 1"]'::jsonb,'actor',
+    '11111111-1111-4111-8111-111111111112',
+    '11111111-1111-4111-8111-111111111113','correlation-1') INTO v_revision;
+  IF v_revision <> 1 THEN RAISE EXCEPTION 'Expected revision 1'; END IF;
+  SELECT programs.append_local_plan_draft_revision('center-a',v_draft,1,
+    'national-1',1,'Updated draft','["Activity 2"]'::jsonb,'actor',
+    '11111111-1111-4111-8111-111111111114',
+    '11111111-1111-4111-8111-111111111115','correlation-2') INTO v_revision;
+  IF v_revision <> 2 THEN RAISE EXCEPTION 'Expected revision 2'; END IF;
+  IF (SELECT count(*) FROM governance.command_audit WHERE target_id=v_draft::text) <> 2
+    OR (SELECT count(*) FROM governance.outbox_events WHERE aggregate_id=v_draft::text) <> 2 THEN
+    RAISE EXCEPTION 'Audit and outbox must match accepted revisions';
+  END IF;
+  BEGIN
+    PERFORM programs.append_local_plan_draft_revision('center-a',v_draft,1,
+      'national-1',1,'Stale','[]'::jsonb,'actor',
+      '11111111-1111-4111-8111-111111111116',
+      '11111111-1111-4111-8111-111111111117','correlation-3');
+    RAISE EXCEPTION 'Expected stale revision rejection';
+  EXCEPTION WHEN SQLSTATE '40001' THEN NULL;
+  END;
+  BEGIN
+    UPDATE programs.center_plan_draft_revisions SET local_title='tampered'
+    WHERE center_id='center-a' AND draft_id=v_draft;
+    RAISE EXCEPTION 'Expected immutable history rejection';
+  EXCEPTION WHEN SQLSTATE '23514' THEN NULL;
+  END;
+  IF (SELECT count(*) FROM programs.center_plan_draft_revisions WHERE draft_id=v_draft) <> 2 THEN
+    RAISE EXCEPTION 'Failed commands must not create revisions';
+  END IF;
+END;
+$test$;
+CREATE ROLE kanoonyar_draft_rls_test NOLOGIN NOSUPERUSER NOBYPASSRLS;
+GRANT USAGE ON SCHEMA programs TO kanoonyar_draft_rls_test;
+GRANT SELECT ON programs.center_plan_draft_revisions TO kanoonyar_draft_rls_test;
+SET ROLE kanoonyar_draft_rls_test;
+SELECT set_config('kanoonyar.center_id','center-b',false);
+DO $test$
+BEGIN
+  IF EXISTS (SELECT 1 FROM programs.center_plan_draft_revisions WHERE center_id='center-a') THEN
+    RAISE EXCEPTION 'Cross-center draft leak';
+  END IF;
+END;
+$test$;
+
+RESET ROLE;
+
+-- Verify the same restricted role can see its own center, not just an empty result.
+SET ROLE kanoonyar_draft_rls_test;
+SELECT set_config('kanoonyar.center_id','center-a',false);
+DO $test$
+BEGIN
+  IF (SELECT count(*) FROM programs.center_plan_draft_revisions
+      WHERE center_id='center-a') <> 2 THEN
+    RAISE EXCEPTION 'Authorized center draft revisions must remain readable';
+  END IF;
+END;
+$test$;
+RESET ROLE;
+-- Verify RLS WITH CHECK denies cross-center INSERT for a restricted role even with table grants.
+GRANT INSERT ON programs.center_plan_draft_revisions TO kanoonyar_draft_rls_test;
+SET ROLE kanoonyar_draft_rls_test;
+SELECT set_config('kanoonyar.center_id','center-b',false);
+DO $test$
+BEGIN
+  BEGIN
+    INSERT INTO programs.center_plan_draft_revisions
+      (center_id,draft_id,revision,program_id,national_version,local_title,local_activities,actor_subject)
+    VALUES ('center-a','22222222-2222-4222-8222-222222222222',1,
+      'national-1',1,'Forbidden','[]','actor');
+    RAISE EXCEPTION 'Expected cross-center write rejection';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+END;
+$test$;
+RESET ROLE;
+REVOKE INSERT ON programs.center_plan_draft_revisions FROM kanoonyar_draft_rls_test;
+
+
+-- Restricted role integration: grant only within disposable CI and verify accepted writes have
+-- exactly one revision + audit + outbox; a cross-center attempt cannot mutate any of them.
+GRANT EXECUTE ON FUNCTION programs.append_local_plan_draft_revision(text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)
+  TO kanoonyar_draft_rls_test;
+SET ROLE kanoonyar_draft_rls_test;
+SELECT set_config('kanoonyar.center_id','center-a',false);
+DO $test$
+BEGIN
+  IF has_table_privilege(current_user, 'programs.center_plan_draft_revisions','INSERT')
+      OR has_table_privilege(current_user, 'programs.center_plan_draft_revisions','UPDATE')
+      OR has_table_privilege(current_user, 'programs.center_plan_draft_revisions','DELETE') THEN
+    RAISE EXCEPTION 'Command caller has forbidden direct table writes';
+  END IF;
+  IF (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname=current_user) THEN
+    RAISE EXCEPTION 'Draft writer test must not bypass RLS';
+  END IF;
+  PERFORM programs.append_local_plan_draft_revision('center-a',
+    '33333333-3333-4333-8333-333333333333',0,'national-1',1,'Restricted',
+    '["Activity"]'::jsonb,'actor',
+    '33333333-3333-4333-8333-333333333334',
+    '33333333-3333-4333-8333-333333333335','restricted-own');
+  IF (SELECT count(*) FROM programs.center_plan_draft_revisions
+      WHERE draft_id='33333333-3333-4333-8333-333333333333') <> 1 THEN
+    RAISE EXCEPTION 'Restricted own-center append failed';
+  END IF;
+  BEGIN
+    PERFORM programs.append_local_plan_draft_revision('center-b',
+      '44444444-4444-4444-8444-444444444444',0,'national-1',1,'Cross',
+      '[]'::jsonb,'actor',
+      '44444444-4444-4444-8444-444444444445',
+      '44444444-4444-4444-8444-444444444446','restricted-cross');
+    RAISE EXCEPTION 'Expected cross-center write denial';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+END;
+$test$;
+RESET ROLE;
+DO $test$
+BEGIN
+  IF (SELECT count(*) FROM programs.center_plan_draft_revisions
+      WHERE draft_id='44444444-4444-4444-8444-444444444444') <> 0 OR
+     (SELECT count(*) FROM governance.command_audit
+      WHERE target_id='44444444-4444-4444-8444-444444444444') <> 0 OR
+     (SELECT count(*) FROM governance.outbox_events
+      WHERE aggregate_id='44444444-4444-4444-8444-444444444444') <> 0 THEN
+    RAISE EXCEPTION 'Cross-center command left a partial write';
+  END IF;
+  IF (SELECT count(*) FROM governance.command_audit
+      WHERE target_id='33333333-3333-4333-8333-333333333333') <> 1 OR
+     (SELECT count(*) FROM governance.outbox_events
+      WHERE aggregate_id='33333333-3333-4333-8333-333333333333') <> 1 THEN
+    RAISE EXCEPTION 'Restricted command has no matching audit/outbox';
+  END IF;
+END;
+$test$;
+REVOKE EXECUTE ON FUNCTION programs.append_local_plan_draft_revision(text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)
+  FROM kanoonyar_draft_rls_test;
+-- No INSERT privileges on operational tables were granted to the command caller.

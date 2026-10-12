@@ -27,6 +27,10 @@ public static class OidcAuthentication
         builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
+                // Preserve the standard OIDC subject name verbatim. Inbound claims
+                // remapping can silently turn "sub" into another claim type and
+                // break the authenticated actor boundary used by center handlers.
+                options.MapInboundClaims = false;
                 options.Authority = authority;
                 options.Audience = audience;
                 options.RequireHttpsMetadata = true;

@@ -12,7 +12,7 @@ test('center workspace renders active memberships returned by the API', async ({
   await page.goto('/');
   await page.getByRole('textbox', { name: 'توکن دسترسی' }).fill('test-token');
   await page.getByRole('button', { name: 'دریافت عضویت‌ها' }).click();
-  await expect(page.getByText(/کانون نمونه/)).toBeVisible();
+  await expect(page.getByRole('listitem').filter({ hasText: 'کانون نمونه' })).toBeVisible();
 });
 
 test('center workspace handles empty memberships and rejects malformed responses', async ({ page }) => {
@@ -37,7 +37,7 @@ test('center workspace does not show previous membership data after unauthorized
   await page.goto('/');
   await page.getByRole('textbox', { name: 'توکن دسترسی' }).fill('test-token');
   await page.getByRole('button', { name: 'دریافت عضویت‌ها' }).click();
-  await expect(page.getByText(/مرکز اول/)).toBeVisible();
+  await expect(page.getByRole('listitem').filter({ hasText: 'مرکز اول' })).toBeVisible();
   allowed = false;
   await page.getByRole('button', { name: 'دریافت عضویت‌ها' }).click();
   await expect(page.getByRole('alert')).toContainText('نشست معتبر نیست.');

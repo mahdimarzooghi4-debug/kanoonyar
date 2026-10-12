@@ -1,0 +1,107 @@
+\set ON_ERROR_STOP on
+-- Disposable PostgreSQL fixture for API+database integration. NOT a runtime/prod grant policy.
+\ir ../migrations/0001_national_program_foundation.sql
+\ir ../migrations/0002_append_only_national_versions.sql
+\ir ../migrations/0003_center_registry.sql
+\ir ../migrations/0004_command_audit.sql
+\ir ../migrations/0005_transactional_outbox.sql
+\ir ../migrations/0006_center_scope_rls.sql
+\ir ../migrations/0007_atomic_local_plan_command.sql
+\ir ../migrations/0008_center_membership_read_boundary.sql
+\ir ../migrations/0009_center_membership_db_session_boundary.sql
+\ir ../migrations/0010_local_plan_revision_foundation.sql
+\ir ../migrations/0011_local_plan_atomic_revision_command.sql
+\ir ../migrations/0012_restricted_draft_command_owner.sql
+
+INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
+VALUES ('center-a','Center A',true,'fixture',now()),
+       ('center-b','Center B',true,'fixture',now());
+INSERT INTO centers.memberships(center_id,subject_id,role_code,is_active,recorded_by_subject,recorded_at)
+VALUES ('center-a','actor-a','fixture-member',true,'fixture',now()),
+       ('center-b','actor-b','fixture-member',true,'fixture',now()),
+       ('center-a','actor-revoked','fixture-member',false,'fixture',now());
+INSERT INTO programs.national_program_versions
+(program_id,version,title,national_objectives,mandatory_requirements,created_by_subject,created_at)
+VALUES ('national-1',1,'National 1','[]','[]','fixture',now());
+INSERT INTO programs.national_program_publications
+(program_id,version,publisher_subject,published_at)
+VALUES ('national-1',1,'fixture',now());
+
+CREATE ROLE kanoonyar_draft_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_draft_api_ci;
+GRANT USAGE ON SCHEMA programs,centers TO kanoonyar_draft_api_ci;
+GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_draft_api_ci;
+
+GRANT EXECUTE ON FUNCTION programs.append_local_plan_draft_revision(
+  text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text) TO kanoonyar_draft_api_ci;
+
+-- The CI role can be used only with a synthetic test evaluator. The production
+-- evaluator for both read and write is always DENY. Direct DB privileges plus a
+-- spoofable center_id GUC are not an approved security architecture.
+DO $test$
+BEGIN
+  IF (SELECT rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb
+      FROM pg_roles WHERE rolname='kanoonyar_draft_api_ci') THEN
+    RAISE EXCEPTION 'Integration role may not have elevated privileges';
+  END IF;
+  IF has_table_privilege('kanoonyar_draft_api_ci','programs.center_plan_draft_revisions','INSERT')
+     OR has_table_privilege('kanoonyar_draft_api_ci','governance.command_audit','INSERT')
+     OR has_table_privilege('kanoonyar_draft_api_ci','governance.outbox_events','INSERT') THEN
+    RAISE EXCEPTION 'SQL command caller must not be able to bypass audit/outbox';
+  END IF;
+  IF has_function_privilege('public', 'programs.append_local_plan_draft_revision(
+    text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'PUBLIC function execution must remain revoked';
+  END IF;
+END;
+$test$;
+
+
+-- Independent least-privilege reader. The existing CI-only writer is intentionally
+-- NOT inherited or reachable through SET ROLE. Never mirror these as Production grants.
+CREATE ROLE kanoonyar_draft_read_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_draft_read_ci;
+GRANT USAGE ON SCHEMA programs,centers TO kanoonyar_draft_read_ci;
+GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_draft_read_ci;
+GRANT SELECT ON programs.center_plan_draft_revisions TO kanoonyar_draft_read_ci;
+DO $test$
+BEGIN
+  IF has_table_privilege('kanoonyar_draft_read_ci',
+       'programs.center_plan_draft_revisions', 'INSERT') OR
+     has_table_privilege('kanoonyar_draft_read_ci',
+       'governance.command_audit', 'INSERT') OR
+     has_table_privilege('kanoonyar_draft_read_ci',
+       'governance.outbox_events', 'INSERT') OR
+     has_function_privilege('kanoonyar_draft_read_ci',
+       'programs.append_local_plan_draft_revision(text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)',
+       'EXECUTE') OR
+     pg_has_role('kanoonyar_draft_read_ci','kanoonyar_draft_api_ci','SET') OR
+     pg_has_role('kanoonyar_draft_read_ci','kanoonyar_draft_api_ci','MEMBER') THEN
+    RAISE EXCEPTION 'Reader role must not inherit or acquire write privileges';
+  END IF;
+END;
+$test$;
+
+
+-- Separate escalation fixture: current privileges are read-only, but SET ROLE
+-- would reach the command-executing writer. An API read connection must refuse this login.
+CREATE ROLE kanoonyar_draft_escalation_ci LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_draft_escalation_ci;
+GRANT USAGE ON SCHEMA programs,centers TO kanoonyar_draft_escalation_ci;
+GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_draft_escalation_ci;
+GRANT SELECT ON programs.center_plan_draft_revisions TO kanoonyar_draft_escalation_ci;
+GRANT kanoonyar_draft_api_ci TO kanoonyar_draft_escalation_ci
+  WITH INHERIT FALSE, SET TRUE;
+DO $test$
+BEGIN
+ IF NOT pg_has_role('kanoonyar_draft_escalation_ci',
+        'kanoonyar_draft_api_ci','SET') OR
+    has_function_privilege('kanoonyar_draft_escalation_ci',
+        'programs.append_local_plan_draft_revision(text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)','EXECUTE') THEN
+   RAISE EXCEPTION 'Escalation test role must require SET ROLE';
+ END IF;
+END;
+$test$;
