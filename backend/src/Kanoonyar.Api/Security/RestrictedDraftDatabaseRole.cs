@@ -71,6 +71,20 @@ public static class RestrictedDraftDatabaseRole
               OR has_table_privilege(current_user, 'programs.center_plan_draft_revisions', 'UPDATE')
               OR has_table_privilege(current_user, 'programs.center_plan_draft_revisions', 'DELETE')
               OR has_table_privilege(current_user,
+                   'programs.center_activity_reports'::regclass, 'INSERT')
+              OR has_table_privilege(current_user,
+                   'programs.center_activity_reports'::regclass, 'UPDATE')
+              OR has_table_privilege(current_user,
+                   'programs.center_activity_reports'::regclass, 'DELETE')
+              OR has_function_privilege(current_user,
+                 'programs.record_center_activity_report(uuid,text,uuid,uuid,text,text,text,text,timestamptz,text,uuid,uuid,text)',
+                 'EXECUTE')
+              OR NOT EXISTS (
+                SELECT 1 FROM pg_class report
+                WHERE report.oid='programs.center_activity_reports'::regclass
+                  AND report.relrowsecurity AND report.relforcerowsecurity
+              )
+              OR has_table_privilege(current_user,
                    'programs.center_plan_issuance_links'::regclass, 'INSERT')
               OR has_table_privilege(current_user,
                    'programs.center_plan_issuance_links'::regclass, 'UPDATE')

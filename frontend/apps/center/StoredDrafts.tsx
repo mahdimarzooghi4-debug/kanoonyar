@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { StoredDraftHistory } from './StoredDraftHistory';
 import { StoredDraftTrace } from './StoredDraftTrace';
+import { StoredActivityReports } from './StoredActivityReports';
 
 type Membership = { centerId: string; displayName: string; roleCode: string };
 export type Draft = { draftId: string; revision: number; programId: string; nationalVersion: number; localTitle: string; localActivities: unknown[] };
@@ -19,6 +20,7 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [historyDraftId, setHistoryDraftId] = useState<string | null>(null);
   const [traceDraftId, setTraceDraftId] = useState<string | null>(null);
+  const [reportDraftId, setReportDraftId] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'denied' | 'error'>('idle');
   async function load() {
     if (!selectedCenter || !token.trim()) return;
@@ -26,6 +28,7 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
     setDrafts([]);
     setHistoryDraftId(null);
     setTraceDraftId(null);
+    setReportDraftId(null);
     setStatus('loading');
     try {
       const response = await fetch('/api/v1/centers/' + encodeURIComponent(selectedCenter) + '/local-plan-drafts', {
@@ -46,7 +49,7 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
     <h2>آخرین نسخه پیش‌نویس‌های ثبت‌شده</h2>
     <p>مشاهده پیش‌نویس‌ها نیز به مجوز مستقل نیاز دارد؛ عضویت کانون به‌تنهایی مجوز مشاهده یا ویرایش نیست.</p>
     <label>انتخاب کانون <select aria-label="انتخاب کانون برای پیش‌نویس‌ها" value={selectedCenter}
-      onChange={e => { readEpoch.current++; onCenterChange(e.target.value); setDrafts([]); setHistoryDraftId(null); setTraceDraftId(null); setStatus('idle'); }}>
+      onChange={e => { readEpoch.current++; onCenterChange(e.target.value); setDrafts([]); setHistoryDraftId(null); setTraceDraftId(null); setReportDraftId(null); setStatus('idle'); }}>
       <option value="">انتخاب کنید</option>
       {Array.from(new Map(memberships.map(m => [m.centerId, m.displayName])).entries()).map(([id, name]) =>
         <option key={id} value={id}>{name}</option>)}
@@ -60,7 +63,11 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
         <strong>{d.localTitle}</strong> — نسخه محلی {d.revision}، نسخه ملی {d.nationalVersion}{' '}
         <button type="button" onClick={() => onEditDraft(d)}>ویرایش پیش‌نویس</button>{' '}
         <button type="button" onClick={() => setHistoryDraftId(d.draftId)}>تاریخچه نسخه‌ها</button>{' '}
-        <button type="button" onClick={() => setTraceDraftId(d.draftId)}>پیوند ابلاغ ملی</button>
+        <button type="button" onClick={() => setTraceDraftId(d.draftId)}>پیوند ابلاغ ملی</button>{' '}
+        <button type="button" onClick={() => setReportDraftId(d.draftId)}>گزارش‌های فعالیت</button>
+        {reportDraftId === d.draftId && <StoredActivityReports
+          key={d.draftId} draftId={d.draftId} centerId={selectedCenter} token={token}
+          onClose={() => setReportDraftId(null)} />}
         {traceDraftId === d.draftId && <StoredDraftTrace
           key={d.draftId} draftId={d.draftId} centerId={selectedCenter} token={token}
           onClose={() => setTraceDraftId(null)} />}
