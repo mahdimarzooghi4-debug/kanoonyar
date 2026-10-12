@@ -409,10 +409,22 @@ public sealed class LocalDraftPostgresIntegrationTests
                 INSERT INTO programs.national_program_issuances
                  (issuance_id,center_id,program_id,national_version,issued_by_subject,issued_at)
                 VALUES (@issuance,'center-a','national-1',1,'fixture',now())
+                ON CONFLICT (center_id,program_id,national_version) DO NOTHING
                 """, db))
             {
                 issue.Parameters.AddWithValue("issuance", issuance);
                 await issue.ExecuteNonQueryAsync();
+            }
+            // Tests share the same disposable database: issuance is unique by
+            // center+program+version, independent of the randomly generated UUID.
+            await using (var lookup = new NpgsqlCommand(
+                """
+                SELECT issuance_id FROM programs.national_program_issuances
+                WHERE center_id='center-a' AND program_id='national-1'
+                  AND national_version=1
+                """, db))
+            {
+                issuance = Assert.IsType<Guid>(await lookup.ExecuteScalarAsync());
             }
             await using (var record = new NpgsqlCommand(
                 """
@@ -484,6 +496,143 @@ public sealed class LocalDraftPostgresIntegrationTests
                 Guid.NewGuid(), CancellationToken.None);
             Assert.Equal(503, Status(result));
         }
+    }
+
+    [Fact]
+    public async Task Unverified_reports_have_real_paginated_postgres_lineage_and_are_not_cross_center_visible()
+    {
+        if (!Enabled()) return;
+        var draft = Guid.NewGuid();
+        var issuance = Guid.NewGuid();
+        var link = Guid.NewGuid();
+        Assert.Equal(200, Status(await Write(draft)));
+        await using (var db = new NpgsqlConnection(AdminConnection))
+        {
+            await db.OpenAsync();
+            await using (var issue = new NpgsqlCommand(
+                """
+                INSERT INTO programs.national_program_issuances
+                 (issuance_id,center_id,program_id,national_version,issued_by_subject,issued_at)
+                VALUES(@id,'center-a','national-1',1,'fixture',now())
+                ON CONFLICT (center_id,program_id,national_version) DO NOTHING
+                """, db))
+            {
+                issue.Parameters.AddWithValue("id", issuance);
+                await issue.ExecuteNonQueryAsync();
+            }
+            // Tests share the same disposable database: issuance is unique by
+            // center+program+version, independent of the randomly generated UUID.
+            await using (var lookup = new NpgsqlCommand(
+                """
+                SELECT issuance_id FROM programs.national_program_issuances
+                WHERE center_id='center-a' AND program_id='national-1'
+                  AND national_version=1
+                """, db))
+            {
+                issuance = Assert.IsType<Guid>(await lookup.ExecuteScalarAsync());
+            }
+            await using (var attach = new NpgsqlCommand(
+                """
+                SELECT programs.record_center_plan_issuance_link(
+                 @link,'center-a',@draft,1,@issuance,'national-1',1,
+                 'fixture',@audit,@event,'report-link')
+                """, db))
+            {
+                attach.Parameters.AddWithValue("link", link);
+                attach.Parameters.AddWithValue("draft", draft);
+                attach.Parameters.AddWithValue("issuance", issuance);
+                attach.Parameters.AddWithValue("audit", Guid.NewGuid());
+                attach.Parameters.AddWithValue("event", Guid.NewGuid());
+                Assert.Equal(link, await attach.ExecuteScalarAsync());
+            }
+            for (int i=0;i<22;i++)
+            {
+                await using var report = new NpgsqlCommand(
+                    """
+                    SELECT programs.record_center_activity_report(
+                     @report,'center-a',@link,@draft,'class',@source,
+                     @evidence,'Unverified reported activity',NULL,'fixture',
+                     @audit,@event,'report-event')
+                    """, db);
+                var reportId = Guid.NewGuid();
+                report.Parameters.AddWithValue("report", reportId);
+                report.Parameters.AddWithValue("link", link);
+                report.Parameters.AddWithValue("draft", draft);
+                report.Parameters.AddWithValue("source", "synthetic-class-" + i);
+                report.Parameters.AddWithValue("evidence", "synthetic-evidence-" + i);
+                report.Parameters.AddWithValue("audit", Guid.NewGuid());
+                report.Parameters.AddWithValue("event", Guid.NewGuid());
+                Assert.Equal(reportId, await report.ExecuteScalarAsync());
+            }
+        }
+        async Task<IResult> ReadReport(string subject = "actor-a", string center = "center-a",
+            long? before = null, ICenterActivityReportReadAuthorization? auth = null,
+            IConfiguration? config = null) =>
+            await CenterActivityReportReadEndpoint.ListReports(Principal(subject),
+                config ?? Configuration(), auth ?? new TestOnlyActivityReadGrant(),
+                center, draft, before, CancellationToken.None);
+        (JsonElement Items, long? Next) Page(IResult result)
+        {
+            Assert.Equal(200, Status(result));
+            using var json = JsonDocument.Parse(JsonSerializer.Serialize(
+                Assert.IsAssignableFrom<IValueHttpResult>(result).Value));
+            var data = json.RootElement;
+            Assert.Equal(draft, data.GetProperty("draftId").GetGuid());
+            var next = data.GetProperty("nextBeforeSequence");
+            return (data.GetProperty("reports").Clone(),
+                next.ValueKind == JsonValueKind.Null ? null : next.GetInt64());
+        }
+        var first = Page(await ReadReport());
+        Assert.Equal(20, first.Items.GetArrayLength());
+        Assert.True(first.Next.HasValue);
+        Assert.All(first.Items.EnumerateArray(), item => {
+            Assert.Equal("UNVERIFIED", item.GetProperty("verificationStatus").GetString());
+            Assert.Equal(JsonValueKind.Null, item.GetProperty("claimedOccurredAt").ValueKind);
+            Assert.Equal(link, item.GetProperty("linkId").GetGuid());
+        });
+        var second = Page(await ReadReport(before:first.Next));
+        Assert.Equal(2, second.Items.GetArrayLength());
+        Assert.Null(second.Next);
+        Assert.True(first.Items[19].GetProperty("reportSequence").GetInt64() >
+            second.Items[0].GetProperty("reportSequence").GetInt64());
+        Assert.Empty(Page(await ReadReport(subject:"actor-b")).Items.EnumerateArray());
+        Assert.Empty(Page(await ReadReport(subject:"actor-revoked")).Items.EnumerateArray());
+        Assert.Empty(Page(await ReadReport(center:"center-b")).Items.EnumerateArray());
+        Assert.Equal(403, Status(await ReadReport(
+            auth:new UnapprovedCenterActivityReportReadAuthorization())));
+        Assert.Equal(400, Status(await ReadReport(before:0)));
+        foreach (var restricted in new [] { AdminConnection, RuntimeConnection, EscalationConnection })
+        {
+            var config = new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string,string?> {
+                    ["CENTER_DRAFT_READ_DATABASE_URL"] = restricted
+                }).Build();
+            Assert.Equal(503, Status(await ReadReport(config:config)));
+        }
+        await using var verification = new NpgsqlConnection(AdminConnection);
+        await verification.OpenAsync();
+        await using var count = new NpgsqlCommand(
+            """
+            SELECT (SELECT count(*) FROM programs.center_activity_reports WHERE draft_id=@draft),
+                   (SELECT count(*) FROM governance.command_audit
+                     WHERE target_type='center_activity_report' AND target_id IN
+                       (SELECT report_id::text FROM programs.center_activity_reports WHERE draft_id=@draft)),
+                   (SELECT count(*) FROM governance.outbox_events
+                     WHERE aggregate_type='center_activity_report' AND aggregate_id IN
+                       (SELECT report_id::text FROM programs.center_activity_reports WHERE draft_id=@draft))
+            """, verification);
+        count.Parameters.AddWithValue("draft", draft);
+        await using var reader = await count.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(22L, reader.GetInt64(0));
+        Assert.Equal(22L, reader.GetInt64(1));
+        Assert.Equal(22L, reader.GetInt64(2));
+    }
+
+    private sealed class TestOnlyActivityReadGrant : ICenterActivityReportReadAuthorization
+    {
+        public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, string centerId,
+            CancellationToken ct) => ValueTask.FromResult(true);
     }
 
     private sealed class TestOnlyWriteGrant : ILocalPlanDraftWriteAuthorization

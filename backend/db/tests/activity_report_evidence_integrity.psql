@@ -1,0 +1,106 @@
+\set ON_ERROR_STOP on
+-- Standalone disposable CI PostgreSQL. Reuses proven trace fixture, not Production.
+\ir center_execution_trace_integrity.psql
+\ir ../migrations/0015_activity_report_evidence_lineage.sql
+DO $test$
+DECLARE report uuid;
+ report_uuid uuid;
+ audit_uuid uuid;
+ event_uuid uuid;
+ i integer;
+BEGIN
+ FOR i IN 1..22 LOOP
+   report_uuid:=gen_random_uuid(); audit_uuid:=gen_random_uuid(); event_uuid:=gen_random_uuid();
+   PERFORM programs.record_center_activity_report(
+    report_uuid,'a','99999999-9999-4999-8999-999999999999',
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'class','synthetic-class-'||i,'synthetic-evidence-'||i,
+    'Unverified submission '||i,NULL,'actor-a',audit_uuid,event_uuid,'report-'||i);
+ END LOOP;
+ IF (SELECT count(*) FROM programs.center_activity_reports)<>22 OR
+    (SELECT count(*) FROM governance.command_audit
+      WHERE action_code='UNVERIFIED_ACTIVITY_REPORT_RECORDED')<>22 OR
+    (SELECT count(*) FROM governance.outbox_events
+      WHERE event_type='UnverifiedActivityReportRecorded')<>22 THEN
+   RAISE EXCEPTION 'Report/audit/outbox cardinality wrong'; END IF;
+ IF (SELECT count(*) FROM programs.center_activity_reports
+     WHERE claimed_occurred_at IS NULL)<>22 THEN
+   RAISE EXCEPTION 'Unknown occurrence time fabricated'; END IF;
+ IF (SELECT count(*) FROM programs.center_activity_reports
+     WHERE report_sequence<(SELECT max(report_sequence)-19
+         FROM programs.center_activity_reports))<>2 THEN
+   RAISE EXCEPTION 'Cursor pagination fixture incorrect'; END IF;
+
+ BEGIN
+  PERFORM programs.record_center_activity_report(gen_random_uuid(),
+   'b','99999999-9999-4999-8999-999999999999',
+   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','class','cross-center',
+   'cross-evidence','Invalid','2026-10-12T00:00:00Z','actor-b',
+   gen_random_uuid(),gen_random_uuid(),'cross');
+  RAISE EXCEPTION 'Cross-center link accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+
+ BEGIN
+  PERFORM programs.record_center_activity_report(gen_random_uuid(),
+   'a','99999999-9999-4999-8999-999999999999',
+   'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','class','wrong-draft',
+   'wrong-evidence','Invalid',NULL,'actor-a',
+   gen_random_uuid(),gen_random_uuid(),'mismatch');
+  RAISE EXCEPTION 'Wrong draft link accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+
+ BEGIN
+  PERFORM programs.record_center_activity_report(gen_random_uuid(),
+   'a','99999999-9999-4999-8999-999999999999',
+   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','class','synthetic-class-1',
+   'synthetic-evidence-1','Duplicate',NULL,'actor-a',
+   gen_random_uuid(),gen_random_uuid(),'duplicate');
+  RAISE EXCEPTION 'Duplicate evidence recorded';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+
+ BEGIN
+  PERFORM programs.record_center_activity_report(
+   '11111111-3333-4333-8333-111111111111',
+   'a','99999999-9999-4999-8999-999999999999',
+   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','class','audit-failure',
+   'audit-failure','Failed audit',NULL,'actor-a',
+   '90000000-0000-4000-8000-000000000001',
+   gen_random_uuid(),'rollback');
+  RAISE EXCEPTION 'Duplicate audit unexpectedly accepted';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+ IF EXISTS(SELECT 1 FROM programs.center_activity_reports
+           WHERE report_id='11111111-3333-4333-8333-111111111111') THEN
+   RAISE EXCEPTION 'Audit failure persisted report'; END IF;
+
+ BEGIN
+  UPDATE programs.center_activity_reports SET reported_summary='Tampered';
+  RAISE EXCEPTION 'Report UPDATE allowed';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+  DELETE FROM programs.center_activity_reports;
+  RAISE EXCEPTION 'Report DELETE allowed';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ IF (SELECT count(*) FROM programs.center_activity_reports)<>22 THEN
+   RAISE EXCEPTION 'Rejected report altered records'; END IF;
+ IF has_function_privilege('public',
+   'programs.record_center_activity_report(uuid,text,uuid,uuid,text,text,text,text,timestamptz,text,uuid,uuid,text)',
+   'EXECUTE') OR
+   has_table_privilege('public','programs.center_activity_reports','INSERT') THEN
+   RAISE EXCEPTION 'PUBLIC can create evidence claims'; END IF;
+END;$test$;
+
+CREATE ROLE kanoonyar_report_reader_ci NOLOGIN NOSUPERUSER NOBYPASSRLS;
+GRANT USAGE ON SCHEMA programs TO kanoonyar_report_reader_ci;
+GRANT SELECT ON programs.center_activity_reports TO kanoonyar_report_reader_ci;
+SET ROLE kanoonyar_report_reader_ci;
+SELECT set_config('kanoonyar.center_id','b',false);
+DO $test$ BEGIN
+ IF EXISTS(SELECT 1 FROM programs.center_activity_reports) THEN
+   RAISE EXCEPTION 'Cross-center report disclosure'; END IF;
+END;$test$;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $test$ BEGIN
+ IF (SELECT count(*) FROM programs.center_activity_reports)<>22 THEN
+   RAISE EXCEPTION 'Same-center report RLS failed'; END IF;
+END;$test$;
+RESET ROLE;
