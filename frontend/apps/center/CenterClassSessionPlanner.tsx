@@ -15,6 +15,7 @@ export function CenterClassSessionPlanner({ token, centerId }: {
   const [sessionTitle, setSessionTitle] = useState('');
   const [scheduledLocal, setScheduledLocal] = useState('');
   const [classState, setClassState] = useState<State>('idle');
+  const [showIntake, setShowIntake] = useState(false);
   const [sessionState, setSessionState] = useState<State>('idle');
 
   useEffect(() => {
@@ -22,7 +23,7 @@ export function CenterClassSessionPlanner({ token, centerId }: {
     classRequest.current = crypto.randomUUID();
     sessionRequest.current = crypto.randomUUID();
     setClassId(null); setClassTitle(''); setSessionTitle('');
-    setScheduledLocal(''); setClassState('idle'); setSessionState('idle');
+    setScheduledLocal(''); setClassState('idle'); setSessionState('idle'); setShowIntake(false);
     return () => { epoch.current++; };
   }, [centerId, token]);
 
@@ -111,8 +112,11 @@ export function CenterClassSessionPlanner({ token, centerId }: {
     {classState === 'conflict' && <p role="alert">شناسه کلاس از قبل ثبت شده است. از مسیر مشاهده منابع، رکورد موجود را بررسی کنید.</p>}
     {classState === 'error' && <p role="alert">ثبت کلاس تأیید نشد؛ وضعیت را از سرور بررسی کنید.</p>}
     {classId !== null && <div>
-      <ClassCapacityIntake centerId={centerId} classId={classId} token={token}
-        onClose={()=>setClassId(null)} />
+      <button type="button" onClick={()=>setShowIntake(value=>!value)}>
+        {showIntake?'بستن مدیریت ظرفیت':'مدیریت ظرفیت کلاس جدید'}
+      </button>
+      {showIntake && <ClassCapacityIntake centerId={centerId} classId={classId} token={token}
+        onClose={()=>setShowIntake(false)} />}
       <h4>جلسه کلاس «{classTitle}»</h4>
       <label>عنوان جلسه <input aria-label="عنوان جلسه جدید" value={sessionTitle}
         onChange={e => { setSessionTitle(e.target.value); setSessionState('idle'); }} /></label>{' '}
