@@ -41,7 +41,8 @@ public sealed class CenterSiteDraftPostgresTests
  public async Task Site_drafts_are_versioned_private_audited_and_isolated()
  {
   if(!Enabled())return;
-  var id=Guid.NewGuid(),competing=Guid.NewGuid();
+  var id=Guid.NewGuid();
+  var competing=Guid.NewGuid();
   var grant=new Grant();
   Task<IResult> WritePage(Guid page,long expected,string slug,string title="Synthetic title",
    string actor="actor-a",string center="center-a",IConfiguration? config=null)=>
@@ -65,8 +66,8 @@ public sealed class CenterSiteDraftPostgresTests
   var conflicting=await Task.WhenAll(
     WritePage(id,1,"about-center","v2"),
     WritePage(id,1,"about-center","concurrent"));
-  Assert.Single(conflicting.Where(x=>Status(x)==200));
-  Assert.Single(conflicting.Where(x=>Status(x)==409));
+  Assert.Single(conflicting,x=>Status(x)==200);
+  Assert.Single(conflicting,x=>Status(x)==409);
   Assert.Equal(409,Status(await WritePage(id,1,"about-center","stale")));
   Assert.Equal(409,Status(await WritePage(competing,0,"about-center","duplicate slug")));
   Assert.Equal(409,Status(await WritePage(id,2,"changed-slug","must not rename")));
