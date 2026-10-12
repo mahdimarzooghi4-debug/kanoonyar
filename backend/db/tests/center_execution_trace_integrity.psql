@@ -34,6 +34,13 @@ SELECT programs.append_local_plan_draft_revision('a',
  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',1,'n',1,'Second','["Workshop","Class"]',
  'actor-a','a3333333-3333-4333-8333-333333333333',
  'a4444444-4444-4444-8444-444444444444','rev2');
+-- A distinct unlinked draft is necessary to prove the composite FK checks
+-- themselves, rather than accidentally failing the unique-per-draft constraint.
+SELECT programs.append_local_plan_draft_revision('a',
+ 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',0,'n',1,'Other draft','["Talk"]',
+ 'actor-a','a5555555-5555-4555-8555-555555555555',
+ 'a6666666-6666-4666-8666-666666666666','rev-other');
+
 DO $test$
 DECLARE v_link_id uuid:='99999999-9999-4999-8999-999999999999';
  draft uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -57,7 +64,8 @@ BEGIN
  EXCEPTION WHEN unique_violation THEN NULL; END;
  BEGIN
   PERFORM programs.record_center_plan_issuance_link(
-    '90000000-0000-4000-8000-000000000006','a',draft,2,
+    '90000000-0000-4000-8000-000000000006','a',
+    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',1,
     '22222222-2222-4222-8222-222222222222','n',1,'actor-a',
     '90000000-0000-4000-8000-000000000007',
     '90000000-0000-4000-8000-000000000008','cross-center');
@@ -65,12 +73,27 @@ BEGIN
  EXCEPTION WHEN foreign_key_violation THEN NULL; WHEN unique_violation THEN NULL; END;
  BEGIN
   PERFORM programs.record_center_plan_issuance_link(
-    '90000000-0000-4000-8000-000000000009','a',draft,2,
+    '90000000-0000-4000-8000-000000000009','a',
+    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',1,
     '33333333-3333-4333-8333-333333333333','n',2,'actor-a',
     '90000000-0000-4000-8000-000000000010',
     '90000000-0000-4000-8000-000000000011','mismatch');
   RAISE EXCEPTION 'Wrong national version accepted';
  EXCEPTION WHEN foreign_key_violation THEN NULL; WHEN unique_violation THEN NULL; END;
+ -- Force failure *after* link insertion using a duplicate accepted audit ID.
+ -- The entire issuance trace must roll back with no unpaired outbox.
+ BEGIN
+  PERFORM programs.record_center_plan_issuance_link(
+    '90000000-0000-4000-8000-000000000012','a',
+    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',1,
+    '11111111-1111-4111-8111-111111111111','n',1,'actor-a',
+    '90000000-0000-4000-8000-000000000001',
+    '90000000-0000-4000-8000-000000000013','audit-rollback');
+  RAISE EXCEPTION 'Duplicate audit was accepted';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+ IF EXISTS(SELECT 1 FROM programs.center_plan_issuance_links
+           WHERE draft_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb') THEN
+   RAISE EXCEPTION 'Failed audit left orphan trace'; END IF;
  BEGIN
   UPDATE programs.center_plan_issuance_links SET pinned_revision=2
   WHERE link_id=v_link_id;
