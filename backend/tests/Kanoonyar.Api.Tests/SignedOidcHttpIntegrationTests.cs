@@ -113,8 +113,10 @@ public sealed class SignedOidcHttpIntegrationTests
                     {
                         services.RemoveAll<ILocalPlanDraftWriteAuthorization>();
                         services.RemoveAll<ILocalPlanDraftReadAuthorization>();
+                        services.RemoveAll<ICenterActivityReportReadAuthorization>();
                         services.AddSingleton<ILocalPlanDraftWriteAuthorization, TestOnlyWriteGrant>();
                         services.AddSingleton<ILocalPlanDraftReadAuthorization, TestOnlyReadGrant>();
+                        services.AddSingleton<ICenterActivityReportReadAuthorization, TestOnlyReportReadGrant>();
                     }
                 });
             });
@@ -348,6 +350,28 @@ public sealed class SignedOidcHttpIntegrationTests
         using (var signed = Request(HttpMethod.Get, path, fixture.Token(roleClaim: true)))
         using (var result = await client.SendAsync(signed))
             Assert.Equal(HttpStatusCode.Forbidden, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task Signed_jwt_does_not_grant_activity_reports_even_with_administrative_claims()
+    {
+        using var fixture = new SignedJwtFixture();
+        await using var app = fixture.Server();
+        using var client = app.CreateClient();
+        var path = "/api/v1/centers/center-a/local-plan-drafts/" +
+            Guid.NewGuid().ToString("D") + "/activity-reports";
+        using (var anonymous = Request(HttpMethod.Get, path, null))
+        using (var denied = await client.SendAsync(anonymous))
+            Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        using (var signed = Request(HttpMethod.Get, path, fixture.Token(roleClaim:true)))
+        using (var denied = await client.SendAsync(signed))
+            Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+    }
+
+    private sealed class TestOnlyReportReadGrant : ICenterActivityReportReadAuthorization
+    {
+        public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, string centerId,
+            CancellationToken ct) => ValueTask.FromResult(true);
     }
 
     private sealed class TestOnlyWriteGrant : ILocalPlanDraftWriteAuthorization
