@@ -36,7 +36,7 @@ test('class sessions paginate independently from event owner and preserve unknow
   await expect(page.getByText('جلسه 22')).toBeVisible();
   await expect(page.getByText('زمان برنامه‌ریزی: نامشخص').first()).toBeVisible();
   await page.getByRole('button',{name:'منابع قدیمی‌تر'}).click();
-  await expect(page.getByText('جلسه 1')).toBeVisible();
+  await expect(page.getByText('جلسه 1',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'دریافت رویدادها'}).click();
   await expect(page.getByText('رویداد محلی')).toBeVisible();
   await expect(page.getByText('جلسه 22')).toHaveCount(0);
