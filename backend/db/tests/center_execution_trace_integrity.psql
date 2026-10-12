@@ -111,7 +111,18 @@ BEGIN
  'programs.record_center_plan_issuance_link(uuid,text,uuid,bigint,uuid,text,integer,text,uuid,uuid,text)','EXECUTE') THEN
    RAISE EXCEPTION 'PUBLIC can create links'; END IF;
 END;$test$;
-CREATE ROLE kanoonyar_trace_reader_ci NOLOGIN NOSUPERUSER NOBYPASSRLS;
+-- PostgreSQL roles are cluster-wide; this disposable fixture is also included
+-- from the Sprint 11 database, so its non-login role must be reusable.
+DO $role$
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='kanoonyar_trace_reader_ci') THEN
+   CREATE ROLE kanoonyar_trace_reader_ci NOLOGIN NOSUPERUSER NOBYPASSRLS;
+ END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='kanoonyar_trace_reader_ci'
+    AND NOT rolcanlogin AND NOT rolsuper AND NOT rolbypassrls) THEN
+   RAISE EXCEPTION 'Unsafe trace fixture role';
+ END IF;
+END;$role$;
 GRANT USAGE ON SCHEMA programs TO kanoonyar_trace_reader_ci;
 GRANT SELECT ON programs.center_plan_issuance_links TO kanoonyar_trace_reader_ci;
 SET ROLE kanoonyar_trace_reader_ci;
