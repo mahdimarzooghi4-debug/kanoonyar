@@ -20,6 +20,7 @@
 \ir ../migrations/0018_session_occurrence_attendance_claims.sql
 \ir ../migrations/0019_sourced_activity_report_command.sql
 \ir ../migrations/0020_class_capacity_intake.sql
+\ir ../migrations/0021_registration_review_requirements.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -78,6 +79,7 @@ GRANT SELECT ON programs.center_plan_draft_revisions,programs.center_plan_issuan
 GRANT SELECT ON learning.center_classes,learning.class_sessions,events.center_events TO kanoonyar_draft_read_ci;
 GRANT SELECT ON learning.session_occurrence_reports,learning.session_attendance_claims TO kanoonyar_draft_read_ci;
 GRANT SELECT ON learning.class_capacity_revisions,learning.class_registration_intents TO kanoonyar_draft_read_ci;
+GRANT SELECT ON learning.registration_review_requests TO kanoonyar_draft_read_ci;
 DO $test$
 BEGIN
   IF has_table_privilege('kanoonyar_draft_read_ci',
@@ -234,4 +236,25 @@ DO $guard$ BEGIN
  OR has_function_privilege('kanoonyar_draft_read_ci',
    'learning.record_class_registration_intent(text,uuid,uuid,uuid,text,uuid,uuid,text)','EXECUTE')
  THEN RAISE EXCEPTION 'Unsafe intake fixture privilege'; END IF;
+END;$guard$;
+
+-- Disposable review command credential; no real operational human grant.
+CREATE ROLE kanoonyar_registration_review_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_registration_review_api_ci;
+GRANT USAGE ON SCHEMA programs,centers,learning,events,governance
+ TO kanoonyar_registration_review_api_ci;
+GRANT EXECUTE ON FUNCTION learning.request_registration_human_review(
+ text,uuid,uuid,uuid,text,text,uuid,uuid,text)
+ TO kanoonyar_registration_review_api_ci;
+DO $guard$ BEGIN
+ IF has_table_privilege('kanoonyar_registration_review_api_ci',
+     'learning.registration_review_requests','INSERT')
+ OR has_table_privilege('kanoonyar_registration_review_api_ci',
+     'governance.command_audit','INSERT')
+ OR pg_has_role('kanoonyar_registration_review_api_ci',
+     'kanoonyar_registration_review_owner','SET')
+ OR has_function_privilege('kanoonyar_draft_read_ci',
+   'learning.request_registration_human_review(text,uuid,uuid,uuid,text,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Unsafe review SQL fixture'; END IF;
 END;$guard$;

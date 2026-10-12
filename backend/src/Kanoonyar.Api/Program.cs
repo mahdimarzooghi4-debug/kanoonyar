@@ -17,6 +17,7 @@ builder.Services.AddSingleton<ICenterSessionClaimHistoryAuthorization, Unapprove
 builder.Services.AddSingleton<ICenterSessionReportLineageAuthorization, UnapprovedCenterSessionReportLineageAuthorization>();
 builder.Services.AddSingleton<ICenterSourcedActivityReportWriteAuthorization, UnapprovedCenterSourcedActivityReportWriteAuthorization>();
 builder.Services.AddSingleton<ICenterClassIntakeAuthorization, UnapprovedCenterClassIntakeAuthorization>();
+builder.Services.AddSingleton<ICenterRegistrationReviewAuthorization, UnapprovedCenterRegistrationReviewAuthorization>();
 
 var app = builder.Build();
 app.UseExceptionHandler();
@@ -38,6 +39,8 @@ if (oidcConfigured)
     app.MapPost("/api/v1/centers/{centerId}/class-sessions/{sessionId:guid}/attendance-claims", CenterSessionClaimWriteEndpoint.RecordAttendance).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/classes/{classId:guid}/capacity-revisions", CenterClassIntakeEndpoint.SetCapacity).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/classes/{classId:guid}/registration-intents", CenterClassIntakeEndpoint.RequestRegistration).RequireAuthorization();
+    app.MapPost("/api/v1/centers/{centerId}/classes/{classId:guid}/registration-intents/{requestId:guid}/review-requests", CenterRegistrationReviewEndpoint.Raise).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/classes/{classId:guid}/registration-intents/{requestId:guid}/review-requests", CenterRegistrationReviewEndpoint.List).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/classes/{classId:guid}/intake", CenterClassIntakeEndpoint.Read).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/activity-reports/sourced", CenterSourcedActivityReportWriteEndpoint.Record).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/class-sessions/{sessionId:guid}/report-lineage", CenterSessionReportLineageEndpoint.Get).RequireAuthorization();
@@ -72,6 +75,8 @@ else
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/classes/{classId:guid}/capacity-revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/classes/{classId:guid}/registration-intents", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
+    app.MapPost("/api/v1/centers/{centerId}/classes/{classId:guid}/registration-intents/{requestId:guid}/review-requests", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/classes/{classId:guid}/registration-intents/{requestId:guid}/review-requests", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/classes/{classId:guid}/intake", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/activity-reports/sourced", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
