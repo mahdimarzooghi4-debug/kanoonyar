@@ -16,6 +16,7 @@
 \ir ../migrations/0014_national_to_local_plan_trace.sql
 \ir ../migrations/0015_activity_report_evidence_lineage.sql
 \ir ../migrations/0016_learning_events_source_ownership.sql
+\ir ../migrations/0017_learning_planning_commands.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -111,3 +112,30 @@ BEGIN
  END IF;
 END;
 $test$;
+
+
+-- Disposable integration-only command LOGIN; NEVER use in Production.
+CREATE ROLE kanoonyar_learning_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_learning_api_ci;
+GRANT USAGE ON SCHEMA learning,centers TO kanoonyar_learning_api_ci;
+GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_learning_api_ci;
+GRANT EXECUTE ON FUNCTION learning.record_class_plan(text,uuid,text,text,uuid,uuid,text)
+ TO kanoonyar_learning_api_ci;
+GRANT EXECUTE ON FUNCTION learning.record_class_session_plan(
+ text,uuid,uuid,text,timestamptz,text,uuid,uuid,text) TO kanoonyar_learning_api_ci;
+DO $guard$
+BEGIN
+ IF has_table_privilege('kanoonyar_learning_api_ci','learning.center_classes','INSERT')
+   OR has_table_privilege('kanoonyar_learning_api_ci','learning.class_sessions','INSERT')
+   OR has_table_privilege('kanoonyar_learning_api_ci','governance.command_audit','INSERT')
+   OR has_table_privilege('kanoonyar_learning_api_ci','governance.outbox_events','INSERT')
+   OR pg_has_role('kanoonyar_learning_api_ci',
+       'kanoonyar_learning_command_owner','SET') THEN
+   RAISE EXCEPTION 'Test learning login can bypass auditing';
+ END IF;
+ IF has_function_privilege('kanoonyar_draft_read_ci',
+  'learning.record_class_plan(text,uuid,text,text,uuid,uuid,text)','EXECUTE') THEN
+   RAISE EXCEPTION 'Readonly SQL credential can execute learning commands';
+ END IF;
+END;$guard$;

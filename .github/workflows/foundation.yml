@@ -78,6 +78,7 @@ jobs:
       - name: Real restricted PostgreSQL to API-handler integration
         env:
           CENTER_DRAFT_INTEGRATION_REQUIRED: '1'
+          CENTER_LEARNING_INTEGRATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_learning_api_ci;Pooling=false
           CENTER_DRAFT_INTEGRATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_draft_api_ci;Pooling=false
           CENTER_DRAFT_INTEGRATION_READ_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_draft_read_ci;Pooling=false
           CENTER_DRAFT_INTEGRATION_ESCALATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_draft_escalation_ci;Pooling=false
