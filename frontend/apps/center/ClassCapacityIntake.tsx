@@ -7,7 +7,7 @@ type Snapshot={classId:string;currentRevision:number|null;
   registrationIntents:Item[];nextBeforeRequestId:string|null};
 type Status='idle'|'loading'|'ready'|'denied'|'error';
 type Save='idle'|'saving'|'saved'|'denied'|'conflict'|'error';
-const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ident=(v:unknown):v is string=>typeof v==='string'&&uuid.test(v);
 const positive=(v:unknown)=>Number.isSafeInteger(v)&&Number(v)>0;
 function validItem(v:unknown):v is Item {
