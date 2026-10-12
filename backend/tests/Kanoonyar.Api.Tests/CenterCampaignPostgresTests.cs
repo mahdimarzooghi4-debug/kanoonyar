@@ -110,10 +110,12 @@ public sealed class CenterCampaignPostgresTests
   using(var json=Json(found))
   {
    var rows=json.RootElement.GetProperty("campaigns");
-   Assert.Single(rows.EnumerateArray());
-   Assert.Equal(campaign,rows[0].GetProperty("campaignId").GetGuid());
-   Assert.Equal(2L,rows[0].GetProperty("revision").GetInt64());
-   Assert.False(rows[0].GetProperty("isExecuted").GetBoolean());
+   // Other independent integration suites may persist separate campaigns
+   // in the same disposable database; assert this source-owned campaign only.
+   var own=Assert.Single(rows.EnumerateArray(),
+     row=>row.GetProperty("campaignId").GetGuid()==campaign);
+   Assert.Equal(2L,own.GetProperty("revision").GetInt64());
+   Assert.False(own.GetProperty("isExecuted").GetBoolean());
   }
   var history=await History();
   Assert.Equal(200,Status(history));
