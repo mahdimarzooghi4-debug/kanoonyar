@@ -3,6 +3,7 @@ import { StoredDraftHistory } from './StoredDraftHistory';
 import { StoredDraftTrace } from './StoredDraftTrace';
 import { StoredActivityReports } from './StoredActivityReports';
 import { StoredActivitySources } from './StoredActivitySources';
+import { CenterClassSessionPlanner } from './CenterClassSessionPlanner';
 
 type Membership = { centerId: string; displayName: string; roleCode: string };
 export type Draft = { draftId: string; revision: number; programId: string; nationalVersion: number; localTitle: string; localActivities: unknown[] };
@@ -48,6 +49,7 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
   }
   return <section aria-label="پیش‌نویس‌های ثبت‌شده" style={{ marginTop: '2rem' }}>
     <h2>آخرین نسخه پیش‌نویس‌های ثبت‌شده</h2>
+    <CenterClassSessionPlanner token={token} centerId={selectedCenter} />
     <StoredActivitySources token={token} centerId={selectedCenter} />
     <p>مشاهده پیش‌نویس‌ها نیز به مجوز مستقل نیاز دارد؛ عضویت کانون به‌تنهایی مجوز مشاهده یا ویرایش نیست.</p>
     <label>انتخاب کانون <select aria-label="انتخاب کانون برای پیش‌نویس‌ها" value={selectedCenter}
