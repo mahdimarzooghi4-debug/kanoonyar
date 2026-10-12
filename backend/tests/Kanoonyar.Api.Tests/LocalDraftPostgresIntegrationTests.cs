@@ -409,10 +409,22 @@ public sealed class LocalDraftPostgresIntegrationTests
                 INSERT INTO programs.national_program_issuances
                  (issuance_id,center_id,program_id,national_version,issued_by_subject,issued_at)
                 VALUES (@issuance,'center-a','national-1',1,'fixture',now())
+                ON CONFLICT (center_id,program_id,national_version) DO NOTHING
                 """, db))
             {
                 issue.Parameters.AddWithValue("issuance", issuance);
                 await issue.ExecuteNonQueryAsync();
+            }
+            // Tests share the same disposable database: issuance is unique by
+            // center+program+version, independent of the randomly generated UUID.
+            await using (var lookup = new NpgsqlCommand(
+                """
+                SELECT issuance_id FROM programs.national_program_issuances
+                WHERE center_id='center-a' AND program_id='national-1'
+                  AND national_version=1
+                """, db))
+            {
+                issuance = Assert.IsType<Guid>(await lookup.ExecuteScalarAsync());
             }
             await using (var record = new NpgsqlCommand(
                 """
@@ -502,10 +514,22 @@ public sealed class LocalDraftPostgresIntegrationTests
                 INSERT INTO programs.national_program_issuances
                  (issuance_id,center_id,program_id,national_version,issued_by_subject,issued_at)
                 VALUES(@id,'center-a','national-1',1,'fixture',now())
+                ON CONFLICT (center_id,program_id,national_version) DO NOTHING
                 """, db))
             {
                 issue.Parameters.AddWithValue("id", issuance);
                 await issue.ExecuteNonQueryAsync();
+            }
+            // Tests share the same disposable database: issuance is unique by
+            // center+program+version, independent of the randomly generated UUID.
+            await using (var lookup = new NpgsqlCommand(
+                """
+                SELECT issuance_id FROM programs.national_program_issuances
+                WHERE center_id='center-a' AND program_id='national-1'
+                  AND national_version=1
+                """, db))
+            {
+                issuance = Assert.IsType<Guid>(await lookup.ExecuteScalarAsync());
             }
             await using (var attach = new NpgsqlCommand(
                 """
