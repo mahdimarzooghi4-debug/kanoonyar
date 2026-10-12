@@ -61,7 +61,7 @@ public sealed class CenterFormDraftPostgresTests
   var created=await Append(formId,0,"interest-form");
   Assert.Equal(200,Status(created));
   using(var doc=JsonDocument.Parse(JsonSerializer.Serialize(
-   Assert.IsAssignableFrom<IValueHttpResult>(created).Value)))
+   Assert.IsAssignableFrom<IValueHttpResult>(created).Value, new JsonSerializerOptions(JsonSerializerDefaults.Web))))
   {
    var x=doc.RootElement;
    Assert.Equal(formId,x.GetProperty("formId").GetGuid());
@@ -91,7 +91,7 @@ public sealed class CenterFormDraftPostgresTests
   var list=await List();
   Assert.Equal(200,Status(list));
   using(var doc=JsonDocument.Parse(JsonSerializer.Serialize(
-   Assert.IsAssignableFrom<IValueHttpResult>(list).Value)))
+   Assert.IsAssignableFrom<IValueHttpResult>(list).Value, new JsonSerializerOptions(JsonSerializerDefaults.Web))))
   {
    var x=doc.RootElement.GetProperty("forms");
    Assert.Single(x.EnumerateArray());
@@ -104,7 +104,7 @@ public sealed class CenterFormDraftPostgresTests
   var history=await History();
   Assert.Equal(200,Status(history));
   using(var doc=JsonDocument.Parse(JsonSerializer.Serialize(
-   Assert.IsAssignableFrom<IValueHttpResult>(history).Value)))
+   Assert.IsAssignableFrom<IValueHttpResult>(history).Value, new JsonSerializerOptions(JsonSerializerDefaults.Web))))
   {
    var rows=doc.RootElement.GetProperty("revisions");
    Assert.Equal(2,rows.GetArrayLength());
