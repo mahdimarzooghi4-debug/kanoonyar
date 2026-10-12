@@ -34,6 +34,8 @@ public sealed class SignedOidcHttpIntegrationTests
         Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_DATABASE_URL");
     private static string? AdminUrl =>
         Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_ADMIN_URL");
+    private static string? LearningUrl =>
+        Environment.GetEnvironmentVariable("CENTER_LEARNING_INTEGRATION_DATABASE_URL");
     private static string? ReadUrl =>
         Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_READ_DATABASE_URL");
 
@@ -92,6 +94,7 @@ public sealed class SignedOidcHttpIntegrationTests
                 {
                     builder.UseSetting("CENTER_DRAFT_READ_DATABASE_URL", ReadUrl);
                     builder.UseSetting("CENTER_DRAFT_WRITE_DATABASE_URL", DbUrl);
+                    builder.UseSetting("CENTER_LEARNING_WRITE_DATABASE_URL", LearningUrl);
                 }
                 builder.ConfigureTestServices(services =>
                 {
@@ -114,9 +117,11 @@ public sealed class SignedOidcHttpIntegrationTests
                         services.RemoveAll<ILocalPlanDraftWriteAuthorization>();
                         services.RemoveAll<ILocalPlanDraftReadAuthorization>();
                         services.RemoveAll<ICenterActivityReportReadAuthorization>();
+                        services.RemoveAll<ICenterLearningPlanWriteAuthorization>();
                         services.AddSingleton<ILocalPlanDraftWriteAuthorization, TestOnlyWriteGrant>();
                         services.AddSingleton<ILocalPlanDraftReadAuthorization, TestOnlyReadGrant>();
                         services.AddSingleton<ICenterActivityReportReadAuthorization, TestOnlyReportReadGrant>();
+                        services.AddSingleton<ICenterLearningPlanWriteAuthorization, TestLearningWriteGrant>();
                     }
                 });
             });
@@ -390,6 +395,83 @@ public sealed class SignedOidcHttpIntegrationTests
             using (var denied = await client.SendAsync(signed))
                 Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
         }
+    }
+
+    [Fact]
+    public async Task Signed_jwt_still_needs_independent_class_and_session_write_grants()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var app=fixture.Server();
+        using var client=app.CreateClient();
+        foreach(var path in new[]{
+            "/api/v1/centers/center-a/classes",
+            "/api/v1/centers/center-a/classes/sessions"
+        })
+        {
+            using(var anonymous=Request(HttpMethod.Post,path,null))
+            {
+                anonymous.Content=JsonContent.Create(new {classId=Guid.NewGuid(),title="Fixture"});
+                using var response=await client.SendAsync(anonymous);
+                Assert.Equal(HttpStatusCode.Unauthorized,response.StatusCode);
+            }
+            using(var signed=Request(HttpMethod.Post,path,fixture.Token(roleClaim:true)))
+            {
+                signed.Content=path.EndsWith("sessions")
+                  ? JsonContent.Create(new {sessionId=Guid.NewGuid(),classId=Guid.NewGuid(),
+                      title="Attempted",scheduledAt=(DateTimeOffset?)null})
+                  : JsonContent.Create(new {classId=Guid.NewGuid(),title="Attempted"});
+                using var response=await client.SendAsync(signed);
+                Assert.Equal(HttpStatusCode.Forbidden,response.StatusCode);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Signed_http_synthetic_grant_roundtrips_class_and_session_to_postgres()
+    {
+        if(!DbAvailable())return;
+        Assert.False(string.IsNullOrWhiteSpace(LearningUrl));
+        using var fixture=new SignedJwtFixture();
+        await using var app=fixture.Server(syntheticDbGrants:true);
+        using var client=app.CreateClient();
+        var classId=Guid.NewGuid();
+        var sessionId=Guid.NewGuid();
+        using(var create=Request(HttpMethod.Post,
+            "/api/v1/centers/center-a/classes",fixture.Token()))
+        {
+            create.Content=JsonContent.Create(new {classId,title="Signed class"});
+            using var response=await client.SendAsync(create);
+            Assert.Equal(HttpStatusCode.OK,response.StatusCode);
+            using var payload=JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(classId,payload.RootElement.GetProperty("classId").GetGuid());
+        }
+        using(var create=Request(HttpMethod.Post,
+            "/api/v1/centers/center-a/classes/sessions",fixture.Token()))
+        {
+            create.Content=JsonContent.Create(new {
+                sessionId,classId,title="Signed planned session",
+                scheduledAt=(DateTimeOffset?)null
+            });
+            using var response=await client.SendAsync(create);
+            Assert.Equal(HttpStatusCode.OK,response.StatusCode);
+            using var payload=JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(sessionId,payload.RootElement.GetProperty("sessionId").GetGuid());
+            Assert.Equal(JsonValueKind.Null,payload.RootElement.GetProperty("scheduledAt").ValueKind);
+        }
+        using(var wrong=Request(HttpMethod.Post,
+            "/api/v1/centers/center-a/classes",fixture.Token(subject:"actor-b")))
+        {
+            wrong.Content=JsonContent.Create(new {classId=Guid.NewGuid(),title="Cross center"});
+            using var response=await client.SendAsync(wrong);
+            Assert.Equal(HttpStatusCode.Forbidden,response.StatusCode);
+        }
+    }
+
+    private sealed class TestLearningWriteGrant : ICenterLearningPlanWriteAuthorization
+    {
+        public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal,string centerId,
+            string operation,Guid resourceId,CancellationToken ct) =>
+            ValueTask.FromResult(true);
     }
 
     private sealed class TestOnlyWriteGrant : ILocalPlanDraftWriteAuthorization
