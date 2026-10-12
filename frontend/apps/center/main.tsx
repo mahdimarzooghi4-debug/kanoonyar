@@ -13,6 +13,27 @@ function validNationalProgram(item: unknown): item is NationalProgram {
     typeof p.version === 'number' && Number.isInteger(p.version) && p.version > 0 &&
     Array.isArray(p.nationalObjectives) && Array.isArray(p.mandatoryRequirements);
 }
+function LocalPlanDraft({ program }: { program: NationalProgram }) {
+  const [title, setTitle] = useState('');
+  const [activity, setActivity] = useState('');
+  const [activities, setActivities] = useState<string[]>([]);
+  function addActivity() {
+    const value = activity.trim();
+    if (!value) return;
+    setActivities(current => [...current, value]);
+    setActivity('');
+  }
+  return <section aria-label={`پیش‌نویس محلی ${program.title}`} style={{ border: '1px solid #aaa', padding: '1rem', margin: '1rem 0' }}>
+    <h4>پیش‌نویس برنامه اجرایی محلی</h4>
+    <p>برنامه ملی: {program.title} — نسخه {program.version}. اهداف و الزامات ملی قابل تغییر نیستند.</p>
+    <label>عنوان محلی <input aria-label={`عنوان محلی ${program.programId}`} value={title} onChange={e => setTitle(e.target.value)} /></label>
+    <div><label>فعالیت محلی <input aria-label={`فعالیت محلی ${program.programId}`} value={activity} onChange={e => setActivity(e.target.value)} /></label>
+      <button type="button" onClick={addActivity} disabled={!activity.trim()}>افزودن فعالیت</button></div>
+    <ul>{activities.map((item, i) => <li key={i}>{item} <button type="button" aria-label={`حذف فعالیت ${i + 1}`} onClick={() => setActivities(old => old.filter((_, index) => index !== i))}>حذف</button></li>)}</ul>
+    <p role="status">این پیش‌نویس فقط در حافظه صفحه است؛ ذخیره، تأیید یا ارسال نشده است.</p>
+    <button type="button" disabled>ثبت برنامه اجرایی (نیازمند مجوز و اتصال امن)</button>
+  </section>;
+}
 function NationalProgramDiscovery() {
   const [programs, setPrograms] = useState<NationalProgram[]>([]);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
@@ -40,6 +61,7 @@ function NationalProgramDiscovery() {
         <h3>{p.title} — نسخه {p.version}</h3>
         <strong>اهداف ملی</strong><ul>{p.nationalObjectives.map((item, i) => <li key={i}>{typeof item === 'string' ? item : JSON.stringify(item)}</li>)}</ul>
         <strong>الزامات اجباری</strong><ul>{p.mandatoryRequirements.map((item, i) => <li key={i}>{typeof item === 'string' ? item : JSON.stringify(item)}</li>)}</ul>
+        <LocalPlanDraft program={p} />
       </li>)}</ul>)}
   </section>;
 }
