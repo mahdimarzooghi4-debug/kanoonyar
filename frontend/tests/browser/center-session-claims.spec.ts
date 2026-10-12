@@ -41,7 +41,7 @@ test('claim source chain is unverified and zero unknown attendance is never infe
   await page.getByRole('button',{name:'ثبت گزارش ادعای جلسه'}).click();
   await expect(page.getByText('گزارش ثبت شد؛ راستی‌آزمایی‌نشده است.')).toBeVisible();
   await page.getByRole('textbox',{name:'شناسه مستعار مخاطب'}).fill('opaque-test-only');
-  await page.getByRole('button',{name:'ثبت ادعای حضور/غیاب'}).toBeDisabled();
+  await expect(page.getByRole('button',{name:'ثبت ادعای حضور/غیاب'})).toBeDisabled();
   await page.getByRole('combobox',{name:'وضعیت ادعاشده حضور'}).selectOption('REPORTED_PRESENT');
   await page.getByRole('button',{name:'ثبت ادعای حضور/غیاب'}).click();
   await expect(page.getByText('ادعای حضور/غیاب ثبت شد؛ تأیید نشده است.')).toBeVisible();
