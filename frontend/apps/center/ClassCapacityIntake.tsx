@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
+import { RegistrationReviewRequirements } from './RegistrationReviewRequirements';
 
 type Item={requestId:string;applicantRef:string;capacityRevision:number;
   recordedAt:string;state:'REQUESTED';seatReserved:false};
@@ -45,6 +46,7 @@ export function ClassCapacityIntake({centerId,classId,token,onClose}:{
  const [applicantRef,setApplicantRef]=useState('');
  const [capacityState,setCapacityState]=useState<Save>('idle');
  const [requestState,setRequestState]=useState<Save>('idle');
+ const [selectedReview,setSelectedReview]=useState<string|null>(null);
  useEffect(()=>{epoch.current++;requestId.current=crypto.randomUUID();
    setData(null);setStatus('idle');setCapacityInput('');setApplicantRef('');
    setCapacityState('idle');setRequestState('idle');
@@ -141,6 +143,14 @@ export function ClassCapacityIntake({centerId,classId,token,onClose}:{
      {data.registrationIntents.length===0?<p>درخواستی در این صفحه ثبت نشده است.</p>:
        <ul>{data.registrationIntents.map(r=><li key={r.requestId}>
          شناسه درخواست: {r.requestId} — وضعیت: REQUESTED (بدون رزرو) — نسخه ظرفیت {r.capacityRevision}
+         {' '}<button type="button" onClick={()=>setSelectedReview(r.requestId)}>
+           بررسی انسانی درخواست
+         </button>
+         {selectedReview===r.requestId&&
+           <RegistrationReviewRequirements key={r.requestId} token={token}
+             centerId={centerId} classId={classId} requestId={r.requestId}
+             onClose={()=>setSelectedReview(null)} />}
+
        </li>)}</ul>}
      {data.nextBeforeRequestId&&<button type="button"
        onClick={()=>void load(data.nextBeforeRequestId)}>درخواست‌های دیگر</button>}
