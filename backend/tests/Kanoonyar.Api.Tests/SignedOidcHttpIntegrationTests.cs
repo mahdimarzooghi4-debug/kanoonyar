@@ -118,10 +118,12 @@ public sealed class SignedOidcHttpIntegrationTests
                         services.RemoveAll<ILocalPlanDraftReadAuthorization>();
                         services.RemoveAll<ICenterActivityReportReadAuthorization>();
                         services.RemoveAll<ICenterLearningPlanWriteAuthorization>();
+                        services.RemoveAll<ICenterSessionClaimWriteAuthorization>();
                         services.AddSingleton<ILocalPlanDraftWriteAuthorization, TestOnlyWriteGrant>();
                         services.AddSingleton<ILocalPlanDraftReadAuthorization, TestOnlyReadGrant>();
                         services.AddSingleton<ICenterActivityReportReadAuthorization, TestOnlyReportReadGrant>();
                         services.AddSingleton<ICenterLearningPlanWriteAuthorization, TestLearningWriteGrant>();
+                        services.AddSingleton<ICenterSessionClaimWriteAuthorization, TestSessionClaimWriteGrant>();
                     }
                 });
             });
@@ -465,6 +467,43 @@ public sealed class SignedOidcHttpIntegrationTests
             using var response=await client.SendAsync(wrong);
             Assert.Equal(HttpStatusCode.Forbidden,response.StatusCode);
         }
+    }
+
+    [Fact]
+    public async Task Signed_jwt_role_does_not_grant_session_occurrence_or_attendance()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var app=fixture.Server();
+        using var client=app.CreateClient();
+        var id=Guid.NewGuid();
+        foreach(var kind in new []{"occurrence-claims","attendance-claims"})
+        {
+            var route="/api/v1/centers/center-a/class-sessions/"+id+"/"+kind;
+            using(var anonymous=Request(HttpMethod.Post,route,null))
+            {
+                anonymous.Content=kind=="occurrence-claims" ?
+                    JsonContent.Create(new {occurrenceReportId=Guid.NewGuid(),reportedNote="Reported"}) :
+                    JsonContent.Create(new {claimId=Guid.NewGuid(),occurrenceReportId=Guid.NewGuid(),
+                        participantRef="synthetic",reportedPresence="REPORTED_PRESENT"});
+                using var response=await client.SendAsync(anonymous);
+                Assert.Equal(HttpStatusCode.Unauthorized,response.StatusCode);
+            }
+            using(var admin=Request(HttpMethod.Post,route,fixture.Token(roleClaim:true)))
+            {
+                admin.Content=kind=="occurrence-claims" ?
+                    JsonContent.Create(new {occurrenceReportId=Guid.NewGuid(),reportedNote="Reported"}) :
+                    JsonContent.Create(new {claimId=Guid.NewGuid(),occurrenceReportId=Guid.NewGuid(),
+                        participantRef="synthetic",reportedPresence="REPORTED_PRESENT"});
+                using var response=await client.SendAsync(admin);
+                Assert.Equal(HttpStatusCode.Forbidden,response.StatusCode);
+            }
+        }
+    }
+
+    private sealed class TestSessionClaimWriteGrant : ICenterSessionClaimWriteAuthorization
+    {
+        public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal user,string center,
+            string operation,Guid session,CancellationToken ct) => ValueTask.FromResult(true);
     }
 
     private sealed class TestLearningWriteGrant : ICenterLearningPlanWriteAuthorization

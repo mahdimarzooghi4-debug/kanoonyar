@@ -877,6 +877,104 @@ public sealed class LocalDraftPostgresIntegrationTests
         Assert.Equal(2L,reader.GetInt64(3));
     }
 
+    [Fact]
+    public async Task Real_session_claims_are_atomic_scoped_and_reject_duplicate_attendance()
+    {
+        if (!Enabled()) return;
+        var url=Environment.GetEnvironmentVariable("CENTER_LEARNING_INTEGRATION_DATABASE_URL");
+        Assert.False(string.IsNullOrWhiteSpace(url));
+        var configuration=new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string,string?> {["CENTER_LEARNING_WRITE_DATABASE_URL"]=url}).Build();
+        var permission=new TestLearningGrant();
+        var claimGrant=new TestSessionClaimGrant();
+        var classId=Guid.NewGuid(); var sessionId=Guid.NewGuid();
+        var reportId=Guid.NewGuid(); var attendanceId=Guid.NewGuid();
+        Assert.Equal(200,Status(await CenterLearningPlanWriteEndpoint.CreateClass(
+            Principal("actor-a"),configuration,permission,"center-a",
+            new CreateCenterClassRequest(classId,"Synthetic session parent"),default)));
+        Assert.Equal(200,Status(await CenterLearningPlanWriteEndpoint.ScheduleSession(
+            Principal("actor-a"),configuration,permission,"center-a",
+            new CreateCenterSessionRequest(sessionId,classId,"Synthetic session",null),default)));
+
+        var report=new CreateSessionOccurrenceClaimRequest(
+            reportId,"Synthetic reported occurrence","synthetic-evidence-only",null,null);
+        var created=await CenterSessionClaimWriteEndpoint.RecordOccurrence(
+            Principal("actor-a"),configuration,claimGrant,"center-a",sessionId,report,default);
+        Assert.Equal(200,Status(created));
+        using(var body=JsonDocument.Parse(JsonSerializer.Serialize(
+            Assert.IsAssignableFrom<IValueHttpResult>(created).Value)))
+        {
+            Assert.Equal(reportId,body.RootElement.GetProperty("occurrenceReportId").GetGuid());
+            Assert.Equal("UNVERIFIED",body.RootElement.GetProperty("verificationStatus").GetString());
+        }
+        var attendance=new CreateSessionAttendanceClaimRequest(
+            attendanceId,reportId,"synthetic-opaque-person","REPORTED_PRESENT");
+        Assert.Equal(200,Status(await CenterSessionClaimWriteEndpoint.RecordAttendance(
+            Principal("actor-a"),configuration,claimGrant,"center-a",sessionId,attendance,default)));
+        Assert.Equal(409,Status(await CenterSessionClaimWriteEndpoint.RecordAttendance(
+            Principal("actor-a"),configuration,claimGrant,"center-a",sessionId,
+            attendance with {ClaimId=Guid.NewGuid(),ReportedPresence="REPORTED_ABSENT"},default)));
+        Assert.Equal(409,Status(await CenterSessionClaimWriteEndpoint.RecordOccurrence(
+            Principal("actor-a"),configuration,claimGrant,"center-a",Guid.NewGuid(),
+            report with {OccurrenceReportId=Guid.NewGuid()},default)));
+        Assert.Equal(403,Status(await CenterSessionClaimWriteEndpoint.RecordAttendance(
+            Principal("actor-b"),configuration,claimGrant,"center-a",sessionId,
+            attendance with {ClaimId=Guid.NewGuid()},default)));
+        Assert.Equal(403,Status(await CenterSessionClaimWriteEndpoint.RecordOccurrence(
+            Principal("actor-a"),configuration,new UnapprovedCenterSessionClaimWriteAuthorization(),
+            "center-a",sessionId,report with {OccurrenceReportId=Guid.NewGuid()},default)));
+        var adminConfig=new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string,string?> {["CENTER_LEARNING_WRITE_DATABASE_URL"]=AdminConnection}).Build();
+        Assert.Equal(503,Status(await CenterSessionClaimWriteEndpoint.RecordOccurrence(
+            Principal("actor-a"),adminConfig,claimGrant,"center-a",sessionId,
+            report with {OccurrenceReportId=Guid.NewGuid()},default)));
+
+        await using(var limited=new NpgsqlConnection(url))
+        {
+            await limited.OpenAsync();
+            await using(var sql=new NpgsqlCommand(
+                """
+                INSERT INTO learning.session_occurrence_reports
+                  (center_id,occurrence_report_id,session_id,reported_note,actor_subject,recorded_at)
+                VALUES('center-a',@id,@session,'Unaudited','fixture',now())
+                """,limited))
+            {
+                sql.Parameters.AddWithValue("id",Guid.NewGuid());
+                sql.Parameters.AddWithValue("session",sessionId);
+                var ex=await Assert.ThrowsAsync<PostgresException>(()=>sql.ExecuteNonQueryAsync());
+                Assert.Equal(PostgresErrorCodes.InsufficientPrivilege,ex.SqlState);
+            }
+        }
+        await using var db=new NpgsqlConnection(AdminConnection);
+        await db.OpenAsync();
+        await using var verify=new NpgsqlCommand(
+            """
+            SELECT
+              (SELECT count(*) FROM learning.session_occurrence_reports
+                WHERE occurrence_report_id=@report),
+              (SELECT count(*) FROM learning.session_attendance_claims
+                WHERE occurrence_report_id=@report AND claim_id=@attend),
+              (SELECT count(*) FROM governance.command_audit
+                WHERE target_id IN (@reportText,@attendText)),
+              (SELECT count(*) FROM governance.outbox_events
+                WHERE aggregate_id IN (@reportText,@attendText))
+            """,db);
+        verify.Parameters.AddWithValue("report",reportId);
+        verify.Parameters.AddWithValue("attend",attendanceId);
+        verify.Parameters.AddWithValue("reportText",reportId.ToString("D"));
+        verify.Parameters.AddWithValue("attendText",attendanceId.ToString("D"));
+        await using var reader=await verify.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(1L,reader.GetInt64(0));Assert.Equal(1L,reader.GetInt64(1));
+        Assert.Equal(2L,reader.GetInt64(2));Assert.Equal(2L,reader.GetInt64(3));
+    }
+
+    private sealed class TestSessionClaimGrant : ICenterSessionClaimWriteAuthorization
+    {
+        public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal user,string center,
+            string operation,Guid session,CancellationToken ct) => ValueTask.FromResult(true);
+    }
+
     private sealed class TestLearningGrant : ICenterLearningPlanWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal,string centerId,
