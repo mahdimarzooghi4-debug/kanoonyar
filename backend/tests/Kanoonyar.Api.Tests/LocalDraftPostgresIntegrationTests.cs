@@ -639,6 +639,10 @@ public sealed class LocalDraftPostgresIntegrationTests
     public async Task Real_source_owner_tables_are_paginated_and_isolated_at_http_handler_boundary()
     {
         if (!Enabled()) return;
+        // This test owns a unique center. Other suites legitimately create source
+        // rows for center-a in the same CI database; keyset assertions must not
+        // depend on execution order or unrelated source IDs.
+        var isolatedCenter = "source-" + Guid.NewGuid().ToString("N");
         var centerClass = Guid.NewGuid();
         var eventId = Guid.NewGuid();
         var prefix = Guid.NewGuid().ToString("N")[..8];
@@ -647,12 +651,24 @@ public sealed class LocalDraftPostgresIntegrationTests
         await using (var db = new NpgsqlConnection(AdminConnection))
         {
             await db.OpenAsync();
+            await using (var setup = new NpgsqlCommand(
+                """
+                INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
+                VALUES(@center,'Isolated source test',true,'fixture',now());
+                INSERT INTO centers.memberships(center_id,subject_id,role_code,is_active,recorded_by_subject,recorded_at)
+                VALUES(@center,'actor-a','fixture-member',true,'fixture',now());
+                """,db))
+            {
+                setup.Parameters.AddWithValue("center", isolatedCenter);
+                await setup.ExecuteNonQueryAsync();
+            }
             await using (var createClass = new NpgsqlCommand(
                 """
                 INSERT INTO learning.center_classes(center_id,class_id,title)
-                VALUES('center-a',@id,'Source class from owner')
+                VALUES(@center,@id,'Source class from owner')
                 """,db))
             {
+                createClass.Parameters.AddWithValue("center", isolatedCenter);
                 createClass.Parameters.AddWithValue("id", centerClass);
                 await createClass.ExecuteNonQueryAsync();
             }
@@ -662,8 +678,9 @@ public sealed class LocalDraftPostgresIntegrationTests
                     """
                     INSERT INTO learning.class_sessions(
                       center_id,session_id,class_id,session_title,scheduled_at)
-                    VALUES('center-a',@id,@class,@title,NULL)
+                    VALUES(@center,@id,@class,@title,NULL)
                     """,db);
+                createSession.Parameters.AddWithValue("center", isolatedCenter);
                 createSession.Parameters.AddWithValue("id", sessions[i]);
                 createSession.Parameters.AddWithValue("class", centerClass);
                 createSession.Parameters.AddWithValue("title", $"Synthetic session {i+1}");
@@ -672,18 +689,19 @@ public sealed class LocalDraftPostgresIntegrationTests
             await using var createEvent = new NpgsqlCommand(
                 """
                 INSERT INTO events.center_events(center_id,event_id,event_title,scheduled_at)
-                VALUES('center-a',@id,'Source event from owner',NULL)
+                VALUES(@center,@id,'Source event from owner',NULL)
                 """,db);
+            createEvent.Parameters.AddWithValue("center", isolatedCenter);
             createEvent.Parameters.AddWithValue("id", eventId);
             await createEvent.ExecuteNonQueryAsync();
         }
 
         async Task<IResult> ReadSources(string kind, string actor="actor-a",
-            string center="center-a", Guid? before=null,
+            string? center=null, Guid? before=null,
             ICenterSourceCatalogReadAuthorization? grant=null, IConfiguration? config=null)
             => await CenterSourceCatalogEndpoint.ListSources(
                 Principal(actor),config ?? Configuration(),grant ?? new TestSourceGrant(),
-                center,kind,before,CancellationToken.None);
+                center ?? isolatedCenter,kind,before,CancellationToken.None);
         (JsonElement Rows, Guid? Next) Page(IResult result,string kind)
         {
             Assert.Equal(200,Status(result));
