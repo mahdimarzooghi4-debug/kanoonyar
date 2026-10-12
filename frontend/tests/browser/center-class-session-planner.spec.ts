@@ -14,7 +14,7 @@ async function start(page: import('@playwright/test').Page) {
 
 test('create class then schedule two sessions with verified server acknowledgement',async({page})=>{
   const posted:{route:string,body:Record<string,unknown>}[]=[];
-  await page.route('**/api/v1/centers/*/classes*',async route=>{
+  await page.route('**/api/v1/centers/*/classes**',async route=>{
     const body=route.request().postDataJSON() as Record<string,unknown>;
     posted.push({route:route.request().url(),body});
     expect(route.request().method()).toBe('POST');
