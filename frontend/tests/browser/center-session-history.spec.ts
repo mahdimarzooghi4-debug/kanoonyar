@@ -24,7 +24,7 @@ async function open(page:import('@playwright/test').Page){
 }
 test('history paginates 20+2 and attendance remains an independent read',async({page})=>{
   const urls:string[]=[];
-  await page.route('**/api/v1/centers/*/class-sessions/*/occurrence-claims*',r=>{
+  await page.route('**/api/v1/centers/*/class-sessions/*/occurrence-claims**',r=>{
     const url=r.request().url();urls.push(url);
     if(url.includes('/attendance-claims')){
       return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
@@ -49,7 +49,7 @@ test('history paginates 20+2 and attendance remains an independent read',async({
   await expect(page.getByText('زمان ادعایی شروع: نامعلوم').first()).toBeVisible();
   await page.getByRole('button',{name:'گزارش‌های قدیمی‌تر'}).click();
   await expect(page.getByText('ادعای جلسه 1',{exact:true})).toBeVisible();
-  await page.getByRole('listitem').filter({hasText:'ادعای جلسه 2'}).getByRole('button',
+  await page.getByText('ادعای جلسه 2',{exact:true}).locator('..').getByRole('button',
     {name:'مشاهده ادعاهای حضور این گزارش'}).click();
   await expect(page.getByText(/opaque-fixture-only/)).toBeVisible();
   await expect(page.getByText('حاضر گزارش‌شده',{exact:false})).toBeVisible();
@@ -60,7 +60,7 @@ test('history paginates 20+2 and attendance remains an independent read',async({
   await expect(page.getByText('ادعای جلسه 22',{exact:true})).toHaveCount(0);
 });
 test('independent attendance denial reveals no participant references',async({page})=>{
-  await page.route('**/api/v1/centers/*/class-sessions/*/occurrence-claims*',r=>{
+  await page.route('**/api/v1/centers/*/class-sessions/*/occurrence-claims**',r=>{
     const url=r.request().url();
     if(url.includes('/attendance-claims'))
       return r.fulfill({status:403,contentType:'application/problem+json',body:'{}'});
@@ -79,7 +79,7 @@ test('independent attendance denial reveals no participant references',async({pa
   await expect(page.getByText('opaque-fixture-only')).toHaveCount(0);
 });
 test('forged VERIFIED history fails closed',async({page})=>{
-  await page.route('**/api/v1/centers/*/class-sessions/*/occurrence-claims*',r=>
+  await page.route('**/api/v1/centers/*/class-sessions/*/occurrence-claims**',r=>
     r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
       sessionId:session,occurrenceReports:[{occurrenceReportId:id(2),
         reportedNote:'Forged delivery',evidenceRef:null,claimedStartedAt:null,
