@@ -425,6 +425,29 @@ public sealed class SignedOidcHttpIntegrationTests
         Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
     }
 
+    [Fact]
+    public async Task Signed_admin_JWT_cannot_raise_or_read_registration_human_review()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var server=fixture.Server();
+        using var client=server.CreateClient();
+        var path=$"/api/v1/centers/center-a/classes/{Guid.NewGuid()}/registration-intents/{Guid.NewGuid()}/review-requests";
+        using(var anonymous=Request(HttpMethod.Get,path,null))
+        using(var denied=await client.SendAsync(anonymous))
+            Assert.Equal(HttpStatusCode.Unauthorized,denied.StatusCode);
+        using(var authenticated=Request(HttpMethod.Get,path,fixture.Token(roleClaim:true)))
+        using(var denied=await client.SendAsync(authenticated))
+            Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        using(var command=Request(HttpMethod.Post,path,fixture.Token(roleClaim:true)))
+        {
+            command.Content=JsonContent.Create(new{
+                reviewRequestId=Guid.NewGuid(),reviewTopic="CONSENT_AUTHORITY"
+            });
+            using var denied=await client.SendAsync(command);
+            Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        }
+    }
+
     private sealed class TestOnlyReportReadGrant : ICenterActivityReportReadAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, string centerId,
