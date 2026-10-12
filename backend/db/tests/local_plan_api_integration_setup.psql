@@ -139,3 +139,28 @@ BEGIN
    RAISE EXCEPTION 'Readonly SQL credential can execute learning commands';
  END IF;
 END;$guard$;
+
+
+-- Enforce a real restricted-login smoke, not a superuser-only migration proof.
+-- The holder of this CI credential must be able to execute precisely the
+-- audited class command while still lacking direct INSERT / SET ROLE.
+SET ROLE kanoonyar_learning_api_ci;
+SELECT set_config('kanoonyar.center_id','center-a',false);
+DO $smoke$
+BEGIN
+ IF NOT EXISTS(
+   SELECT 1 FROM centers.memberships m
+   JOIN centers.registry c ON c.center_id=m.center_id
+   WHERE m.center_id='center-a' AND m.subject_id='actor-a'
+     AND m.is_active AND c.is_active
+ ) THEN
+  RAISE EXCEPTION 'Restricted learning login cannot see active own-center member';
+ END IF;
+ PERFORM learning.record_class_plan(
+  'center-a','aabbccdd-1000-4000-8000-000000000001',
+  'Restricted SQL fixture class','actor-a',
+  'aabbccdd-1000-4000-8000-000000000002',
+  'aabbccdd-1000-4000-8000-000000000003',
+  'restricted-fixture');
+END;$smoke$;
+RESET ROLE;
