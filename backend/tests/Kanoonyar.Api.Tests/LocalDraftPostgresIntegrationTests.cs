@@ -748,7 +748,9 @@ public sealed class LocalDraftPostgresIntegrationTests
         var created=await CenterLearningPlanWriteEndpoint.CreateClass(
             Principal("actor-a"),learningConfig,grant,"center-a",
             new CreateCenterClassRequest(classId,"New class source"),CancellationToken.None);
-        Assert.Equal(200,Status(created));
+        Assert.True(Status(created)==200,
+            "Restricted class create response: " +
+            JsonSerializer.Serialize((created as IValueHttpResult)?.Value));
 
         var scheduled=await CenterLearningPlanWriteEndpoint.ScheduleSession(
             Principal("actor-a"),learningConfig,grant,"center-a",
