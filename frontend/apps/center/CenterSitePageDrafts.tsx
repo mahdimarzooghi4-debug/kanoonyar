@@ -75,7 +75,11 @@ export function CenterSitePageDrafts({centerId,token}:{centerId:string;token:str
  async function load(before:string|null){
   if(!centerId||!token.trim()||state==='loading')return;
   const current=++epoch.current;setState('loading');
-  if(before===null){setPages([]);setCursor(null);edit(null);}
+  if(before===null){
+    setPages([]);setCursor(null);setSelected(null);setTitle('');
+    setSlugInput('');setBody('');setSave('idle');setHistory([]);
+    setHistoryState('idle');setHistoryCursor(null);
+  }
   try{
    const response=await fetch(prefix+(before?'?beforePageId='+encodeURIComponent(before):''),
     {headers:{Authorization:'Bearer '+token.trim()},cache:'no-store'});

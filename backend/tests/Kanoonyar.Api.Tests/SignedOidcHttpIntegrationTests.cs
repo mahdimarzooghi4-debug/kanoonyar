@@ -448,6 +448,29 @@ public sealed class SignedOidcHttpIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task Signed_admin_role_cannot_edit_or_read_center_website_drafts()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var server=fixture.Server();
+        using var client=server.CreateClient();
+        const string list="/api/v1/centers/center-a/site/drafts";
+        using(var anonymous=Request(HttpMethod.Get,list,null))
+        using(var result=await client.SendAsync(anonymous))
+            Assert.Equal(HttpStatusCode.Unauthorized,result.StatusCode);
+        using(var request=Request(HttpMethod.Get,list,fixture.Token(roleClaim:true)))
+        using(var denied=await client.SendAsync(request))
+            Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        using(var command=Request(HttpMethod.Post,list+"/revisions",fixture.Token(roleClaim:true)))
+        {
+            command.Content=JsonContent.Create(new {
+                pageId=Guid.NewGuid(),expectedRevision=0,slug="home",title="Home",bodyText="draft"
+            });
+            using var denied=await client.SendAsync(command);
+            Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        }
+    }
+
     private sealed class TestOnlyReportReadGrant : ICenterActivityReportReadAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, string centerId,
