@@ -12,6 +12,7 @@ builder.Services.AddSingleton<ILocalPlanDraftReadAuthorization, UnapprovedLocalP
 builder.Services.AddSingleton<ICenterActivityReportReadAuthorization, UnapprovedCenterActivityReportReadAuthorization>();
 builder.Services.AddSingleton<ICenterSourceCatalogReadAuthorization, UnapprovedCenterSourceCatalogReadAuthorization>();
 builder.Services.AddSingleton<ICenterLearningPlanWriteAuthorization, UnapprovedCenterLearningPlanWriteAuthorization>();
+builder.Services.AddSingleton<ICenterSessionClaimWriteAuthorization, UnapprovedCenterSessionClaimWriteAuthorization>();
 
 var app = builder.Build();
 app.UseExceptionHandler();
@@ -29,6 +30,8 @@ if (oidcConfigured)
     app.MapPost("/api/v1/centers/{centerId}/local-plan-drafts/revisions", LocalPlanDraftWriteEndpoint.Append).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/classes", CenterLearningPlanWriteEndpoint.CreateClass).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/classes/sessions", CenterLearningPlanWriteEndpoint.ScheduleSession).RequireAuthorization();
+    app.MapPost("/api/v1/centers/{centerId}/class-sessions/{sessionId:guid}/occurrence-claims", CenterSessionClaimWriteEndpoint.RecordOccurrence).RequireAuthorization();
+    app.MapPost("/api/v1/centers/{centerId}/class-sessions/{sessionId:guid}/attendance-claims", CenterSessionClaimWriteEndpoint.RecordAttendance).RequireAuthorization();
 }
 else
 {
@@ -51,6 +54,10 @@ else
     app.MapPost("/api/v1/centers/{centerId}/classes", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/classes/sessions", () =>
+        Results.Problem(statusCode: 503, title: "OIDC not configured"));
+    app.MapPost("/api/v1/centers/{centerId}/class-sessions/{sessionId:guid}/occurrence-claims", () =>
+        Results.Problem(statusCode: 503, title: "OIDC not configured"));
+    app.MapPost("/api/v1/centers/{centerId}/class-sessions/{sessionId:guid}/attendance-claims", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
 }
 

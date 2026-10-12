@@ -17,6 +17,7 @@
 \ir ../migrations/0015_activity_report_evidence_lineage.sql
 \ir ../migrations/0016_learning_events_source_ownership.sql
 \ir ../migrations/0017_learning_planning_commands.sql
+\ir ../migrations/0018_session_occurrence_attendance_claims.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -165,3 +166,24 @@ BEGIN
   'restricted-fixture');
 END;$smoke$;
 RESET ROLE;
+
+
+-- Additional fixture-only command grants; not a live authorization model.
+GRANT EXECUTE ON FUNCTION learning.record_session_occurrence_claim(
+ text,uuid,uuid,text,text,timestamptz,timestamptz,text,uuid,uuid,text)
+ TO kanoonyar_learning_api_ci;
+GRANT EXECUTE ON FUNCTION learning.record_session_attendance_claim(
+ text,uuid,uuid,uuid,text,text,text,uuid,uuid,text)
+ TO kanoonyar_learning_api_ci;
+DO $guard$
+BEGIN
+ IF has_table_privilege('kanoonyar_learning_api_ci',
+  'learning.session_occurrence_reports','INSERT')
+  OR has_table_privilege('kanoonyar_learning_api_ci',
+  'learning.session_attendance_claims','INSERT')
+  OR has_function_privilege('kanoonyar_draft_read_ci',
+  'learning.record_session_occurrence_claim(text,uuid,uuid,text,text,timestamptz,timestamptz,text,uuid,uuid,text)','EXECUTE')
+  OR pg_has_role('kanoonyar_learning_api_ci','kanoonyar_learning_command_owner','SET') THEN
+  RAISE EXCEPTION 'Session claim fixture has unsafe permissions';
+ END IF;
+END;$guard$;
