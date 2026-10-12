@@ -14,6 +14,7 @@ builder.Services.AddSingleton<ICenterSourceCatalogReadAuthorization, UnapprovedC
 builder.Services.AddSingleton<ICenterLearningPlanWriteAuthorization, UnapprovedCenterLearningPlanWriteAuthorization>();
 builder.Services.AddSingleton<ICenterSessionClaimWriteAuthorization, UnapprovedCenterSessionClaimWriteAuthorization>();
 builder.Services.AddSingleton<ICenterSessionClaimHistoryAuthorization, UnapprovedCenterSessionClaimHistoryAuthorization>();
+builder.Services.AddSingleton<ICenterSessionReportLineageAuthorization, UnapprovedCenterSessionReportLineageAuthorization>();
 
 var app = builder.Build();
 app.UseExceptionHandler();
@@ -33,6 +34,7 @@ if (oidcConfigured)
     app.MapPost("/api/v1/centers/{centerId}/classes/sessions", CenterLearningPlanWriteEndpoint.ScheduleSession).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/class-sessions/{sessionId:guid}/occurrence-claims", CenterSessionClaimWriteEndpoint.RecordOccurrence).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/class-sessions/{sessionId:guid}/attendance-claims", CenterSessionClaimWriteEndpoint.RecordAttendance).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/class-sessions/{sessionId:guid}/report-lineage", CenterSessionReportLineageEndpoint.Get).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/class-sessions/{sessionId:guid}/occurrence-claims", CenterSessionClaimHistoryEndpoint.Occurrences).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/class-sessions/{sessionId:guid}/occurrence-claims/{occurrenceReportId:guid}/attendance-claims", CenterSessionClaimHistoryEndpoint.Attendance).RequireAuthorization();
 }
@@ -61,6 +63,8 @@ else
     app.MapPost("/api/v1/centers/{centerId}/class-sessions/{sessionId:guid}/occurrence-claims", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/class-sessions/{sessionId:guid}/attendance-claims", () =>
+        Results.Problem(statusCode: 503, title: "OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/class-sessions/{sessionId:guid}/report-lineage", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/class-sessions/{sessionId:guid}/occurrence-claims", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
