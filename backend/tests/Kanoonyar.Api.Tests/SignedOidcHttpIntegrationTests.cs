@@ -500,6 +500,27 @@ public sealed class SignedOidcHttpIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task Signed_jwt_role_does_not_authorize_occurrence_or_attendance_history()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var app=fixture.Server();
+        using var client=app.CreateClient();
+        var session=Guid.NewGuid();
+        var prefix="/api/v1/centers/center-a/class-sessions/"+session+"/occurrence-claims";
+        foreach(var route in new[]{
+            prefix,prefix+"/"+Guid.NewGuid()+"/attendance-claims"
+        })
+        {
+            using(var anonymous=Request(HttpMethod.Get,route,null))
+            using(var result=await client.SendAsync(anonymous))
+                Assert.Equal(HttpStatusCode.Unauthorized,result.StatusCode);
+            using(var signed=Request(HttpMethod.Get,route,fixture.Token(roleClaim:true)))
+            using(var result=await client.SendAsync(signed))
+                Assert.Equal(HttpStatusCode.Forbidden,result.StatusCode);
+        }
+    }
+
     private sealed class TestSessionClaimWriteGrant : ICenterSessionClaimWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal user,string center,
