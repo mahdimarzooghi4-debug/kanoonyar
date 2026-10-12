@@ -18,6 +18,7 @@ builder.Services.AddSingleton<ICenterSessionReportLineageAuthorization, Unapprov
 builder.Services.AddSingleton<ICenterSourcedActivityReportWriteAuthorization, UnapprovedCenterSourcedActivityReportWriteAuthorization>();
 builder.Services.AddSingleton<ICenterClassIntakeAuthorization, UnapprovedCenterClassIntakeAuthorization>();
 builder.Services.AddSingleton<ICenterRegistrationReviewAuthorization, UnapprovedCenterRegistrationReviewAuthorization>();
+builder.Services.AddSingleton<ICenterSiteDraftAuthorization, UnapprovedCenterSiteDraftAuthorization>();
 
 var app = builder.Build();
 app.UseExceptionHandler();
@@ -27,6 +28,9 @@ if (oidcConfigured)
     app.UseAuthorization();
     app.MapGet("/api/v1/identity/me", AuthenticatedSubjectEndpoint.GetSubject).RequireAuthorization();
     app.MapGet("/api/v1/identity/center-memberships", CenterMembershipEndpoint.GetMine).RequireAuthorization();
+    app.MapPost("/api/v1/centers/{centerId}/site/drafts/revisions", CenterSiteDraftEndpoint.Append).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/site/drafts", CenterSiteDraftEndpoint.List).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/site/drafts/{pageId:guid}/revisions", CenterSiteDraftEndpoint.History).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts", LocalPlanDraftReadEndpoint.ListMine).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts/{draftId:guid}/revisions", LocalPlanDraftHistoryEndpoint.ListHistory).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts/{draftId:guid}/execution-trace", CenterExecutionTraceEndpoint.GetTrace).RequireAuthorization();
@@ -53,6 +57,9 @@ else
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapGet("/api/v1/identity/center-memberships", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
+    app.MapPost("/api/v1/centers/{centerId}/site/drafts/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/site/drafts", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/site/drafts/{pageId:guid}/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts/{draftId:guid}/revisions", () =>
