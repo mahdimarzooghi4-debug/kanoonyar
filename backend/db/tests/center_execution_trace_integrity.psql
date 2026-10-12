@@ -35,17 +35,17 @@ SELECT programs.append_local_plan_draft_revision('a',
  'actor-a','a3333333-3333-4333-8333-333333333333',
  'a4444444-4444-4444-8444-444444444444','rev2');
 DO $test$
-DECLARE link_id uuid:='99999999-9999-4999-8999-999999999999';
+DECLARE v_link_id uuid:='99999999-9999-4999-8999-999999999999';
  draft uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 BEGIN
- PERFORM programs.record_center_plan_issuance_link(link_id,'a',draft,1,
+ PERFORM programs.record_center_plan_issuance_link(v_link_id,'a',draft,1,
   '11111111-1111-4111-8111-111111111111','n',1,'actor-a',
   '90000000-0000-4000-8000-000000000001',
   '90000000-0000-4000-8000-000000000002','trace1');
  IF (SELECT pinned_revision FROM programs.center_plan_issuance_links
-     WHERE link_id=link_id)<>1 THEN RAISE EXCEPTION 'Wrong pinned revision'; END IF;
- IF (SELECT count(*) FROM governance.command_audit WHERE target_id=link_id::text)<>1 OR
-    (SELECT count(*) FROM governance.outbox_events WHERE aggregate_id=link_id::text)<>1 THEN
+     WHERE link_id=v_link_id)<>1 THEN RAISE EXCEPTION 'Wrong pinned revision'; END IF;
+ IF (SELECT count(*) FROM governance.command_audit WHERE target_id=v_link_id::text)<>1 OR
+    (SELECT count(*) FROM governance.outbox_events WHERE aggregate_id=v_link_id::text)<>1 THEN
   RAISE EXCEPTION 'Audit/outbox cardinality'; END IF;
  BEGIN
   PERFORM programs.record_center_plan_issuance_link(
@@ -73,11 +73,11 @@ BEGIN
  EXCEPTION WHEN foreign_key_violation THEN NULL; WHEN unique_violation THEN NULL; END;
  BEGIN
   UPDATE programs.center_plan_issuance_links SET pinned_revision=2
-  WHERE link_id=link_id;
+  WHERE link_id=v_link_id;
   RAISE EXCEPTION 'Immutable UPDATE passed';
  EXCEPTION WHEN check_violation THEN NULL; END;
  BEGIN
-  DELETE FROM programs.center_plan_issuance_links WHERE link_id=link_id;
+  DELETE FROM programs.center_plan_issuance_links WHERE link_id=v_link_id;
   RAISE EXCEPTION 'Immutable DELETE passed';
  EXCEPTION WHEN check_violation THEN NULL; END;
  IF (SELECT count(*) FROM programs.center_plan_issuance_links)<>1 OR
