@@ -1,0 +1,95 @@
+\set ON_ERROR_STOP on
+\ir learning_events_source_ownership_integrity.psql
+\ir ../migrations/0017_learning_planning_commands.sql
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $test$
+DECLARE c uuid:='aaaaaaaa-1111-4111-8111-000000000001';
+        s uuid:='bbbbbbbb-1111-4111-8111-000000000002';
+BEGIN
+ IF learning.record_class_plan('a',c,'Planned class','actor-a',
+    gen_random_uuid(),gen_random_uuid(),'class-1')<>c THEN
+   RAISE EXCEPTION 'Class create failure';
+ END IF;
+ IF learning.record_class_session_plan('a',s,c,'Planned session',NULL,'actor-a',
+    gen_random_uuid(),gen_random_uuid(),'session-1')<>s THEN
+   RAISE EXCEPTION 'Session create failure';
+ END IF;
+ IF (SELECT count(*) FROM governance.command_audit
+    WHERE target_id IN (c::text,s::text))<>2 OR
+    (SELECT count(*) FROM governance.outbox_events
+    WHERE aggregate_id IN(c::text,s::text))<>2 THEN
+  RAISE EXCEPTION 'Missing atomic audit/outbox';
+ END IF;
+ IF (SELECT scheduled_at FROM learning.class_sessions WHERE session_id=s) IS NOT NULL THEN
+  RAISE EXCEPTION 'Invented schedule';
+ END IF;
+ BEGIN
+  PERFORM learning.record_class_plan('a',c,'Duplicate','actor-a',
+    gen_random_uuid(),gen_random_uuid(),'duplicate');
+  RAISE EXCEPTION 'Duplicate class recorded';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+ BEGIN
+  PERFORM learning.record_class_session_plan('a',gen_random_uuid(),
+    '11111111-1111-4111-8111-000000000001','Wrong center class',NULL,'actor-a',
+    gen_random_uuid(),gen_random_uuid(),'wrong-center');
+  RAISE EXCEPTION 'Cross-center class accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+  PERFORM learning.record_class_session_plan('a',gen_random_uuid(),
+    gen_random_uuid(),'Unknown class',NULL,'actor-a',
+    gen_random_uuid(),gen_random_uuid(),'missing');
+  RAISE EXCEPTION 'Missing class accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+  PERFORM learning.record_class_session_plan('a',
+    'cccccccc-1111-4111-8111-000000000003',c,
+    'Audit failure',NULL,'actor-a',
+    (SELECT audit_id FROM governance.command_audit WHERE target_id=c::text),
+    gen_random_uuid(),'collision');
+  RAISE EXCEPTION 'Duplicate audit accepted';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+ IF EXISTS(SELECT 1 FROM learning.class_sessions
+     WHERE session_id='cccccccc-1111-4111-8111-000000000003') THEN
+  RAISE EXCEPTION 'Audit failure left orphan session';
+ END IF;
+ BEGIN
+  PERFORM learning.record_class_plan('b',gen_random_uuid(),'Wrong scope','actor-a',
+   gen_random_uuid(),gen_random_uuid(),'scope');
+  RAISE EXCEPTION 'Wrong center scope accepted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ BEGIN
+  PERFORM learning.record_class_plan('a',gen_random_uuid(),'Revoked','actor-revoked',
+   gen_random_uuid(),gen_random_uuid(),'revoked');
+  RAISE EXCEPTION 'Revoked actor accepted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ IF has_function_privilege('public',
+   'learning.record_class_plan(text,uuid,text,text,uuid,uuid,text)','EXECUTE') OR
+   has_function_privilege('public',
+   'learning.record_class_session_plan(text,uuid,uuid,text,timestamptz,text,uuid,uuid,text)','EXECUTE') THEN
+  RAISE EXCEPTION 'Public can write classes';
+ END IF;
+END;$test$;
+
+-- Test-only caller: must only execute audited functions, not write source tables.
+DO $role$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='kanoonyar_learning_writer_ci') THEN
+  CREATE ROLE kanoonyar_learning_writer_ci NOLOGIN NOSUPERUSER NOBYPASSRLS;
+ END IF;
+END;$role$;
+GRANT USAGE ON SCHEMA learning,centers TO kanoonyar_learning_writer_ci;
+GRANT EXECUTE ON FUNCTION learning.record_class_plan(text,uuid,text,text,uuid,uuid,text)
+ TO kanoonyar_learning_writer_ci;
+GRANT EXECUTE ON FUNCTION learning.record_class_session_plan(text,uuid,uuid,text,timestamptz,text,uuid,uuid,text)
+ TO kanoonyar_learning_writer_ci;
+SET ROLE kanoonyar_learning_writer_ci;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $test$
+BEGIN
+ IF has_table_privilege(current_user,'learning.center_classes','INSERT') OR
+    has_table_privilege(current_user,'learning.class_sessions','INSERT') OR
+    pg_has_role(current_user,'kanoonyar_learning_command_owner','SET') THEN
+  RAISE EXCEPTION 'Learning caller can bypass audit';
+ END IF;
+END;$test$;
+RESET ROLE;
