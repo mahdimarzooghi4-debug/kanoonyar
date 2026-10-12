@@ -526,6 +526,35 @@ public sealed class SignedOidcHttpIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task Signed_admin_JWT_never_authorizes_campaign_drafts_without_a_live_grant()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var server=fixture.Server();
+        using var client=server.CreateClient();
+        const string url="/api/v1/centers/center-a/campaigns/drafts";
+        using(var req=Request(HttpMethod.Get,url,null))
+        using(var denied=await client.SendAsync(req))
+            Assert.Equal(HttpStatusCode.Unauthorized,denied.StatusCode);
+        foreach(var path in new[]{url,url+"/"+Guid.NewGuid()+"/revisions"})
+        {
+            using var req=Request(HttpMethod.Get,path,fixture.Token(roleClaim:true));
+            using var denied=await client.SendAsync(req);
+            Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        }
+        using(var req=Request(HttpMethod.Post,url+"/revisions",fixture.Token(roleClaim:true)))
+        {
+            req.Content=JsonContent.Create(new{
+                campaignId=Guid.NewGuid(),expectedRevision=0,slug="synthetic",
+                draftId=Guid.NewGuid(),pinnedPlanRevision=1,title="Draft",
+                goalText="Awareness",audienceDescription="Families",
+                plannedActivities=new[]{new{activityKey="visit",title="Visit"}}
+            });
+            using var denied=await client.SendAsync(req);
+            Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        }
+    }
+
     private sealed class TestOnlyReportReadGrant : ICenterActivityReportReadAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, string centerId,
