@@ -3,7 +3,7 @@ permissions:
   contents: read
 on:
   push:
-    branches: [main, planning/sprint-01-foundation, sprint-02-center-membership-read-foundation, sprint-03-center-workspace-ui, sprint-04-national-program-public-read, sprint-05-national-program-catalog-ui, sprint-06-center-national-program-discovery, sprint-07-local-execution-plan-draft, sprint-08-local-plan-operations, sprint-09-national-program-issuance-foundation, sprint-10-national-local-execution-trace, sprint-11-activity-report-evidence-lineage, sprint-12-learning-events-source-ownership, sprint-13-class-session-planning-commands, sprint-14-session-occurrence-attendance-claims, sprint-15-session-claim-history, sprint-16-session-activity-report-lineage]
+    branches: [main, planning/sprint-01-foundation, sprint-02-center-membership-read-foundation, sprint-03-center-workspace-ui, sprint-04-national-program-public-read, sprint-05-national-program-catalog-ui, sprint-06-center-national-program-discovery, sprint-07-local-execution-plan-draft, sprint-08-local-plan-operations, sprint-09-national-program-issuance-foundation, sprint-10-national-local-execution-trace, sprint-11-activity-report-evidence-lineage, sprint-12-learning-events-source-ownership, sprint-13-class-session-planning-commands, sprint-14-session-occurrence-attendance-claims, sprint-15-session-claim-history, sprint-16-session-activity-report-lineage, sprint-17-sourced-activity-report-command]
   pull_request:
 jobs:
   backend:
