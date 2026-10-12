@@ -639,6 +639,10 @@ public sealed class LocalDraftPostgresIntegrationTests
     public async Task Real_source_owner_tables_are_paginated_and_isolated_at_http_handler_boundary()
     {
         if (!Enabled()) return;
+        // This test owns a unique center. Other suites legitimately create source
+        // rows for center-a in the same CI database; keyset assertions must not
+        // depend on execution order or unrelated source IDs.
+        var isolatedCenter = "source-" + Guid.NewGuid().ToString("N");
         var centerClass = Guid.NewGuid();
         var eventId = Guid.NewGuid();
         var prefix = Guid.NewGuid().ToString("N")[..8];
@@ -647,12 +651,24 @@ public sealed class LocalDraftPostgresIntegrationTests
         await using (var db = new NpgsqlConnection(AdminConnection))
         {
             await db.OpenAsync();
+            await using (var setup = new NpgsqlCommand(
+                """
+                INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
+                VALUES(@center,'Isolated source test',true,'fixture',now());
+                INSERT INTO centers.memberships(center_id,subject_id,role_code,is_active,recorded_by_subject,recorded_at)
+                VALUES(@center,'actor-a','fixture-member',true,'fixture',now());
+                """,db))
+            {
+                setup.Parameters.AddWithValue("center", isolatedCenter);
+                await setup.ExecuteNonQueryAsync();
+            }
             await using (var createClass = new NpgsqlCommand(
                 """
                 INSERT INTO learning.center_classes(center_id,class_id,title)
-                VALUES('center-a',@id,'Source class from owner')
+                VALUES(@center,@id,'Source class from owner')
                 """,db))
             {
+                createClass.Parameters.AddWithValue("center", isolatedCenter);
                 createClass.Parameters.AddWithValue("id", centerClass);
                 await createClass.ExecuteNonQueryAsync();
             }
@@ -662,8 +678,9 @@ public sealed class LocalDraftPostgresIntegrationTests
                     """
                     INSERT INTO learning.class_sessions(
                       center_id,session_id,class_id,session_title,scheduled_at)
-                    VALUES('center-a',@id,@class,@title,NULL)
+                    VALUES(@center,@id,@class,@title,NULL)
                     """,db);
+                createSession.Parameters.AddWithValue("center", isolatedCenter);
                 createSession.Parameters.AddWithValue("id", sessions[i]);
                 createSession.Parameters.AddWithValue("class", centerClass);
                 createSession.Parameters.AddWithValue("title", $"Synthetic session {i+1}");
@@ -672,18 +689,19 @@ public sealed class LocalDraftPostgresIntegrationTests
             await using var createEvent = new NpgsqlCommand(
                 """
                 INSERT INTO events.center_events(center_id,event_id,event_title,scheduled_at)
-                VALUES('center-a',@id,'Source event from owner',NULL)
+                VALUES(@center,@id,'Source event from owner',NULL)
                 """,db);
+            createEvent.Parameters.AddWithValue("center", isolatedCenter);
             createEvent.Parameters.AddWithValue("id", eventId);
             await createEvent.ExecuteNonQueryAsync();
         }
 
         async Task<IResult> ReadSources(string kind, string actor="actor-a",
-            string center="center-a", Guid? before=null,
+            string? center=null, Guid? before=null,
             ICenterSourceCatalogReadAuthorization? grant=null, IConfiguration? config=null)
             => await CenterSourceCatalogEndpoint.ListSources(
                 Principal(actor),config ?? Configuration(),grant ?? new TestSourceGrant(),
-                center,kind,before,CancellationToken.None);
+                center ?? isolatedCenter,kind,before,CancellationToken.None);
         (JsonElement Rows, Guid? Next) Page(IResult result,string kind)
         {
             Assert.Equal(200,Status(result));
@@ -731,6 +749,139 @@ public sealed class LocalDraftPostgresIntegrationTests
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal, string centerId,
             CancellationToken ct) => ValueTask.FromResult(true);
+    }
+
+    [Fact]
+    public async Task Class_and_session_http_handlers_use_restricted_real_SQL_and_atomic_audits()
+    {
+        if (!Enabled()) return;
+        var learningConnection=Environment.GetEnvironmentVariable("CENTER_LEARNING_INTEGRATION_DATABASE_URL");
+        Assert.False(string.IsNullOrWhiteSpace(learningConnection));
+        var learningConfig = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string,string?> {["CENTER_LEARNING_WRITE_DATABASE_URL"]=learningConnection}).Build();
+        var classId=Guid.NewGuid();
+        var sessionId=Guid.NewGuid();
+        var grant=new TestLearningGrant();
+        // Assert transaction-local scope works for the *actual* LOGIN, unlike
+        // the superuser-owned psql fixture that can hide RLS problems.
+        await using(var diag=new NpgsqlConnection(learningConnection))
+        {
+            await diag.OpenAsync();
+            await using var tx=await diag.BeginTransactionAsync();
+            await using(var set=new NpgsqlCommand(
+                "SELECT set_config('kanoonyar.center_id','center-a',true)",diag,tx))
+                await set.ExecuteNonQueryAsync();
+            await using(var scope=new NpgsqlCommand(
+                """
+                SELECT current_setting('kanoonyar.center_id',true),
+                       EXISTS(SELECT 1 FROM centers.memberships
+                         WHERE center_id='center-a' AND subject_id='actor-a' AND is_active)
+                """,diag,tx))
+            {
+                await using var diagReader=await scope.ExecuteReaderAsync();
+                Assert.True(await diagReader.ReadAsync());
+                Assert.Equal("center-a",diagReader.GetString(0));
+                Assert.True(diagReader.GetBoolean(1));
+            }
+            await using(var command=new NpgsqlCommand(
+                """
+                SELECT learning.record_class_plan('center-a',
+                  @id,'Transaction local class','actor-a',
+                  @audit,@event,'tx-scope-smoke')
+                """,diag,tx))
+            {
+                var smokeId=Guid.NewGuid();
+                command.Parameters.AddWithValue("id",smokeId);
+                command.Parameters.AddWithValue("audit",Guid.NewGuid());
+                command.Parameters.AddWithValue("event",Guid.NewGuid());
+                Assert.Equal(smokeId,await command.ExecuteScalarAsync());
+            }
+            await tx.RollbackAsync();
+        }
+
+
+        var created=await CenterLearningPlanWriteEndpoint.CreateClass(
+            Principal("actor-a"),learningConfig,grant,"center-a",
+            new CreateCenterClassRequest(classId,"New class source"),CancellationToken.None);
+        Assert.True(Status(created)==200,
+            "Restricted class create response: " +
+            JsonSerializer.Serialize((created as IValueHttpResult)?.Value));
+
+        var scheduled=await CenterLearningPlanWriteEndpoint.ScheduleSession(
+            Principal("actor-a"),learningConfig,grant,"center-a",
+            new CreateCenterSessionRequest(sessionId,classId,"Scheduled session",null),
+            CancellationToken.None);
+        Assert.Equal(200,Status(scheduled));
+        Assert.Equal(409,Status(await CenterLearningPlanWriteEndpoint.CreateClass(
+            Principal("actor-a"),learningConfig,grant,"center-a",
+            new CreateCenterClassRequest(classId,"Duplicate"),CancellationToken.None)));
+        Assert.Equal(409,Status(await CenterLearningPlanWriteEndpoint.ScheduleSession(
+            Principal("actor-a"),learningConfig,grant,"center-a",
+            new CreateCenterSessionRequest(Guid.NewGuid(),Guid.NewGuid(),"Unknown class",null),
+            CancellationToken.None)));
+        Assert.Equal(403,Status(await CenterLearningPlanWriteEndpoint.CreateClass(
+            Principal("actor-b"),learningConfig,grant,"center-a",
+            new CreateCenterClassRequest(Guid.NewGuid(),"Wrong membership"),CancellationToken.None)));
+        Assert.Equal(403,Status(await CenterLearningPlanWriteEndpoint.CreateClass(
+            Principal("actor-revoked"),learningConfig,grant,"center-a",
+            new CreateCenterClassRequest(Guid.NewGuid(),"Revoked membership"),CancellationToken.None)));
+        Assert.Equal(403,Status(await CenterLearningPlanWriteEndpoint.CreateClass(
+            Principal("actor-a"),learningConfig,new UnapprovedCenterLearningPlanWriteAuthorization(),
+            "center-a",new CreateCenterClassRequest(Guid.NewGuid(),"Unapproved"),CancellationToken.None)));
+        var adminConfig=new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string,string?> {["CENTER_LEARNING_WRITE_DATABASE_URL"]=AdminConnection}).Build();
+        Assert.Equal(503,Status(await CenterLearningPlanWriteEndpoint.CreateClass(
+            Principal("actor-a"),adminConfig,grant,"center-a",
+            new CreateCenterClassRequest(Guid.NewGuid(),"Unsafe admin SQL"),CancellationToken.None)));
+
+        await using(var sql=new NpgsqlConnection(learningConnection))
+        {
+            await sql.OpenAsync();
+            await using(var direct=new NpgsqlCommand(
+                """
+                INSERT INTO learning.center_classes(center_id,class_id,title)
+                VALUES('center-a',@id,'Direct unaudited write')
+                """,sql))
+            {
+                direct.Parameters.AddWithValue("id",Guid.NewGuid());
+                var denied=await Assert.ThrowsAsync<PostgresException>(()=>direct.ExecuteNonQueryAsync());
+                Assert.Equal(PostgresErrorCodes.InsufficientPrivilege,denied.SqlState);
+            }
+            await using(var escalate=new NpgsqlCommand("SET ROLE kanoonyar_learning_command_owner",sql))
+            {
+                var denied=await Assert.ThrowsAsync<PostgresException>(()=>escalate.ExecuteNonQueryAsync());
+                Assert.Equal(PostgresErrorCodes.InsufficientPrivilege,denied.SqlState);
+            }
+        }
+        await using var admin=new NpgsqlConnection(AdminConnection);
+        await admin.OpenAsync();
+        await using var cmd=new NpgsqlCommand(
+            """
+            SELECT
+             (SELECT count(*) FROM learning.center_classes WHERE center_id='center-a' AND class_id=@class),
+             (SELECT count(*) FROM learning.class_sessions
+                WHERE center_id='center-a' AND session_id=@session AND class_id=@class
+                  AND scheduled_at IS NULL),
+             (SELECT count(*) FROM governance.command_audit WHERE target_id IN (@class_text,@session_text)),
+             (SELECT count(*) FROM governance.outbox_events WHERE aggregate_id IN (@class_text,@session_text))
+            """,admin);
+        cmd.Parameters.AddWithValue("class",classId);
+        cmd.Parameters.AddWithValue("session",sessionId);
+        cmd.Parameters.AddWithValue("class_text",classId.ToString("D"));
+        cmd.Parameters.AddWithValue("session_text",sessionId.ToString("D"));
+        await using var reader=await cmd.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(1L,reader.GetInt64(0));
+        Assert.Equal(1L,reader.GetInt64(1));
+        Assert.Equal(2L,reader.GetInt64(2));
+        Assert.Equal(2L,reader.GetInt64(3));
+    }
+
+    private sealed class TestLearningGrant : ICenterLearningPlanWriteAuthorization
+    {
+        public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal,string centerId,
+            string operation,Guid resourceId,CancellationToken ct) =>
+            ValueTask.FromResult(true);
     }
 
     private sealed class TestOnlyWriteGrant : ILocalPlanDraftWriteAuthorization

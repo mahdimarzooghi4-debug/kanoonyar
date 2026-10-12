@@ -16,6 +16,7 @@
 \ir ../migrations/0014_national_to_local_plan_trace.sql
 \ir ../migrations/0015_activity_report_evidence_lineage.sql
 \ir ../migrations/0016_learning_events_source_ownership.sql
+\ir ../migrations/0017_learning_planning_commands.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -111,3 +112,56 @@ BEGIN
  END IF;
 END;
 $test$;
+
+
+-- Disposable integration-only command LOGIN; NEVER use in Production.
+CREATE ROLE kanoonyar_learning_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_learning_api_ci;
+-- Schema-only name resolution for catalog safety checks; NOT data access.
+GRANT USAGE ON SCHEMA learning,centers,programs TO kanoonyar_learning_api_ci;
+GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_learning_api_ci;
+GRANT EXECUTE ON FUNCTION learning.record_class_plan(text,uuid,text,text,uuid,uuid,text)
+ TO kanoonyar_learning_api_ci;
+GRANT EXECUTE ON FUNCTION learning.record_class_session_plan(
+ text,uuid,uuid,text,timestamptz,text,uuid,uuid,text) TO kanoonyar_learning_api_ci;
+DO $guard$
+BEGIN
+ IF has_table_privilege('kanoonyar_learning_api_ci','learning.center_classes','INSERT')
+   OR has_table_privilege('kanoonyar_learning_api_ci','learning.class_sessions','INSERT')
+   OR has_table_privilege('kanoonyar_learning_api_ci','governance.command_audit','INSERT')
+   OR has_table_privilege('kanoonyar_learning_api_ci','governance.outbox_events','INSERT')
+   OR pg_has_role('kanoonyar_learning_api_ci',
+       'kanoonyar_learning_command_owner','SET') THEN
+   RAISE EXCEPTION 'Test learning login can bypass auditing';
+ END IF;
+ IF has_function_privilege('kanoonyar_draft_read_ci',
+  'learning.record_class_plan(text,uuid,text,text,uuid,uuid,text)','EXECUTE') THEN
+   RAISE EXCEPTION 'Readonly SQL credential can execute learning commands';
+ END IF;
+END;$guard$;
+
+
+-- Enforce a real restricted-login smoke, not a superuser-only migration proof.
+-- The holder of this CI credential must be able to execute precisely the
+-- audited class command while still lacking direct INSERT / SET ROLE.
+SET ROLE kanoonyar_learning_api_ci;
+SELECT set_config('kanoonyar.center_id','center-a',false);
+DO $smoke$
+BEGIN
+ IF NOT EXISTS(
+   SELECT 1 FROM centers.memberships m
+   JOIN centers.registry c ON c.center_id=m.center_id
+   WHERE m.center_id='center-a' AND m.subject_id='actor-a'
+     AND m.is_active AND c.is_active
+ ) THEN
+  RAISE EXCEPTION 'Restricted learning login cannot see active own-center member';
+ END IF;
+ PERFORM learning.record_class_plan(
+  'center-a','aabbccdd-1000-4000-8000-000000000001',
+  'Restricted SQL fixture class','actor-a',
+  'aabbccdd-1000-4000-8000-000000000002',
+  'aabbccdd-1000-4000-8000-000000000003',
+  'restricted-fixture');
+END;$smoke$;
+RESET ROLE;

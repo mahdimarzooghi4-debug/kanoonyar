@@ -11,6 +11,7 @@ builder.Services.AddSingleton<ILocalPlanDraftWriteAuthorization, UnapprovedLocal
 builder.Services.AddSingleton<ILocalPlanDraftReadAuthorization, UnapprovedLocalPlanDraftReadAuthorization>();
 builder.Services.AddSingleton<ICenterActivityReportReadAuthorization, UnapprovedCenterActivityReportReadAuthorization>();
 builder.Services.AddSingleton<ICenterSourceCatalogReadAuthorization, UnapprovedCenterSourceCatalogReadAuthorization>();
+builder.Services.AddSingleton<ICenterLearningPlanWriteAuthorization, UnapprovedCenterLearningPlanWriteAuthorization>();
 
 var app = builder.Build();
 app.UseExceptionHandler();
@@ -26,6 +27,8 @@ if (oidcConfigured)
     app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts/{draftId:guid}/activity-reports", CenterActivityReportReadEndpoint.ListReports).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/activity-sources/{sourceKind}", CenterSourceCatalogEndpoint.ListSources).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/local-plan-drafts/revisions", LocalPlanDraftWriteEndpoint.Append).RequireAuthorization();
+    app.MapPost("/api/v1/centers/{centerId}/classes", CenterLearningPlanWriteEndpoint.CreateClass).RequireAuthorization();
+    app.MapPost("/api/v1/centers/{centerId}/classes/sessions", CenterLearningPlanWriteEndpoint.ScheduleSession).RequireAuthorization();
 }
 else
 {
@@ -44,6 +47,10 @@ else
     app.MapGet("/api/v1/centers/{centerId}/activity-sources/{sourceKind}", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/local-plan-drafts/revisions", () =>
+        Results.Problem(statusCode: 503, title: "OIDC not configured"));
+    app.MapPost("/api/v1/centers/{centerId}/classes", () =>
+        Results.Problem(statusCode: 503, title: "OIDC not configured"));
+    app.MapPost("/api/v1/centers/{centerId}/classes/sessions", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
 }
 
