@@ -1,0 +1,118 @@
+\set ON_ERROR_STOP on
+\ir ../migrations/0001_national_program_foundation.sql
+\ir ../migrations/0002_append_only_national_versions.sql
+\ir ../migrations/0003_center_registry.sql
+\ir ../migrations/0004_command_audit.sql
+\ir ../migrations/0005_transactional_outbox.sql
+\ir ../migrations/0006_center_scope_rls.sql
+\ir ../migrations/0007_atomic_local_plan_command.sql
+\ir ../migrations/0008_center_membership_read_boundary.sql
+\ir ../migrations/0009_center_membership_db_session_boundary.sql
+\ir ../migrations/0010_local_plan_revision_foundation.sql
+\ir ../migrations/0025_center_campaign_planning.sql
+
+INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
+ VALUES('a','Center A',true,'fixture',now()),('b','Center B',true,'fixture',now());
+INSERT INTO centers.memberships(center_id,subject_id,role_code,is_active,recorded_by_subject,recorded_at)
+ VALUES('a','actor-a','test',true,'fixture',now()),('b','actor-b','test',true,'fixture',now());
+INSERT INTO programs.national_program_versions(program_id,version,title,national_objectives,
+  mandatory_requirements,created_by_subject,created_at)
+ VALUES('national-1',1,'National','[]','[]','fixture',now());
+INSERT INTO programs.national_program_publications(program_id,version,publisher_subject,published_at)
+ VALUES('national-1',1,'fixture',now());
+INSERT INTO programs.center_plan_draft_revisions(center_id,draft_id,revision,program_id,
+  national_version,local_title,local_activities,actor_subject)
+ VALUES('a','11111111-1111-4111-8111-111111111111',1,'national-1',1,'Plan A','[]','actor-a'),
+       ('b','22222222-2222-4222-8222-222222222222',1,'national-1',1,'Plan B','[]','actor-b');
+
+CREATE ROLE kanoonyar_campaign_sql_ci NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT USAGE ON SCHEMA campaigns TO kanoonyar_campaign_sql_ci;
+GRANT EXECUTE ON FUNCTION campaigns.append_center_campaign(
+ text,uuid,bigint,text,uuid,bigint,text,text,text,jsonb,text,uuid,uuid,text)
+ TO kanoonyar_campaign_sql_ci;
+SET ROLE kanoonyar_campaign_sql_ci;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $test$ DECLARE
+ c uuid:='33333333-3333-4333-8333-333333333333';
+ d uuid:='11111111-1111-4111-8111-111111111111';
+ activities jsonb:='[{"activityKey":"workshop","title":"Plan workshop"},{"activityKey":"visit","title":"Plan visit"}]'::jsonb;
+BEGIN
+ IF campaigns.append_center_campaign('a',c,0,'culture-week',d,1,'Culture Week',
+   'Awareness','Local families',activities,'actor-a',gen_random_uuid(),gen_random_uuid(),'initial')<>1
+ THEN RAISE EXCEPTION 'Initial campaign failed'; END IF;
+ IF campaigns.append_center_campaign('a',c,1,'culture-week',d,1,'Culture Week v2',
+   'Awareness','Local families',activities,'actor-a',gen_random_uuid(),gen_random_uuid(),'next')<>2
+ THEN RAISE EXCEPTION 'Revision failed'; END IF;
+ BEGIN
+  PERFORM campaigns.append_center_campaign('a',c,1,'culture-week',d,1,'Stale',
+   'Goal','Audience',activities,'actor-a',gen_random_uuid(),gen_random_uuid(),'stale');
+  RAISE EXCEPTION 'Stale campaign accepted';
+ EXCEPTION WHEN serialization_failure THEN NULL; END;
+ BEGIN
+  PERFORM campaigns.append_center_campaign('a',c,2,'culture-week',d,2,'Wrong plan version',
+   'Goal','Audience',activities,'actor-a',gen_random_uuid(),gen_random_uuid(),'wrong');
+  RAISE EXCEPTION 'Wrong plan revision accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+  PERFORM campaigns.append_center_campaign('a',gen_random_uuid(),0,'cross-plan',
+   '22222222-2222-4222-8222-222222222222',1,'Foreign','Goal','Audience',activities,
+   'actor-a',gen_random_uuid(),gen_random_uuid(),'cross');
+  RAISE EXCEPTION 'Foreign plan accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+  PERFORM campaigns.append_center_campaign('a',gen_random_uuid(),0,'duplicate','',
+   1,'Title','Goal','Audience',activities,'actor-a',gen_random_uuid(),gen_random_uuid(),'invalid');
+  RAISE EXCEPTION 'Invalid plan accepted';
+ EXCEPTION WHEN invalid_text_representation THEN NULL; END;
+ BEGIN
+  PERFORM campaigns.append_center_campaign('a',gen_random_uuid(),0,'duplicate',
+    d,1,'Title','Goal','Audience',
+   '[{"activityKey":"a","title":"X"},{"activityKey":"a","title":"Y"}]'::jsonb,
+   'actor-a',gen_random_uuid(),gen_random_uuid(),'dup');
+  RAISE EXCEPTION 'Duplicate activity key accepted';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+ BEGIN
+  PERFORM campaigns.append_center_campaign('a',gen_random_uuid(),0,'foreign-actor',
+   d,1,'Title','Goal','Audience',activities,'actor-b',gen_random_uuid(),gen_random_uuid(),'bad');
+  RAISE EXCEPTION 'Foreign actor accepted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ BEGIN
+  PERFORM campaigns.append_center_campaign('a',gen_random_uuid(),0,'culture-week',
+    d,1,'Duplicated','Goal','Audience',activities,'actor-a',
+    gen_random_uuid(),gen_random_uuid(),'dup-slug');
+  RAISE EXCEPTION 'Duplicate slug accepted';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+END;$test$;
+RESET ROLE;
+DO $audit$ BEGIN
+ IF (SELECT count(*) FROM campaigns.center_campaigns)<>1
+ OR (SELECT count(*) FROM campaigns.center_campaign_revisions)<>2
+ OR (SELECT count(*) FROM governance.command_audit WHERE action_code='CENTER_CAMPAIGN_DRAFT_REVISION_APPENDED')<>2
+ OR (SELECT count(*) FROM governance.outbox_events WHERE event_type='CenterCampaignDraftRevisionAppended')<>2
+ OR has_table_privilege('kanoonyar_campaign_sql_ci','campaigns.center_campaign_revisions','INSERT')
+ OR pg_has_role('kanoonyar_campaign_sql_ci','kanoonyar_campaign_owner','SET')
+ OR has_function_privilege('public',
+ 'campaigns.append_center_campaign(text,uuid,bigint,text,uuid,bigint,text,text,text,jsonb,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Campaign atomicity or privileges failed'; END IF;
+ BEGIN
+  UPDATE campaigns.center_campaign_revisions SET title='changed';
+  RAISE EXCEPTION 'Campaign history not immutable';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+END;$audit$;
+CREATE ROLE kanoonyar_campaign_reader_sql_ci NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT USAGE ON SCHEMA campaigns TO kanoonyar_campaign_reader_sql_ci;
+GRANT SELECT ON campaigns.center_campaigns,campaigns.center_campaign_revisions
+ TO kanoonyar_campaign_reader_sql_ci;
+SET ROLE kanoonyar_campaign_reader_sql_ci;
+SELECT set_config('kanoonyar.center_id','b',false);
+DO $isolation$ BEGIN
+ IF EXISTS(SELECT 1 FROM campaigns.center_campaigns) OR
+    EXISTS(SELECT 1 FROM campaigns.center_campaign_revisions)
+ THEN RAISE EXCEPTION 'Foreign campaign visible'; END IF;
+END;$isolation$;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $read$ BEGIN
+ IF (SELECT count(*) FROM campaigns.center_campaign_revisions)<>2
+ THEN RAISE EXCEPTION 'Own campaigns unavailable'; END IF;
+END;$read$;
+RESET ROLE;
