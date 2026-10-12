@@ -137,9 +137,16 @@ public static class CenterLearningPlanWriteEndpoint
         {
             return Results.Problem(statusCode:409,title:"Class/session identity conflict or nonexistent class");
         }
-        catch(PostgresException e) when(e.SqlState=="42501")
+        catch(PostgresException e) when(e.SqlState=="42501" &&
+            e.MessageText=="Center scope or active membership absent")
         {
             return Results.Problem(statusCode:403,title:"Class/session center membership or scope denied");
+        }
+        catch(PostgresException e) when(e.SqlState=="42501")
+        {
+            // SQL credential privilege failure is infrastructural; never
+            // present it as a revoked/denied human operation grant.
+            return Results.Problem(statusCode:503,title:"Learning command SQL privileges insufficient");
         }
         catch(PostgresException e) when(e.SqlState=="22023")
         {
