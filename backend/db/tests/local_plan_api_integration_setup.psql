@@ -74,6 +74,7 @@ GRANT SELECT ON centers.memberships,centers.registry TO kanoonyar_draft_read_ci;
 GRANT SELECT ON programs.center_plan_draft_revisions,programs.center_plan_issuance_links,
   programs.center_activity_reports,programs.activity_report_source_bindings TO kanoonyar_draft_read_ci;
 GRANT SELECT ON learning.center_classes,learning.class_sessions,events.center_events TO kanoonyar_draft_read_ci;
+GRANT SELECT ON learning.session_occurrence_reports,learning.session_attendance_claims TO kanoonyar_draft_read_ci;
 DO $test$
 BEGIN
   IF has_table_privilege('kanoonyar_draft_read_ci',

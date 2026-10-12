@@ -969,6 +969,145 @@ public sealed class LocalDraftPostgresIntegrationTests
         Assert.Equal(2L,reader.GetInt64(2));Assert.Equal(2L,reader.GetInt64(3));
     }
 
+    [Fact]
+    public async Task Claim_history_pages_real_Postgres_twenty_plus_two_and_separates_attendance_access()
+    {
+        if(!Enabled())return;
+        var center="history-"+Guid.NewGuid().ToString("N");
+        var actor="history-reader-"+Guid.NewGuid().ToString("N");
+        var parentClass=Guid.NewGuid();var session=Guid.NewGuid();
+        var prefix=Guid.NewGuid().ToString("N")[..8];
+        var occurrenceIds=Enumerable.Range(1,22)
+          .Select(i=>Guid.Parse($"{prefix}-0000-4000-8000-{i:000000000000}")).ToArray();
+        var attendanceIds=Enumerable.Range(101,22)
+          .Select(i=>Guid.Parse($"{prefix}-0000-4000-8001-{i:000000000000}")).ToArray();
+        var at=new DateTime(2026,10,12,11,0,0,DateTimeKind.Utc);
+        await using(var db=new NpgsqlConnection(AdminConnection))
+        {
+            await db.OpenAsync();
+            await using(var setup=new NpgsqlCommand(
+                """
+                INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
+                VALUES(@center,'Synthetic history center',true,'fixture',now());
+                INSERT INTO centers.memberships(center_id,subject_id,role_code,is_active,recorded_by_subject,recorded_at)
+                VALUES(@center,@actor,'fixture-member',true,'fixture',now());
+                INSERT INTO learning.center_classes(center_id,class_id,title)
+                VALUES(@center,@class,'History synthetic class');
+                INSERT INTO learning.class_sessions(center_id,session_id,class_id,session_title)
+                VALUES(@center,@session,@class,'Synthetic lesson');
+                """,db))
+            {
+                setup.Parameters.AddWithValue("center",center);
+                setup.Parameters.AddWithValue("actor",actor);
+                setup.Parameters.AddWithValue("class",parentClass);
+                setup.Parameters.AddWithValue("session",session);
+                await setup.ExecuteNonQueryAsync();
+            }
+            for(int i=0;i<22;i++)
+            {
+                await using(var report=new NpgsqlCommand(
+                    """
+                    INSERT INTO learning.session_occurrence_reports(
+                        center_id,occurrence_report_id,session_id,reported_note,
+                        actor_subject,recorded_at)
+                    VALUES(@center,@report,@session,@note,'fixture',@at)
+                    """,db))
+                {
+                    report.Parameters.AddWithValue("center",center);
+                    report.Parameters.AddWithValue("report",occurrenceIds[i]);
+                    report.Parameters.AddWithValue("session",session);
+                    report.Parameters.AddWithValue("note","Synthetic claim "+i);
+                    report.Parameters.AddWithValue("at",at);
+                    await report.ExecuteNonQueryAsync();
+                }
+                await using(var attendance=new NpgsqlCommand(
+                    """
+                    INSERT INTO learning.session_attendance_claims(
+                        center_id,claim_id,occurrence_report_id,session_id,
+                        participant_ref,reported_presence,actor_subject,recorded_at)
+                    VALUES(@center,@claim,@occurrence,@session,@participant,
+                           'REPORTED_PRESENT','fixture',@at)
+                    """,db))
+                {
+                    attendance.Parameters.AddWithValue("center",center);
+                    attendance.Parameters.AddWithValue("claim",attendanceIds[i]);
+                    attendance.Parameters.AddWithValue("occurrence",occurrenceIds[0]);
+                    attendance.Parameters.AddWithValue("session",session);
+                    attendance.Parameters.AddWithValue("participant","synthetic-opaque-"+i);
+                    attendance.Parameters.AddWithValue("at",at);
+                    await attendance.ExecuteNonQueryAsync();
+                }
+            }
+        }
+        var config=Configuration();
+        var grant=new TestClaimHistoryGrant();
+        var principal=Principal(actor);
+        async Task<IResult> History(DateTimeOffset? cursor=null,Guid? id=null,
+            string? subject=null,string? ownCenter=null,ICenterSessionClaimHistoryAuthorization? auth=null,
+            IConfiguration? conf=null)=>
+            await CenterSessionClaimHistoryEndpoint.Occurrences(
+                Principal(subject??actor),conf??config,auth??grant,
+                ownCenter??center,session,cursor,id,default);
+        async Task<IResult> Attendance(DateTimeOffset? cursor=null,Guid? id=null,
+            string? subject=null,ICenterSessionClaimHistoryAuthorization? auth=null)=>
+            await CenterSessionClaimHistoryEndpoint.Attendance(
+                Principal(subject??actor),config,auth??grant,center,session,
+                occurrenceIds[0],cursor,id,default);
+        (JsonElement Records,DateTimeOffset? At,Guid? Id) Page(IResult result,string key)
+        {
+            Assert.Equal(200,Status(result));
+            using var doc=JsonDocument.Parse(JsonSerializer.Serialize(
+                Assert.IsAssignableFrom<IValueHttpResult>(result).Value));
+            var root=doc.RootElement;
+            var value=root.GetProperty("nextBeforeAt");
+            var next=root.GetProperty("nextBeforeId");
+            return (root.GetProperty(key).Clone(),
+                value.ValueKind==JsonValueKind.Null?null:value.GetDateTimeOffset(),
+                next.ValueKind==JsonValueKind.Null?null:next.GetGuid());
+        }
+        var first=Page(await History(),"occurrenceReports");
+        Assert.Equal(20,first.Records.GetArrayLength());
+        Assert.Equal(occurrenceIds[21],first.Records[0].GetProperty("occurrenceReportId").GetGuid());
+        Assert.Equal(occurrenceIds[2],first.Id);
+        Assert.All(first.Records.EnumerateArray(),row=>{
+            Assert.Equal("UNVERIFIED",row.GetProperty("verificationStatus").GetString());
+            Assert.Equal(JsonValueKind.Null,row.GetProperty("claimedStartedAt").ValueKind);
+        });
+        var second=Page(await History(first.At,first.Id),"occurrenceReports");
+        Assert.Equal(2,second.Records.GetArrayLength());
+        Assert.Equal(occurrenceIds[1],second.Records[0].GetProperty("occurrenceReportId").GetGuid());
+        Assert.Equal(occurrenceIds[0],second.Records[1].GetProperty("occurrenceReportId").GetGuid());
+        Assert.Null(second.Id);
+        var all=Page(await Attendance(),"attendanceClaims");
+        Assert.Equal(20,all.Records.GetArrayLength());
+        Assert.Equal(attendanceIds[21],all.Records[0].GetProperty("claimId").GetGuid());
+        var next=Page(await Attendance(all.At,all.Id),"attendanceClaims");
+        Assert.Equal(2,next.Records.GetArrayLength());
+        Assert.Null(next.Id);
+        Assert.Equal("REPORTED_PRESENT",next.Records[0].GetProperty("reportedPresence").GetString());
+        Assert.Empty(Page(await History(subject:"actor-b"),"occurrenceReports").Records.EnumerateArray());
+        Assert.Empty(Page(await History(ownCenter:"center-b"),"occurrenceReports").Records.EnumerateArray());
+        Assert.Empty(Page(await Attendance(subject:"actor-revoked"),"attendanceClaims").Records.EnumerateArray());
+        Assert.Equal(403,Status(await History(auth:new UnapprovedCenterSessionClaimHistoryAuthorization())));
+        Assert.Equal(403,Status(await Attendance(auth:new OccurrenceOnlyHistoryGrant())));
+        var adminConfig=new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string,string?>{["CENTER_DRAFT_READ_DATABASE_URL"]=AdminConnection}).Build();
+        Assert.Equal(503,Status(await History(conf:adminConfig)));
+        Assert.Equal(400,Status(await History(DateTimeOffset.UtcNow,null)));
+    }
+
+    private sealed class TestClaimHistoryGrant:ICenterSessionClaimHistoryAuthorization
+    {
+        public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor,string c,string operation,
+            Guid s,CancellationToken ct)=>ValueTask.FromResult(true);
+    }
+    private sealed class OccurrenceOnlyHistoryGrant:ICenterSessionClaimHistoryAuthorization
+    {
+        public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor,string c,string operation,
+            Guid s,CancellationToken ct)=>
+            ValueTask.FromResult(operation=="SESSION_OCCURRENCE_CLAIMS_READ");
+    }
+
     private sealed class TestSessionClaimGrant : ICenterSessionClaimWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal user,string center,

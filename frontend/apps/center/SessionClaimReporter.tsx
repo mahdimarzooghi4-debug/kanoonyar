@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { SessionClaimHistory } from './SessionClaimHistory';
 
 type Phase = 'idle' | 'saving' | 'saved' | 'denied' | 'conflict' | 'error';
 type ReportedPresence = '' | 'REPORTED_PRESENT' | 'REPORTED_ABSENT';
@@ -91,6 +92,7 @@ export function SessionClaimReporter({ centerId, sessionId, token, onClose }: {
     <h4>گزارش ادعای جلسه</h4>
     <p>این اطلاعات صرفاً ادعاهای ثبت‌شده هستند، نه تأیید برگزاری یا آمار حضور رسمی.</p>
     <p>شناسه جلسه: {sessionId}</p>
+    <SessionClaimHistory centerId={centerId} sessionId={sessionId} token={token} />
     <button type="button" onClick={onClose}>بستن گزارش جلسه</button>
     <label>شرح گزارش <input aria-label="شرح ادعای برگزاری" value={note}
       disabled={occurrenceId!==null}

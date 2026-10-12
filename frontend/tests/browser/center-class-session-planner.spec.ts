@@ -40,7 +40,7 @@ test('create class then schedule two sessions with verified server acknowledgeme
   expect(posted[1].body.classId).toBe(posted[0].body.classId);
   await page.getByRole('textbox',{name:'عنوان جلسه جدید'}).fill('جلسه دوم');
   await page.getByRole('button',{name:'ثبت جلسه برنامه‌ریزی‌شده'}).click();
-  expect(posted).toHaveLength(3);
+  await expect.poll(() => posted.length).toBe(3);
   expect(posted[2].body.sessionId).not.toBe(posted[1].body.sessionId);
   await page.getByRole('combobox',{name:'انتخاب کانون برای پیش‌نویس‌ها'}).selectOption('c2');
   await expect(page.getByRole('textbox',{name:'عنوان کلاس جدید'})).toHaveValue('');
