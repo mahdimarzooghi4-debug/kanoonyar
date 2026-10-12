@@ -3,7 +3,7 @@ permissions:
   contents: read
 on:
   push:
-    branches: [main, planning/sprint-01-foundation, sprint-02-center-membership-read-foundation, sprint-03-center-workspace-ui, sprint-04-national-program-public-read, sprint-05-national-program-catalog-ui, sprint-06-center-national-program-discovery, sprint-07-local-execution-plan-draft, sprint-08-local-plan-operations, sprint-09-national-program-issuance-foundation]
+    branches: [main, planning/sprint-01-foundation, sprint-02-center-membership-read-foundation, sprint-03-center-workspace-ui, sprint-04-national-program-public-read, sprint-05-national-program-catalog-ui, sprint-06-center-national-program-discovery, sprint-07-local-execution-plan-draft, sprint-08-local-plan-operations, sprint-09-national-program-issuance-foundation, sprint-10-national-local-execution-trace]
   pull_request:
 jobs:
   backend:
@@ -65,6 +65,8 @@ jobs:
           PGDATABASE=kanoonyar_local_draft_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/local_plan_revisions.psql
           createdb kanoonyar_issuance_ci
           PGDATABASE=kanoonyar_issuance_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/national_program_issuance_integrity.psql
+          createdb kanoonyar_trace_ci
+          PGDATABASE=kanoonyar_trace_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_execution_trace_integrity.psql
           createdb kanoonyar_draft_api_ci
           PGDATABASE=kanoonyar_draft_api_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/local_plan_api_integration_setup.psql
       - name: Real restricted PostgreSQL to API-handler integration
