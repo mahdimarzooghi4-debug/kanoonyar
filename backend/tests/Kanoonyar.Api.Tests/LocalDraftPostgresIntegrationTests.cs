@@ -301,6 +301,98 @@ public sealed class LocalDraftPostgresIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task Command_login_cannot_insert_unaudited_history_or_assume_definer_role()
+    {
+        if (!Enabled()) return;
+        var draft = Guid.NewGuid();
+        await using var db = new NpgsqlConnection(RuntimeConnection);
+        await db.OpenAsync();
+        await using (var insert = new NpgsqlCommand(
+            """
+            INSERT INTO programs.center_plan_draft_revisions
+              (center_id,draft_id,revision,program_id,national_version,
+               local_title,local_activities,actor_subject)
+            VALUES ('center-a',@draft,1,'national-1',1,'Unaudited','[]','actor-a')
+            """, db))
+        {
+            insert.Parameters.AddWithValue("draft", draft);
+            var denied = await Assert.ThrowsAsync<PostgresException>(() => insert.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.InsufficientPrivilege, denied.SqlState);
+        }
+        await using (var audit = new NpgsqlCommand(
+            """
+            INSERT INTO governance.command_audit
+              (audit_id,occurred_at,actor_subject_id,center_id,action_code,
+               target_type,target_id,correlation_id,metadata)
+            VALUES (gen_random_uuid(),now(),'actor-a','center-a',
+                    'FORGED','draft',@draft,'forged','{}')
+            """, db))
+        {
+            audit.Parameters.AddWithValue("draft", draft.ToString("D"));
+            var denied = await Assert.ThrowsAsync<PostgresException>(() => audit.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.InsufficientPrivilege, denied.SqlState);
+        }
+        await using (var switchRole = new NpgsqlCommand(
+            "SET ROLE kanoonyar_draft_command_owner", db))
+        {
+            var denied = await Assert.ThrowsAsync<PostgresException>(() => switchRole.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.InsufficientPrivilege, denied.SqlState);
+        }
+        Assert.Equal((0L, 0L, 0L), await Counts(draft));
+    }
+
+    [Fact]
+    public async Task Command_rejects_scope_mismatch_and_inactive_member_without_partial_records()
+    {
+        if (!Enabled()) return;
+        var draft = Guid.NewGuid();
+        await using var db = new NpgsqlConnection(RuntimeConnection);
+        await db.OpenAsync();
+        async Task<PostgresException> TryDirectCommand(string center, string actor)
+        {
+            await using var command = new NpgsqlCommand(
+                """
+                SELECT programs.append_local_plan_draft_revision(
+                  @center,@draft,0,'national-1',1,'Rejected','[]'::jsonb,
+                  @actor,gen_random_uuid(),gen_random_uuid(),'raw-sql')
+                """, db);
+            command.Parameters.AddWithValue("center", center);
+            command.Parameters.AddWithValue("draft", draft);
+            command.Parameters.AddWithValue("actor", actor);
+            return await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteScalarAsync());
+        }
+        Assert.Equal(PostgresErrorCodes.InsufficientPrivilege,
+            (await TryDirectCommand("center-a", "actor-a")).SqlState);
+        await using (var scope = new NpgsqlCommand(
+            "SELECT set_config('kanoonyar.center_id','center-a',false)", db))
+            await scope.ExecuteNonQueryAsync();
+        Assert.Equal(PostgresErrorCodes.InsufficientPrivilege,
+            (await TryDirectCommand("center-b", "actor-b")).SqlState);
+        Assert.Equal(PostgresErrorCodes.InsufficientPrivilege,
+            (await TryDirectCommand("center-a", "actor-revoked")).SqlState);
+        Assert.Equal((0L, 0L, 0L), await Counts(draft));
+    }
+
+    [Fact]
+    public async Task Function_owner_is_nonlogin_and_required_function_is_security_definer()
+    {
+        if (!Enabled()) return;
+        await using var db = new NpgsqlConnection(AdminConnection);
+        await db.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT NOT owner.rolcanlogin AND NOT owner.rolsuper AND NOT owner.rolbypassrls
+                   AND p.prosecdef
+                   AND p.proconfig @> ARRAY['search_path=pg_catalog, pg_temp']
+            FROM pg_proc p
+            JOIN pg_roles owner ON owner.oid=p.proowner
+            WHERE p.oid='programs.append_local_plan_draft_revision(
+              text,uuid,bigint,text,integer,text,jsonb,text,uuid,uuid,text)'::regprocedure
+            """, db);
+        Assert.Equal(true, await command.ExecuteScalarAsync());
+    }
+
     private sealed class TestOnlyWriteGrant : ILocalPlanDraftWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal principal, string centerId,
