@@ -89,7 +89,17 @@ BEGIN
    RAISE EXCEPTION 'PUBLIC can create evidence claims'; END IF;
 END;$test$;
 
-CREATE ROLE kanoonyar_report_reader_ci NOLOGIN NOSUPERUSER NOBYPASSRLS;
+-- Fixture role is cluster-scoped and reused by the next sprint's test DB.
+DO $role$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='kanoonyar_report_reader_ci') THEN
+  CREATE ROLE kanoonyar_report_reader_ci NOLOGIN NOSUPERUSER NOBYPASSRLS;
+ END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='kanoonyar_report_reader_ci'
+   AND NOT rolcanlogin AND NOT rolsuper AND NOT rolbypassrls) THEN
+  RAISE EXCEPTION 'Unsafe report fixture role';
+ END IF;
+END;$role$;
 GRANT USAGE ON SCHEMA programs TO kanoonyar_report_reader_ci;
 GRANT SELECT ON programs.center_activity_reports TO kanoonyar_report_reader_ci;
 SET ROLE kanoonyar_report_reader_ci;
