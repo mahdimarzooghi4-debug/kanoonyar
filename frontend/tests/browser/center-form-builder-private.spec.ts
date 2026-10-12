@@ -28,7 +28,7 @@ test('creates and updates private form with a safe read-only field preview',asyn
  await p.getByRole('textbox',{name:'عنوان فیلد 2'}).fill('موضوع انتخابی');
  await p.getByRole('combobox',{name:'نوع فیلد 2'}).selectOption('SINGLE_SELECT');
  await expect(p.getByRole('button',{name:/ارسال پاسخ/})).toHaveCount(0);
- await expect(p.getByRole('section',{name:'پیش‌نمایش خصوصی و غیرقابل ارسال فرم'})
+ await expect(p.getByRole('region',{name:'پیش‌نمایش خصوصی و غیرقابل ارسال فرم'})
     .getByRole('combobox',{name:'پیش‌نمایش موضوع انتخابی'})).toBeDisabled();
  await p.getByRole('button',{name:'ذخیره نسخه خصوصی فرم'}).click();
  await expect(p.getByText('نسخه فرم ثبت شد؛ دریافت پاسخ غیرفعال است.')).toBeVisible();
