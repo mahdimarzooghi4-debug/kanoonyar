@@ -23,6 +23,7 @@
 \ir ../migrations/0021_registration_review_requirements.sql
 \ir ../migrations/0022_center_site_page_drafts.sql
 \ir ../migrations/0023_center_site_design_drafts.sql
+\ir ../migrations/0024_center_form_builder_drafts.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -85,6 +86,7 @@ GRANT SELECT ON learning.registration_review_requests TO kanoonyar_draft_read_ci
 GRANT USAGE ON SCHEMA web TO kanoonyar_draft_read_ci;
 GRANT SELECT ON web.center_pages,web.page_draft_revisions TO kanoonyar_draft_read_ci;
 GRANT SELECT ON web.center_site_design_revisions TO kanoonyar_draft_read_ci;
+GRANT SELECT ON web.center_forms,web.center_form_draft_revisions TO kanoonyar_draft_read_ci;
 DO $test$
 BEGIN
   IF has_table_privilege('kanoonyar_draft_read_ci',
@@ -297,3 +299,19 @@ DO $guard$ BEGIN
    'web.append_center_site_design(text,bigint,text,text,text,text,text,boolean,boolean,text,uuid,uuid,text)','EXECUTE')
  THEN RAISE EXCEPTION 'Unsafe site design CI credential'; END IF;
 END;$guard$;
+
+-- CI-only SQL LOGIN, not a real center authorization.
+CREATE ROLE kanoonyar_form_draft_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_form_draft_api_ci;
+GRANT USAGE ON SCHEMA web,centers,programs,governance,learning,events TO kanoonyar_form_draft_api_ci;
+GRANT EXECUTE ON FUNCTION web.append_center_form_draft(
+ text,uuid,bigint,text,text,jsonb,text,uuid,uuid,text) TO kanoonyar_form_draft_api_ci;
+DO $safe$ BEGIN
+ IF has_table_privilege('kanoonyar_form_draft_api_ci','web.center_form_draft_revisions','INSERT')
+ OR has_table_privilege('kanoonyar_form_draft_api_ci','governance.command_audit','INSERT')
+ OR pg_has_role('kanoonyar_form_draft_api_ci','kanoonyar_form_draft_owner','SET')
+ OR has_function_privilege('kanoonyar_draft_read_ci',
+   'web.append_center_form_draft(text,uuid,bigint,text,text,jsonb,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Unsafe form SQL fixture privilege'; END IF;
+END;$safe$;

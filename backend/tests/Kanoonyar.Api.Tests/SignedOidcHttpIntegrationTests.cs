@@ -498,6 +498,34 @@ public sealed class SignedOidcHttpIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task Signed_admin_JWT_never_grants_form_authoring_or_private_reads()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var server=fixture.Server();
+        using var client=server.CreateClient();
+        const string route="/api/v1/centers/center-a/site/forms/drafts";
+        using(var anonymous=Request(HttpMethod.Get,route,null))
+        using(var result=await client.SendAsync(anonymous))
+            Assert.Equal(HttpStatusCode.Unauthorized,result.StatusCode);
+        foreach(var path in new[]{route,route+"/"+Guid.NewGuid()+"/revisions"})
+        {
+            using var request=Request(HttpMethod.Get,path,fixture.Token(roleClaim:true));
+            using var denied=await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        }
+        using(var request=Request(HttpMethod.Post,route+"/revisions",fixture.Token(roleClaim:true)))
+        {
+            request.Content=JsonContent.Create(new{
+                formId=Guid.NewGuid(),expectedRevision=0,slug="test-form",title="Private",
+                fields=new[]{new{key="topic",label="Topic",kind="SHORT_TEXT",required=true,
+                  options=Array.Empty<string>()}}
+            });
+            using var denied=await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        }
+    }
+
     private sealed class TestOnlyReportReadGrant : ICenterActivityReportReadAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, string centerId,
