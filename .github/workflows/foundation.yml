@@ -3,7 +3,7 @@ permissions:
   contents: read
 on:
   push:
-    branches: [main, planning/sprint-01-foundation, sprint-02-center-membership-read-foundation, sprint-03-center-workspace-ui, sprint-04-national-program-public-read, sprint-05-national-program-catalog-ui, sprint-06-center-national-program-discovery, sprint-07-local-execution-plan-draft, sprint-08-local-plan-operations, sprint-09-national-program-issuance-foundation, sprint-10-national-local-execution-trace, sprint-11-activity-report-evidence-lineage, sprint-12-learning-events-source-ownership, sprint-13-class-session-planning-commands, sprint-14-session-occurrence-attendance-claims, sprint-15-session-claim-history, sprint-16-session-activity-report-lineage, sprint-17-sourced-activity-report-command]
+    branches: [main, planning/sprint-01-foundation, sprint-02-center-membership-read-foundation, sprint-03-center-workspace-ui, sprint-04-national-program-public-read, sprint-05-national-program-catalog-ui, sprint-06-center-national-program-discovery, sprint-07-local-execution-plan-draft, sprint-08-local-plan-operations, sprint-09-national-program-issuance-foundation, sprint-10-national-local-execution-trace, sprint-11-activity-report-evidence-lineage, sprint-12-learning-events-source-ownership, sprint-13-class-session-planning-commands, sprint-14-session-occurrence-attendance-claims, sprint-15-session-claim-history, sprint-16-session-activity-report-lineage, sprint-17-sourced-activity-report-command, sprint-18-class-capacity-registration-intake]
   pull_request:
 jobs:
   backend:
@@ -77,11 +77,14 @@ jobs:
           PGDATABASE=kanoonyar_occurrence_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/session_occurrence_attendance_integrity.psql
           createdb kanoonyar_source_command_ci
           PGDATABASE=kanoonyar_source_command_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/sourced_activity_report_command_integrity.psql
+          createdb kanoonyar_capacity_ci
+          PGDATABASE=kanoonyar_capacity_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/class_capacity_intake_integrity.psql
           createdb kanoonyar_draft_api_ci
           PGDATABASE=kanoonyar_draft_api_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/local_plan_api_integration_setup.psql
       - name: Real restricted PostgreSQL to API-handler integration
         env:
           CENTER_DRAFT_INTEGRATION_REQUIRED: '1'
+          CENTER_CLASS_INTAKE_INTEGRATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_class_intake_api_ci;Pooling=false
           CENTER_ACTIVITY_REPORT_INTEGRATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_sourced_report_api_ci;Pooling=false
           CENTER_LEARNING_INTEGRATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_learning_api_ci;Pooling=false
           CENTER_DRAFT_INTEGRATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_draft_api_ci;Pooling=false
