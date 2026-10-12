@@ -1,0 +1,60 @@
+\set ON_ERROR_STOP on
+\ir class_capacity_intake_integrity.psql
+\ir ../migrations/0021_registration_review_requirements.sql
+CREATE ROLE kanoonyar_review_ci NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT USAGE ON SCHEMA learning TO kanoonyar_review_ci;
+GRANT EXECUTE ON FUNCTION learning.request_registration_human_review(
+ text,uuid,uuid,uuid,text,text,uuid,uuid,text) TO kanoonyar_review_ci;
+SET ROLE kanoonyar_review_ci;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $test$ DECLARE
+ cls uuid:='11111111-1111-4111-8111-000000000001';
+ req uuid:='99111111-1111-4111-8111-000000000001';
+ one uuid:='99111111-1111-4111-8111-000000000101';
+ two uuid:='99111111-1111-4111-8111-000000000102';
+BEGIN
+ IF learning.request_registration_human_review('a',cls,req,one,'IDENTITY_AUTHORITY',
+  'actor-a',gen_random_uuid(),gen_random_uuid(),'review-one')<>one THEN
+  RAISE EXCEPTION 'Identity review not recorded'; END IF;
+ IF learning.request_registration_human_review('a',cls,req,two,'CONSENT_AUTHORITY',
+  'actor-a',gen_random_uuid(),gen_random_uuid(),'review-two')<>two THEN
+  RAISE EXCEPTION 'Consent review not recorded'; END IF;
+ BEGIN
+  PERFORM learning.request_registration_human_review('a',cls,req,gen_random_uuid(),
+   'IDENTITY_AUTHORITY','actor-a',gen_random_uuid(),gen_random_uuid(),'duplicate');
+  RAISE EXCEPTION 'Duplicate same-topic review accepted';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+ BEGIN
+  PERFORM learning.request_registration_human_review('a',gen_random_uuid(),req,gen_random_uuid(),
+   'ELIGIBILITY_CRITERIA','actor-a',gen_random_uuid(),gen_random_uuid(),'wrong-class');
+  RAISE EXCEPTION 'Wrong class review accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+  PERFORM learning.request_registration_human_review('a',cls,req,gen_random_uuid(),
+   'ELIGIBILITY_CRITERIA','actor-b',gen_random_uuid(),gen_random_uuid(),'cross-center');
+  RAISE EXCEPTION 'Cross-center actor accepted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ BEGIN
+  PERFORM learning.request_registration_human_review('a',cls,req,gen_random_uuid(),
+   'VERIFIED','actor-a',gen_random_uuid(),gen_random_uuid(),'fake-approval');
+  RAISE EXCEPTION 'Positive verdict accepted';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+END;$test$;
+RESET ROLE;
+DO $verify$ BEGIN
+ IF (SELECT count(*) FROM learning.registration_review_requests)<>2
+  OR EXISTS(SELECT 1 FROM learning.registration_review_requests
+    WHERE review_status<>'REVIEW_REQUIRED')
+  OR (SELECT count(*) FROM governance.command_audit
+    WHERE action_code='REGISTRATION_HUMAN_REVIEW_REQUESTED')<>2
+  OR (SELECT count(*) FROM governance.outbox_events
+    WHERE event_type='RegistrationHumanReviewRequested')<>2
+  OR EXISTS(SELECT 1 FROM learning.class_registration_intents WHERE state<>'REQUESTED')
+ THEN RAISE EXCEPTION 'Review integrity / non-decision boundary failed'; END IF;
+ IF has_table_privilege('kanoonyar_review_ci',
+   'learning.registration_review_requests','INSERT')
+ OR pg_has_role('kanoonyar_review_ci','kanoonyar_registration_review_owner','SET')
+ OR has_function_privilege('public',
+   'learning.request_registration_human_review(text,uuid,uuid,uuid,text,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Review command can bypass governance'; END IF;
+END;$verify$;
