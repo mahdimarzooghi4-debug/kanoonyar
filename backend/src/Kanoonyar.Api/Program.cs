@@ -19,6 +19,7 @@ builder.Services.AddSingleton<ICenterSourcedActivityReportWriteAuthorization, Un
 builder.Services.AddSingleton<ICenterClassIntakeAuthorization, UnapprovedCenterClassIntakeAuthorization>();
 builder.Services.AddSingleton<ICenterRegistrationReviewAuthorization, UnapprovedCenterRegistrationReviewAuthorization>();
 builder.Services.AddSingleton<ICenterSiteDraftAuthorization, UnapprovedCenterSiteDraftAuthorization>();
+builder.Services.AddSingleton<ICenterSiteDesignAuthorization, UnapprovedCenterSiteDesignAuthorization>();
 
 var app = builder.Build();
 app.UseExceptionHandler();
@@ -28,6 +29,9 @@ if (oidcConfigured)
     app.UseAuthorization();
     app.MapGet("/api/v1/identity/me", AuthenticatedSubjectEndpoint.GetSubject).RequireAuthorization();
     app.MapGet("/api/v1/identity/center-memberships", CenterMembershipEndpoint.GetMine).RequireAuthorization();
+    app.MapPost("/api/v1/centers/{centerId}/site/design/revisions", CenterSiteDesignEndpoint.Append).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/site/design", CenterSiteDesignEndpoint.Latest).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/site/design/revisions", CenterSiteDesignEndpoint.History).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/site/drafts/revisions", CenterSiteDraftEndpoint.Append).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/site/drafts", CenterSiteDraftEndpoint.List).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/site/drafts/{pageId:guid}/revisions", CenterSiteDraftEndpoint.History).RequireAuthorization();
@@ -57,6 +61,9 @@ else
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapGet("/api/v1/identity/center-memberships", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
+    app.MapPost("/api/v1/centers/{centerId}/site/design/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/site/design", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/site/design/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/site/drafts/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/site/drafts", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/site/drafts/{pageId:guid}/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));

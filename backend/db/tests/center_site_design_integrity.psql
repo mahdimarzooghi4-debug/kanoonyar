@@ -1,0 +1,85 @@
+\set ON_ERROR_STOP on
+\ir ../migrations/0001_national_program_foundation.sql
+\ir ../migrations/0002_append_only_national_versions.sql
+\ir ../migrations/0003_center_registry.sql
+\ir ../migrations/0004_command_audit.sql
+\ir ../migrations/0005_transactional_outbox.sql
+\ir ../migrations/0006_center_scope_rls.sql
+\ir ../migrations/0007_atomic_local_plan_command.sql
+\ir ../migrations/0008_center_membership_read_boundary.sql
+\ir ../migrations/0009_center_membership_db_session_boundary.sql
+\ir ../migrations/0010_local_plan_revision_foundation.sql
+\ir ../migrations/0022_center_site_page_drafts.sql
+\ir ../migrations/0023_center_site_design_drafts.sql
+INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
+ VALUES('a','A',true,'fixture',now()),('b','B',true,'fixture',now());
+INSERT INTO centers.memberships(center_id,subject_id,role_code,is_active,recorded_by_subject,recorded_at)
+ VALUES('a','actor-a','fixture',true,'fixture',now()),
+       ('b','actor-b','fixture',true,'fixture',now());
+CREATE ROLE kanoonyar_site_design_sql_ci NOLOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT USAGE ON SCHEMA web TO kanoonyar_site_design_sql_ci;
+GRANT EXECUTE ON FUNCTION web.append_center_site_design(
+ text,bigint,text,text,text,text,text,boolean,boolean,text,uuid,uuid,text)
+ TO kanoonyar_site_design_sql_ci;
+SET ROLE kanoonyar_site_design_sql_ci;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $test$ DECLARE v bigint;
+BEGIN
+ SELECT web.append_center_site_design('a',0,'HERO','OCEAN','SYSTEM',
+  'Center A','Footer',true,true,'actor-a',gen_random_uuid(),gen_random_uuid(),'s21-one')
+ INTO v;
+ IF v<>1 THEN RAISE EXCEPTION 'Initial design version wrong'; END IF;
+ SELECT web.append_center_site_design('a',1,'EDITORIAL','FOREST','SERIF',
+  'Center A','',false,false,'actor-a',gen_random_uuid(),gen_random_uuid(),'s21-two')
+ INTO v;
+ IF v<>2 THEN RAISE EXCEPTION 'Second design version wrong'; END IF;
+ BEGIN
+  PERFORM web.append_center_site_design('a',1,'COMPACT','EARTH','SYSTEM',
+    'Stale','',true,false,'actor-a',gen_random_uuid(),gen_random_uuid(),'stale');
+  RAISE EXCEPTION 'Stale design accepted';
+ EXCEPTION WHEN serialization_failure THEN NULL; END;
+ BEGIN
+  PERFORM web.append_center_site_design('a',2,'CUSTOM_CSS','OCEAN','SYSTEM',
+   'Bad','',true,false,'actor-a',gen_random_uuid(),gen_random_uuid(),'injection');
+  RAISE EXCEPTION 'CSS injection accepted';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+ BEGIN
+  PERFORM web.append_center_site_design('a',2,'HERO','OCEAN','SYSTEM',
+   'Cross actor','',true,false,'actor-b',gen_random_uuid(),gen_random_uuid(),'foreign');
+  RAISE EXCEPTION 'Cross-center actor accepted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END;$test$;
+RESET ROLE;
+DO $check$ BEGIN
+ IF (SELECT count(*) FROM web.center_site_design_revisions WHERE center_id='a')<>2
+  OR (SELECT count(*) FROM governance.command_audit
+      WHERE action_code='CENTER_SITE_DESIGN_REVISION_APPENDED')<>2
+  OR (SELECT count(*) FROM governance.outbox_events
+      WHERE event_type='CenterSiteDesignRevisionAppended')<>2
+  OR has_table_privilege('kanoonyar_site_design_sql_ci','web.center_site_design_revisions','INSERT')
+  OR pg_has_role('kanoonyar_site_design_sql_ci','kanoonyar_site_design_owner','SET')
+  OR has_function_privilege('public',
+   'web.append_center_site_design(text,bigint,text,text,text,text,text,boolean,boolean,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Design history privilege or atomicity failed'; END IF;
+ BEGIN
+  UPDATE web.center_site_design_revisions SET palette_key='EARTH' WHERE center_id='a';
+  RAISE EXCEPTION 'History updated';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+END;$check$;
+CREATE ROLE kanoonyar_site_design_reader_sql_ci NOLOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT USAGE ON SCHEMA web TO kanoonyar_site_design_reader_sql_ci;
+GRANT SELECT ON web.center_site_design_revisions TO kanoonyar_site_design_reader_sql_ci;
+SET ROLE kanoonyar_site_design_reader_sql_ci;
+SELECT set_config('kanoonyar.center_id','b',false);
+DO $isolate$ BEGIN
+ IF EXISTS(SELECT 1 FROM web.center_site_design_revisions)
+ THEN RAISE EXCEPTION 'Other center design leaked'; END IF;
+END;$isolate$;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $own$ BEGIN
+ IF (SELECT count(*) FROM web.center_site_design_revisions)<>2
+ THEN RAISE EXCEPTION 'Own design not visible'; END IF;
+END;$own$;
+RESET ROLE;
