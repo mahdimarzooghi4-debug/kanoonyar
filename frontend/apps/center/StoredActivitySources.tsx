@@ -94,6 +94,7 @@ export function StoredActivitySources({ token, centerId }: { token: string; cent
         {kind === 'CLASS_SESSION' && item.classId && <button type="button"
           onClick={() => setSelectedClass(item.classId)}>ظرفیت و درخواست‌های کلاس</button>}
         {kind === 'CLASS_SESSION' && item.classId && selectedClass === item.classId &&
+          items.find(entry => entry.classId === item.classId)?.sourceId === item.sourceId &&
           <ClassCapacityIntake key={item.classId} centerId={centerId}
             classId={item.classId} token={token} onClose={() => setSelectedClass(null)} />}
 

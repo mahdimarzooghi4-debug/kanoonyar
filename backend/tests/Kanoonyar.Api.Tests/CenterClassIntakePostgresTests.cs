@@ -95,6 +95,7 @@ public sealed class CenterClassIntakePostgresTests
   Assert.Equal(404,Status(await ReadClass(subject:"actor-revoked")));
   Assert.Equal(403,Status(await CenterClassIntakeEndpoint.Read(User("actor-a"),Config(),
      new UnapprovedCenterClassIntakeAuthorization(),"center-a",cls,null,default)));
+  Assert.Equal(503,Status(await ReadClass(config:Config(reader:Write))));
   foreach(var unsafeUrl in new[]{Admin,Read})
     Assert.Equal(503,Status(await Capacity(2,4,config:Config(writer:unsafeUrl))));
 

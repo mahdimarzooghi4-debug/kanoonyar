@@ -150,7 +150,7 @@ public static class CenterClassIntakeEndpoint
             await using var db=new NpgsqlConnection(url);
             await db.OpenAsync(ct);
             await using var tx=await db.BeginTransactionAsync(ct);
-            if(!await RestrictedDraftDatabaseRole.VerifyReadOnlyAsync(db,tx,ct))
+            if(!await RestrictedClassIntakeRole.VerifyReadOnlyAsync(db,tx,ct))
               return Results.Problem(statusCode:503,title:"Unsafe class intake reader");
             await using(var scope=new NpgsqlCommand("SELECT set_config('kanoonyar.center_id',@center,true)",db,tx))
             {
