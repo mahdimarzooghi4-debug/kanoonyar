@@ -744,6 +744,43 @@ public sealed class LocalDraftPostgresIntegrationTests
         var classId=Guid.NewGuid();
         var sessionId=Guid.NewGuid();
         var grant=new TestLearningGrant();
+        // Assert transaction-local scope works for the *actual* LOGIN, unlike
+        // the superuser-owned psql fixture that can hide RLS problems.
+        await using(var diag=new NpgsqlConnection(learningConnection))
+        {
+            await diag.OpenAsync();
+            await using var tx=await diag.BeginTransactionAsync();
+            await using(var set=new NpgsqlCommand(
+                "SELECT set_config('kanoonyar.center_id','center-a',true)",diag,tx))
+                await set.ExecuteNonQueryAsync();
+            await using(var scope=new NpgsqlCommand(
+                """
+                SELECT current_setting('kanoonyar.center_id',true),
+                       EXISTS(SELECT 1 FROM centers.memberships
+                         WHERE center_id='center-a' AND subject_id='actor-a' AND is_active)
+                """,diag,tx))
+            {
+                await using var reader=await scope.ExecuteReaderAsync();
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal("center-a",reader.GetString(0));
+                Assert.True(reader.GetBoolean(1));
+            }
+            await using(var command=new NpgsqlCommand(
+                """
+                SELECT learning.record_class_plan('center-a',
+                  @id,'Transaction local class','actor-a',
+                  @audit,@event,'tx-scope-smoke')
+                """,diag,tx))
+            {
+                var smokeId=Guid.NewGuid();
+                command.Parameters.AddWithValue("id",smokeId);
+                command.Parameters.AddWithValue("audit",Guid.NewGuid());
+                command.Parameters.AddWithValue("event",Guid.NewGuid());
+                Assert.Equal(smokeId,await command.ExecuteScalarAsync());
+            }
+            await tx.RollbackAsync();
+        }
+
 
         var created=await CenterLearningPlanWriteEndpoint.CreateClass(
             Principal("actor-a"),learningConfig,grant,"center-a",
