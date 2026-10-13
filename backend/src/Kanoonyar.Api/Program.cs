@@ -96,6 +96,7 @@ if (oidcConfigured)
     app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts/{draftId:guid}/activity-reports", CenterActivityReportReadEndpoint.ListReports).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/activity-sources/{sourceKind}", CenterSourceCatalogEndpoint.ListSources).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/classes/catalogue", CenterClassCatalogueEndpoint.List).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/classes/{classId:guid}/source-sessions", CenterClassSessionsEndpoint.List).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/local-plan-drafts/revisions", LocalPlanDraftWriteEndpoint.Append).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/classes", CenterLearningPlanWriteEndpoint.CreateClass).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/classes/sessions", CenterLearningPlanWriteEndpoint.ScheduleSession).RequireAuthorization();
