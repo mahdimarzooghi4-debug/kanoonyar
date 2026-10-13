@@ -49,6 +49,8 @@ test('source-first dossier uses true cursor and never claims execution',async({p
  await enter(p);
  await p.getByRole('button',{name:'خواندن گزارش‌های واقعی این رویداد'}).click();
  expect(paths).toHaveLength(1);
+ await p.waitForTimeout(800);
+ console.log('S30 FINAL DOSSIER STATE:',await p.locator('section[aria-label="پرونده منبع و گزارش رویداد"]').innerText());
  await expect(p.getByText('ادعای گزارش 22 — UNVERIFIED')).toBeVisible();
  await expect(p.getByText('ادعای گزارش 3 — UNVERIFIED')).toBeVisible();
  await p.getByRole('button',{name:'گزارش‌های قدیمی‌تر این رویداد'}).click();
