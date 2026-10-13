@@ -56,7 +56,12 @@ test('genuine session selected and linked to original work card, read and prepar
  });
  const panel=await enter(p);
  await panel.getByRole('button',{name:'دریافت جلسه‌های واقعی برای پیوند'}).click();
- await panel.getByRole('combobox',{name:'انتخاب جلسه مرتبط با '+card}).selectOption(session);
+ await expect.poll(async()=>{
+  const errors=await panel.getByRole('alert').allTextContents();
+  const options=await panel.locator('select option').allTextContents();
+  return JSON.stringify({errors,options});
+ }).toContain('جلسه واقعی آموزشی');
+ await panel.locator('select').selectOption(session);
  await panel.getByRole('button',{name:'ثبت پیوند خصوصی جلسه به کارت کار'}).click();
  await expect(panel.getByRole('status')).toContainText('برگزاری یا حضور تأیید نشده');
  expect(posts).toEqual([{sessionId:session}]);
@@ -87,7 +92,12 @@ test('separate read/write link grants are visibly denied',async({page:p})=>{
  await panel.getByRole('button',{name:'مشاهده جلسات پیوندخورده'}).click();
  await expect(panel.getByText('مجوز مستقل خواندن پیوند جلسات وجود ندارد.')).toBeVisible();
  await panel.getByRole('button',{name:'دریافت جلسه‌های واقعی برای پیوند'}).click();
- await panel.getByRole('combobox',{name:'انتخاب جلسه مرتبط با '+card}).selectOption(session);
+ await expect.poll(async()=>{
+  const errors=await panel.getByRole('alert').allTextContents();
+  const options=await panel.locator('select option').allTextContents();
+  return JSON.stringify({errors,options});
+ }).toContain('جلسه واقعی آموزشی');
+ await panel.locator('select').selectOption(session);
  await panel.getByRole('button',{name:'ثبت پیوند خصوصی جلسه به کارت کار'}).click();
  await expect(panel.getByText('مجوز مستقل ثبت پیوند وجود ندارد.')).toBeVisible();
 });
