@@ -14,6 +14,7 @@ import { CenterCampaignPlanning } from './CenterCampaignPlanning';
 import { CenterEventPrivatePlanner } from './CenterEventPrivatePlanner';
 import { CenterPrivateCalendar } from './CenterPrivateCalendar';
 import { CenterWorkCards } from './CenterWorkCards';
+import { CenterLocalPlanWorkspace } from './CenterLocalPlanWorkspace';
 import { CenterCollaborationProposals } from './CenterCollaborationProposals';
 import { CenterSessionPreparations } from './CenterSessionPreparations';
 
@@ -72,6 +73,7 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
     <CenterEventPrivatePlanner key={'events:'+selectedCenter+':'+token} token={token} centerId={selectedCenter}/>
     <CenterPrivateCalendar key={'calendar:'+selectedCenter+':'+token} token={token} centerId={selectedCenter}/>
     <CenterWorkCards key={'work:'+selectedCenter+':'+token} centerId={selectedCenter} token={token}/>
+    <CenterLocalPlanWorkspace key={'plan-workspace:'+selectedCenter+':'+token} centerId={selectedCenter} token={token}/>
     <CenterCollaborationProposals key={'collaboration:'+selectedCenter+':'+token} centerId={selectedCenter} token={token}/>
     <CenterSessionPreparations key={'session-prep:'+selectedCenter+':'+token} centerId={selectedCenter} token={token}/>
     <StoredActivitySources token={token} centerId={selectedCenter} />

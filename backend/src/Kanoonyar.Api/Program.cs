@@ -70,6 +70,7 @@ if (oidcConfigured)
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/resource-needs", CenterWorkResourceNeedEndpoint.List).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/resource-needs/{needId:guid}/revisions", CenterWorkResourceNeedEndpoint.History).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/operations/work-cards/revisions", CenterWorkCardEndpoint.Append).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/operations/local-plan-workspace/{draftId:guid}/{planRevision:long}", CenterLocalPlanWorkspaceEndpoint.Get).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards", CenterWorkCardEndpoint.List).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/revisions", CenterWorkCardEndpoint.History).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/site/navigation/revisions", CenterSiteNavigationEndpoint.Append).RequireAuthorization();
@@ -142,6 +143,7 @@ else
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/resource-needs", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/resource-needs/{needId:guid}/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/operations/work-cards/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/operations/local-plan-workspace/{draftId:guid}/{planRevision:long}", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/site/navigation/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));

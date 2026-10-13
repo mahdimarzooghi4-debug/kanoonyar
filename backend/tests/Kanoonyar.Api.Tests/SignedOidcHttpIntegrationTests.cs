@@ -1011,6 +1011,24 @@ public sealed class SignedOidcHttpIntegrationTests
         Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
     }
 
+    [Fact]
+    public async Task Signed_superadmin_without_three_source_grants_cannot_read_local_plan_workspace()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var app=fixture.Server();
+        using var client=app.CreateClient();
+        var path="/api/v1/centers/center-a/operations/local-plan-workspace/"+
+          Guid.NewGuid()+"/1";
+        using(var anonymous=Request(HttpMethod.Get,path,null))
+        {
+            using var result=await client.SendAsync(anonymous);
+            Assert.Equal(HttpStatusCode.Unauthorized,result.StatusCode);
+        }
+        using var elevated=Request(HttpMethod.Get,path,fixture.Token(roleClaim:true));
+        using var denied=await client.SendAsync(elevated);
+        Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+    }
+
     private sealed class TestSessionClaimWriteGrant : ICenterSessionClaimWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal user,string center,
