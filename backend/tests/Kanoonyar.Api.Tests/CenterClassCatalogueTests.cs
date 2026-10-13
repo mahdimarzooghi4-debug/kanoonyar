@@ -107,7 +107,7 @@ public sealed class CenterClassCatalogueTests
         Assert.Equal(2,p2.Ids.Length);
         Assert.Null(p2.Cursor);
         Assert.Equal(22,p1.Ids.Concat(p2.Ids).Distinct().Count());
-        Assert.Equal(ids.ToHashSet(),p1.Ids.Concat(p2.Ids).ToHashSet());
+        Assert.True(ids.ToHashSet().SetEquals(p1.Ids.Concat(p2.Ids)));
         Assert.Empty(Page(await Query("actor-revoked",center)).Ids);
         Assert.Empty(Page(await Query("actor-a","center-b")).Ids);
         Assert.Equal(403,Status(await Query("actor-a",center,grant:new UnapprovedCenterClassCatalogueAuthorization())));
