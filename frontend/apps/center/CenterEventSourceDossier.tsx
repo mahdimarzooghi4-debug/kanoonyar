@@ -8,7 +8,7 @@ type Report={reportSequence:number;reportId:string;linkId:string;issuanceId:stri
 type Props={centerId:string;token:string;eventId:string;draftId:string;
  pinnedPlanRevision:number;revision:number;title:string;scheduledAt:string};
 type State='idle'|'loading'|'ready'|'denied'|'error';
-const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function time(x:unknown):x is string{return typeof x==='string'&&!Number.isNaN(Date.parse(x));}
 function validReport(x:unknown,p:Props):x is Report{
  if(!x||typeof x!=='object')return false;
@@ -67,40 +67,7 @@ export function CenterEventSourceDossier(p:Props){
     !Array.isArray(data.activityReports)||data.activityReports.length>20||
     !data.activityReports.every(x=>validReport(x,p))||
     !(data.nextBeforeSequence===null||(Number.isSafeInteger(data.nextBeforeSequence)&&
-      Number(data.nextBeforeSequence)>0))){
-     console.warn('S30 envelope guard failures',JSON.stringify({
-      event:data.eventId!==p.eventId,draft:data.draftId!==p.draftId,
-      pin:data.pinnedPlanRevision!==p.pinnedPlanRevision,
-      revision:data.revision!==p.revision,title:data.title!==p.title,
-      scheduled:!time(data.scheduledAt)||Date.parse(data.scheduledAt)!==Date.parse(p.scheduledAt),
-      private:data.visibility!=='PRIVATE_DRAFT'||data.isPublished!==false||
-       data.isExecuted!==false||data.isRegistrationOpen!==false,
-      reportEnvelope:data.verificationStatus!=='UNVERIFIED'||data.isApproved!==false||data.isOutcome!==false,
-      reports:!Array.isArray(data.activityReports)||data.activityReports.length>20||
-       !data.activityReports.every(x=>validReport(x,p)),
-      cursor:!(data.nextBeforeSequence===null||(Number.isSafeInteger(data.nextBeforeSequence)&&
-       Number(data.nextBeforeSequence)>0))
-     }));
-     if(Array.isArray(data.activityReports)){
-      const r=data.activityReports.find(x=>!validReport(x,p)) as Record<string,unknown>|undefined;
-      if(r)console.warn('S30 bad report flags',JSON.stringify({
-       sequence:Number.isSafeInteger(r.reportSequence)&&Number(r.reportSequence)>0,
-       report:typeof r.reportId==='string'&&uuid.test(r.reportId),
-       link:typeof r.linkId==='string'&&uuid.test(r.linkId),
-       issuance:typeof r.issuanceId==='string'&&uuid.test(r.issuanceId),
-       program:typeof r.programId==='string'&&r.programId.length>0,
-       national:Number.isSafeInteger(r.nationalVersion)&&Number(r.nationalVersion)>0,
-       pin:r.pinnedRevision===p.pinnedPlanRevision,
-       summary:typeof r.reportedSummary==='string',
-       evidence:typeof r.evidenceRef==='string',
-       claimed:r.claimedOccurredAt===null||time(r.claimedOccurredAt),
-       recorded:time(r.recordedAt),kind:r.sourceKind==='CENTER_EVENT',
-       ref:r.sourceRecordRef===p.eventId,verify:r.verificationStatus==='UNVERIFIED',
-       approval:r.isApproved===false,execution:r.isExecuted===false
-      }));
-     }
-     throw Error('Forged event dossier');
-    }
+      Number(data.nextBeforeSequence)>0)))throw Error('Forged event dossier');
    const reports=data.activityReports as Report[];
    if(reports.some((r,i)=>(before!==null&&r.reportSequence>=before)||
     (i>0&&reports[i-1].reportSequence<=r.reportSequence))||
@@ -108,7 +75,7 @@ export function CenterEventSourceDossier(p:Props){
      reports[19].reportSequence!==data.nextBeforeSequence))throw Error('Bad source cursor');
    setRows(old=>before?[...old,...reports]:reports);
    setCursor(data.nextBeforeSequence as number|null);setStatus('ready');
-  }catch(e){console.warn('S30 dossier exception',e instanceof Error?e.message:'unknown');if(current===epoch.current){setRows([]);setCursor(null);setStatus('error');}}
+  }catch{if(current===epoch.current){setRows([]);setCursor(null);setStatus('error');}}
  }
  return <section aria-label="پرونده منبع و گزارش رویداد" style={{marginTop:10}}>
   <button type="button" onClick={()=>{epoch.current++;setExpanded(v=>!v);
