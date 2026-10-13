@@ -18,6 +18,8 @@ async function enter(p:import('@playwright/test').Page){
  await p.getByRole('combobox',{name:'انتخاب کانون برای پیش‌نویس‌ها'}).selectOption('c1');
 }
 test('directed A to B submission, explicit recipient read, safe scope reset',async({page:p})=>{
+ p.on('console',m=>{if(m.text().includes('S34_DIAG'))console.log('S34_BROWSER_CONSOLE',m.text());});
+ p.on('response',async r=>{if(r.url().includes('/collaboration/outgoing'))console.log('S34_OUTGOING_RESPONSE',r.status(),(await r.text()).slice(0,700));});
  let recordedId=fixed;const writes:any[]=[];
  await p.route('**/api/v1/centers/*/collaboration/proposals',r=>{
   const request=r.request().postDataJSON();

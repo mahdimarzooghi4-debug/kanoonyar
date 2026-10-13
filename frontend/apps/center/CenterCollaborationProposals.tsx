@@ -92,7 +92,7 @@ export function CenterCollaborationProposals({centerId,token}:{
     throw Error('Invalid cursor');
    set(old=>({entries:before===null?records:[...old.entries,...records],
     cursor:x.nextBeforeProposalId as string|null,state:'ready'}));
-  }catch{if(seq.current[inc?'incoming':'outgoing']===run)set({...empty(),state:'error'});}
+  }catch(e){console.error('S34_DIAG_FEED',e instanceof Error?e.message:String(e));if(seq.current[inc?'incoming':'outgoing']===run)set({...empty(),state:'error'});}
  }
  function panel(direction:Direction,data:Feed){
   const inc=direction==='INCOMING';
