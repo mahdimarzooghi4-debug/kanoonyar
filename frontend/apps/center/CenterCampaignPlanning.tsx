@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
+import {CenterCampaignEvidenceRegister} from './CenterCampaignEvidenceRegister';
 import { CenterCampaignSourceReports } from './CenterCampaignSourceReports';
 
 type Activity={activityKey:string;title:string};
@@ -242,6 +243,11 @@ export function CenterCampaignPlanning({centerId,token}:{centerId:string;token:s
    {save==='denied'&&<p role="alert">مجوز مستقل ویرایش پویش تأیید نشده است.</p>}
    {save==='conflict'&&<p role="alert">طرح مبنا، نشانی یا نسخه پویش تعارض دارد؛ دوباره بررسی کنید.</p>}
    {save==='error'&&<p role="alert">ثبت پویش تأیید نشد.</p>}
+   {selected&&<CenterCampaignEvidenceRegister
+    key={'register:'+selected.campaignId+':'+selected.revision} centerId={centerId}
+    token={token} campaignId={selected.campaignId}
+    draftId={selected.draftId} pinnedPlanRevision={selected.pinnedPlanRevision}
+    activities={selected.plannedActivities}/>}
    {selected&&<CenterCampaignSourceReports key={selected.campaignId+':'+selected.revision}
     centerId={centerId} token={token} campaignId={selected.campaignId}
     draftId={selected.draftId} campaignRevision={selected.revision}
