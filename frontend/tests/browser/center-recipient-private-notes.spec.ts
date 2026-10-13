@@ -103,5 +103,5 @@ test('separate recipient note read and write permissions are denied',async({page
  await expect(notes.getByRole('alert')).toContainText('مجوز مستقل مشاهده یادداشت مقصد موجود نیست.');
  await notes.getByRole('textbox',{name:'متن یادداشت داخلی همکاری'}).fill('محتوای داخلی');
  await notes.getByRole('button',{name:'ثبت یادداشت داخلی بدون تصمیم'}).click();
- await expect(notes.getByRole('alert')).toContainText('مجوز مستقل ثبت یادداشت مقصد وجود ندارد.');
+ await expect(notes.getByText('مجوز مستقل ثبت یادداشت مقصد وجود ندارد.',{exact:true})).toBeVisible();
 });
