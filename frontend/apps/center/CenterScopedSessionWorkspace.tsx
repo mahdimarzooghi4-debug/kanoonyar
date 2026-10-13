@@ -64,7 +64,8 @@ export function CenterScopedSessionWorkspace({centerId,token,classId,classTitle,
     seen.add(key);
    }
    setItems(combined);setCursor(x.nextBeforeSourceId as string|null);setStatus('ready');
-  }catch{
+  }catch(error){
+   console.warn('[S47 source validation]',error instanceof Error?error.message:'unknown');
    if(request===epoch.current){
     setItems([]);setCursor(null);setTask(null);setStatus('error');
    }
