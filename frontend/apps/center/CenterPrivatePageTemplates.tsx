@@ -92,7 +92,7 @@ export function CenterPrivatePageTemplates({centerId,token}:{centerId:string;tok
  async function loadTemplates(before:string|null){
   if(!centerId||!token.trim()||state==='loading')return;
   const run=++epoch.current;setState('loading');
-  if(before===null){setItems([]);setCursor(null);select(null);}
+  if(before===null){setItems([]);setCursor(null);setSelected(null);setChosen('');setLabel('');setSave('idle');setVersions([]);setHistoryCursor(null);setHistoryState('idle');}
   try{
    const r=await fetch(prefix+'/templates'+(before?'?beforeTemplateId='+encodeURIComponent(before):''),
     {headers,cache:'no-store'});
