@@ -51,27 +51,43 @@ public sealed class CenterSiteNavigationPostgresTests
   if(!Enabled())return;
   var p1=Guid.NewGuid();var p2=Guid.NewGuid();var foreign=Guid.NewGuid();
   var nav=new Nav();var pages=new Pages();
+  // Dedicated disposable centers prevent interference with S20 tests sharing the same DB.
+  await using(var fixture=new NpgsqlConnection(Admin))
+  {
+   await fixture.OpenAsync();
+   await using var seed=new NpgsqlCommand("""
+    INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
+    VALUES('center-navigation-s32','S32 Center',true,'fixture',now()),
+          ('center-navigation-foreign-s32','S32 Foreign',true,'fixture',now());
+    INSERT INTO centers.memberships(center_id,subject_id,role_code,is_active,recorded_by_subject,recorded_at)
+    VALUES('center-navigation-s32','s32-actor','fixture-member',true,'fixture',now()),
+          ('center-navigation-foreign-s32','s32-foreign-actor','fixture-member',true,'fixture',now()),
+          ('center-navigation-s32','s32-revoked','fixture-member',false,'fixture',now());
+    """,fixture);
+   await seed.ExecuteNonQueryAsync();
+  }
+
   Task<IResult> Page(Guid id,long expected,string slug,string title,
-   string center="center-a",string actor="actor-a")=>
+   string center="center-navigation-s32",string actor="s32-actor")=>
    CenterSiteDraftEndpoint.Append(Actor(actor),Config(),pages,center,
      new AppendCenterSiteDraftRequest(id,expected,slug,title,"Plain private page"),default);
   Task<IResult> Save(long expected,List<SiteNavigationPageRef> links,
-   string center="center-a",string actor="actor-a",
+   string center="center-navigation-s32",string actor="s32-actor",
    IConfiguration? cfg=null,ICenterSiteNavigationAuthorization? grant=null,
    ICenterSiteDraftAuthorization? pageGrant=null)=>
    CenterSiteNavigationEndpoint.Append(Actor(actor),cfg??Config(),
     grant??nav,pageGrant??pages,center,
     new AppendCenterSiteNavigationRequest(expected,links),default);
-  Task<IResult> Latest(string center="center-a",string actor="actor-a",
+  Task<IResult> Latest(string center="center-navigation-s32",string actor="s32-actor",
    IConfiguration? cfg=null)=>
    CenterSiteNavigationEndpoint.Latest(Actor(actor),cfg??Config(),nav,pages,center,default);
-  Task<IResult> History(long? before=null,string center="center-a",string actor="actor-a")=>
+  Task<IResult> History(long? before=null,string center="center-navigation-s32",string actor="s32-actor")=>
    CenterSiteNavigationEndpoint.History(Actor(actor),Config(),nav,pages,center,before,default);
   Assert.Equal(200,Status(await Page(p1,0,"nav-first","First v1")));
   Assert.Equal(200,Status(await Page(p2,0,"nav-second","Second v1")));
   Assert.Equal(200,Status(await Page(p1,1,"nav-first","First v2")));
   Assert.Equal(200,Status(await Page(foreign,0,"foreign-page","Foreign",
-   center:"center-b",actor:"actor-b")));
+   center:"center-navigation-foreign-s32",actor:"s32-foreign-actor")));
   using(var none=Json(await Latest()))
   {
    Assert.Equal(JsonValueKind.Null,none.RootElement.GetProperty("revision").ValueKind);
@@ -79,8 +95,8 @@ public sealed class CenterSiteNavigationPostgresTests
    Assert.False(none.RootElement.GetProperty("isPublished").GetBoolean());
   }
   var firstLinks=new List<SiteNavigationPageRef>{new(p1,1),new(p2,1)};
-  Assert.Equal(403,Status(await Save(0,firstLinks,actor:"actor-revoked")));
-  Assert.Equal(403,Status(await Save(0,firstLinks,actor:"actor-b")));
+  Assert.Equal(403,Status(await Save(0,firstLinks,actor:"s32-revoked")));
+  Assert.Equal(403,Status(await Save(0,firstLinks,actor:"s32-foreign-actor")));
   Assert.Equal(403,Status(await Save(0,firstLinks,grant:new Nav(false))));
   Assert.Equal(403,Status(await Save(0,firstLinks,pageGrant:new Pages(false))));
   Assert.Equal(503,Status(await Save(0,firstLinks,cfg:Config(writer:Admin))));
@@ -122,9 +138,9 @@ public sealed class CenterSiteNavigationPostgresTests
    Assert.Equal("First v1",versions[2].GetProperty("items")[0].GetProperty("title").GetString());
    Assert.False(versions[2].GetProperty("isPublished").GetBoolean());
   }
-  Assert.Equal(403,Status(await Latest(actor:"actor-revoked")));
-  Assert.Equal(403,Status(await Latest(center:"center-b",actor:"actor-a")));
-  using(var differentCenter=Json(await Latest(center:"center-b",actor:"actor-b")))
+  Assert.Equal(403,Status(await Latest(actor:"s32-revoked")));
+  Assert.Equal(403,Status(await Latest(center:"center-navigation-foreign-s32",actor:"s32-actor")));
+  using(var differentCenter=Json(await Latest(center:"center-navigation-foreign-s32",actor:"s32-foreign-actor")))
   {
    Assert.Equal(JsonValueKind.Null,differentCenter.RootElement.GetProperty("revision").ValueKind);
   }
@@ -133,12 +149,12 @@ public sealed class CenterSiteNavigationPostgresTests
   await using var db=new NpgsqlConnection(Admin);await db.OpenAsync();
   await using(var count=new NpgsqlCommand("""
    SELECT
-     (SELECT count(*) FROM web.center_site_navigation_revisions WHERE center_id='center-a'),
-     (SELECT count(*) FROM web.center_site_navigation_items WHERE center_id='center-a'),
-     (SELECT count(*) FROM governance.command_audit WHERE center_id='center-a'
+     (SELECT count(*) FROM web.center_site_navigation_revisions WHERE center_id='center-navigation-s32'),
+     (SELECT count(*) FROM web.center_site_navigation_items WHERE center_id='center-navigation-s32'),
+     (SELECT count(*) FROM governance.command_audit WHERE center_id='center-navigation-s32'
       AND action_code='CENTER_SITE_NAVIGATION_REVISION_APPENDED'),
      (SELECT count(*) FROM governance.outbox_events WHERE event_type='CenterSiteNavigationRevisionAppended'
-      AND aggregate_id='center-a')
+      AND aggregate_id='center-navigation-s32')
    """,db))
   {
    await using var rd=await count.ExecuteReaderAsync();
@@ -150,7 +166,7 @@ public sealed class CenterSiteNavigationPostgresTests
   }
   await using(var attack=new NpgsqlCommand("""
    UPDATE web.center_site_navigation_items SET pinned_page_revision=2
-   WHERE center_id='center-a' AND navigation_revision=1 AND page_id=@id
+   WHERE center_id='center-navigation-s32' AND navigation_revision=1 AND page_id=@id
    """,db))
   {
    attack.Parameters.AddWithValue("id",p1);

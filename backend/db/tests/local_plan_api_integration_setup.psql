@@ -419,7 +419,7 @@ END;$event_plan_guard$;
 CREATE ROLE kanoonyar_site_navigation_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
  NOCREATEDB NOCREATEROLE NOREPLICATION;
 GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_site_navigation_api_ci;
-GRANT USAGE ON SCHEMA web,centers,governance TO kanoonyar_site_navigation_api_ci;
+GRANT USAGE ON SCHEMA web,centers,programs,governance TO kanoonyar_site_navigation_api_ci;
 GRANT EXECUTE ON FUNCTION web.append_center_site_navigation(
  text,bigint,uuid[],bigint[],text,uuid,uuid,text) TO kanoonyar_site_navigation_api_ci;
 GRANT SELECT ON web.center_site_navigation_revisions,web.center_site_navigation_items

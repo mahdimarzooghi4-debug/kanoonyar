@@ -79,5 +79,6 @@ test('independent navigation and source grants can deny access',async({page:p})=
  await p.getByRole('button',{name:'دریافت نسخه منوی خصوصی'}).click();
  await expect(p.getByRole('alert')).toContainText('مجوز مستقل مشاهده منوی خصوصی وجود ندارد.');
  await p.getByRole('button',{name:'خواندن صفحات واقعی کانون'}).click();
- await expect(p.getByRole('alert').last()).toContainText('مجوز مستقل مشاهده صفحات وجود ندارد.');
+ await expect(p.locator('section[aria-label="ویرایش منوی خصوصی کانون"]')
+  .getByText('مجوز مستقل مشاهده صفحات وجود ندارد.',{exact:true})).toBeVisible();
 });
