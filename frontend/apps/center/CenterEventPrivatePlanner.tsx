@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
+import { CenterEventSourceDossier } from './CenterEventSourceDossier';
 type Plan={draftId:string;revision:number;localTitle:string;programId:string;nationalVersion:number};
 type Revision={revision:number;title:string;purpose:string;locationDescription:string;
  scheduledAt:string;recordedAt:string;visibility:'PRIVATE_DRAFT';isPublished:false;
@@ -196,7 +197,11 @@ export function CenterEventPrivatePlanner({centerId,token}:{centerId:string;toke
   {save==='denied'&&<p role="alert">مجوز مستقل ایجاد یا اصلاح رویداد وجود ندارد.</p>}
   {save==='conflict'&&<p role="alert">نسخه تغییر کرده یا طرح مبنا معتبر نیست؛ داده را تازه کنید.</p>}
   {save==='error'&&<p role="alert">تأیید معتبر ذخیره رویداد دریافت نشد.</p>}
-  {selected&&<><button type="button" onClick={()=>void loadHistory(null)}>تاریخچه نسخه‌های رویداد</button>
+  {selected&&<><CenterEventSourceDossier key={centerId+':'+token+':'+selected.eventId+':'+selected.revision}
+   centerId={centerId} token={token} eventId={selected.eventId} draftId={selected.draftId}
+   pinnedPlanRevision={selected.pinnedPlanRevision} revision={selected.revision}
+   title={selected.title} scheduledAt={selected.scheduledAt}/>
+   <button type="button" onClick={()=>void loadHistory(null)}>تاریخچه نسخه‌های رویداد</button>
    {historyState==='denied'&&<p role="alert">دسترسی تاریخچه مجاز نیست.</p>}
    {historyState==='error'&&<p role="alert">تاریخچه معتبر دریافت نشد.</p>}
    {historyState==='ready'&&<ul>{history.map(h=><li key={h.revision}>
