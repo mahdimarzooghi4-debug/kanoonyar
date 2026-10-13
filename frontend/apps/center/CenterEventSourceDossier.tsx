@@ -29,10 +29,18 @@ export function CenterEventSourceDossier(p:Props){
  const epoch=useRef(0),[expanded,setExpanded]=useState(false);
  const [status,setStatus]=useState<State>('idle'),[rows,setRows]=useState<Report[]>([]);
  const [cursor,setCursor]=useState<number|null>(null);
+ const scope=[p.centerId,p.token,p.eventId,p.draftId,
+  p.pinnedPlanRevision,p.revision].join(':');
+ const observedScope=useRef(scope);
  useEffect(()=>{
-  epoch.current++;setExpanded(false);setStatus('idle');setRows([]);setCursor(null);
+  // A freshly mounted, keyed dossier is already empty. Do not invalidate a
+  // legitimate first request when React flushes the mount effect.
+  if(observedScope.current!==scope){
+   observedScope.current=scope;epoch.current++;
+   setExpanded(false);setStatus('idle');setRows([]);setCursor(null);
+  }
   return()=>{epoch.current++};
- },[p.centerId,p.token,p.eventId,p.draftId,p.pinnedPlanRevision,p.revision]);
+ },[scope]);
  async function load(before:number|null){
   if(status==='loading'||!expanded||!p.token.trim()||!p.centerId)return;
   const current=++epoch.current;setStatus('loading');
