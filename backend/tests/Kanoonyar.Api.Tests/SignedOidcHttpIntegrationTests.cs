@@ -697,6 +697,21 @@ public sealed class SignedOidcHttpIntegrationTests
     }
 
     [Fact]
+    public async Task Signed_admin_role_cannot_read_original_class_scoped_sessions()
+    {
+        using var fixture = new SignedJwtFixture();
+        await using var app = fixture.Server();
+        using var client = app.CreateClient();
+        var path = "/api/v1/centers/center-a/classes/" + Guid.NewGuid() + "/source-sessions";
+        using(var anonymous = Request(HttpMethod.Get,path,null))
+        using(var denied = await client.SendAsync(anonymous))
+            Assert.Equal(HttpStatusCode.Unauthorized,denied.StatusCode);
+        using(var signed = Request(HttpMethod.Get,path,fixture.Token(roleClaim:true)))
+        using(var denied = await client.SendAsync(signed))
+            Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+    }
+
+    [Fact]
     public async Task Signed_jwt_still_needs_independent_class_and_session_write_grants()
     {
         using var fixture=new SignedJwtFixture();
