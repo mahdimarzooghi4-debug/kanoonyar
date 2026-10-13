@@ -29,6 +29,7 @@
 \ir ../migrations/0027_campaign_report_inspection_notes.sql
 \ir ../migrations/0028_campaign_inspection_followup.sql
 \ir ../migrations/0029_center_event_private_planning.sql
+\ir ../migrations/0032_center_site_navigation_drafts.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -413,3 +414,27 @@ DO $event_plan_guard$ BEGIN
   OR pg_has_role('kanoonyar_event_plan_api_ci','kanoonyar_event_plan_owner','SET')
  THEN RAISE EXCEPTION 'Unsafe event planner SQL fixture'; END IF;
 END;$event_plan_guard$;
+
+-- Sprint 32 disposable-only restricted command principal, not a Production grant.
+CREATE ROLE kanoonyar_site_navigation_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_site_navigation_api_ci;
+GRANT USAGE ON SCHEMA web,centers,governance TO kanoonyar_site_navigation_api_ci;
+GRANT EXECUTE ON FUNCTION web.append_center_site_navigation(
+ text,bigint,uuid[],bigint[],text,uuid,uuid,text) TO kanoonyar_site_navigation_api_ci;
+GRANT SELECT ON web.center_site_navigation_revisions,web.center_site_navigation_items
+ TO kanoonyar_draft_read_ci;
+DO $nav_security$ BEGIN
+ IF has_table_privilege('kanoonyar_site_navigation_api_ci',
+    'web.center_site_navigation_items','INSERT')
+  OR has_table_privilege('kanoonyar_site_navigation_api_ci',
+    'web.page_draft_revisions','UPDATE')
+  OR has_table_privilege('kanoonyar_site_navigation_api_ci',
+    'governance.command_audit','INSERT')
+  OR pg_has_role('kanoonyar_site_navigation_api_ci','kanoonyar_site_navigation_owner','SET')
+  OR has_function_privilege('kanoonyar_draft_read_ci',
+    'web.append_center_site_navigation(text,bigint,uuid[],bigint[],text,uuid,uuid,text)','EXECUTE')
+  OR has_function_privilege('public',
+    'web.append_center_site_navigation(text,bigint,uuid[],bigint[],text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Unsafe site navigation disposable SQL role'; END IF;
+END;$nav_security$;
