@@ -68,7 +68,7 @@ test('genuine session selected and linked to original work card, read and prepar
  await panel.getByRole('button',{name:'مشاهده جلسات پیوندخورده'}).click();
  await expect(panel.getByText('کلاس واقعی — جلسه واقعی آموزشی')).toBeVisible();
  await panel.getByRole('button',{name:'باز کردن دفتر اصلی آماده‌سازی جلسات'}).click();
- await expect(panel.getByRole('heading',{name:'دفتر آماده‌سازی خصوصی جلسات'})).toBeVisible();
+ await expect(panel.getByRole('heading',{name:'دفتر آماده‌سازی جلسات کلاس'})).toBeVisible();
  await p.getByRole('combobox',{name:'انتخاب کانون برای پیش‌نویس‌ها'}).selectOption('c2');
  await expect(p.locator('section[aria-label="جلسات آموزشی مرتبط با کارت '+card+'"]')).toHaveCount(0);
 });
