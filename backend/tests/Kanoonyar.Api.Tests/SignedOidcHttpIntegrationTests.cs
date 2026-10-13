@@ -957,6 +957,35 @@ public sealed class SignedOidcHttpIntegrationTests
         Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
     }
 
+    [Fact]
+    public async Task Signed_role_only_superadmin_has_no_private_page_template_rights()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var app=fixture.Server();
+        using var client=app.CreateClient();
+        var paths=new[]{
+            "/api/v1/centers/center-a/site/templates",
+            "/api/v1/centers/center-a/site/templates/"+Guid.NewGuid()+"/revisions"
+        };
+        foreach(var path in paths)
+        {
+            using var anonymous=Request(HttpMethod.Get,path,null);
+            using var unauthenticated=await client.SendAsync(anonymous);
+            Assert.Equal(HttpStatusCode.Unauthorized,unauthenticated.StatusCode);
+            using var elevated=Request(HttpMethod.Get,path,fixture.Token(roleClaim:true));
+            using var denied=await client.SendAsync(elevated);
+            Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        }
+        using var submit=Request(HttpMethod.Post,
+          "/api/v1/centers/center-a/site/templates/revisions",fixture.Token(roleClaim:true));
+        submit.Content=JsonContent.Create(new {
+          templateId=Guid.NewGuid(),sourcePageId=Guid.NewGuid(),
+          expectedRevision=0,pinnedPageRevision=1,label="Private template"
+        });
+        using var rejected=await client.SendAsync(submit);
+        Assert.Equal(HttpStatusCode.Forbidden,rejected.StatusCode);
+    }
+
     private sealed class TestSessionClaimWriteGrant : ICenterSessionClaimWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal user,string center,

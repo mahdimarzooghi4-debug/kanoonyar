@@ -34,6 +34,7 @@
 \ir ../migrations/0034_center_private_collaboration_proposals.sql
 \ir ../migrations/0035_center_session_private_preparation.sql
 \ir ../migrations/0036_collaboration_recipient_notes.sql
+\ir ../migrations/0038_center_private_page_templates.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -541,3 +542,28 @@ DO $s36$ BEGIN
    'collaboration.append_recipient_private_note(uuid,uuid,text,text,text,uuid,uuid,text)','EXECUTE')
  THEN RAISE EXCEPTION 'Unsafe recipient notes SQL roles'; END IF;
 END;$s36$;
+
+-- S38 disposable private template editor: function-only writer, read-only source-compatible reader.
+CREATE ROLE kanoonyar_private_template_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_private_template_api_ci;
+GRANT USAGE ON SCHEMA web,centers,governance,programs TO kanoonyar_private_template_api_ci;
+GRANT EXECUTE ON FUNCTION web.append_center_private_page_template(
+ text,uuid,uuid,bigint,bigint,text,text,uuid,uuid,text)
+ TO kanoonyar_private_template_api_ci;
+GRANT SELECT ON web.center_private_page_templates,
+ web.center_private_page_template_revisions TO kanoonyar_draft_read_ci;
+DO $private_template_security$ BEGIN
+ IF has_table_privilege('kanoonyar_private_template_api_ci',
+     'web.center_private_page_templates','SELECT')
+  OR has_table_privilege('kanoonyar_private_template_api_ci',
+     'web.center_private_page_template_revisions','INSERT')
+  OR has_table_privilege('kanoonyar_private_template_api_ci',
+     'governance.command_audit','INSERT')
+  OR pg_has_role('kanoonyar_private_template_api_ci','kanoonyar_private_template_owner','SET')
+  OR has_function_privilege('kanoonyar_draft_read_ci',
+     'web.append_center_private_page_template(text,uuid,uuid,bigint,bigint,text,text,uuid,uuid,text)','EXECUTE')
+  OR has_function_privilege('public',
+     'web.append_center_private_page_template(text,uuid,uuid,bigint,bigint,text,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Unsafe private template test role'; END IF;
+END;$private_template_security$;

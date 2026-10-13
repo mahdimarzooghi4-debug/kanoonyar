@@ -8,6 +8,7 @@ import { CenterSitePageDrafts } from './CenterSitePageDrafts';
 import { CenterSiteDesignDrafts } from './CenterSiteDesignDrafts';
 import { CenterSiteNavigationDrafts } from './CenterSiteNavigationDrafts';
 import { CenterAssembledSitePreview } from './CenterAssembledSitePreview';
+import { CenterPrivatePageTemplates } from './CenterPrivatePageTemplates';
 import { CenterFormDraftBuilder } from './CenterFormDraftBuilder';
 import { CenterCampaignPlanning } from './CenterCampaignPlanning';
 import { CenterEventPrivatePlanner } from './CenterEventPrivatePlanner';
@@ -65,6 +66,7 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
     <CenterSiteDesignDrafts key={'design:'+selectedCenter+':'+token} token={token} centerId={selectedCenter} />
     <CenterSiteNavigationDrafts key={'navigation:'+selectedCenter+':'+token} token={token} centerId={selectedCenter} />
     <CenterAssembledSitePreview key={'assembled:'+selectedCenter+':'+token} token={token} centerId={selectedCenter} />
+    <CenterPrivatePageTemplates key={'private-templates:'+selectedCenter+':'+token} token={token} centerId={selectedCenter} />
     <CenterFormDraftBuilder key={'forms:'+selectedCenter+':'+token} token={token} centerId={selectedCenter} />
     <CenterCampaignPlanning key={'campaigns:'+selectedCenter+':'+token} token={token} centerId={selectedCenter}/>
     <CenterEventPrivatePlanner key={'events:'+selectedCenter+':'+token} token={token} centerId={selectedCenter}/>
