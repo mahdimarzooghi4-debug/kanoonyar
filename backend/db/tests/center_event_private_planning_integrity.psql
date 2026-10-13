@@ -1,0 +1,107 @@
+\set ON_ERROR_STOP on
+\ir ../migrations/0001_national_program_foundation.sql
+\ir ../migrations/0002_append_only_national_versions.sql
+\ir ../migrations/0003_center_registry.sql
+\ir ../migrations/0004_command_audit.sql
+\ir ../migrations/0005_transactional_outbox.sql
+\ir ../migrations/0006_center_scope_rls.sql
+\ir ../migrations/0007_atomic_local_plan_command.sql
+\ir ../migrations/0008_center_membership_read_boundary.sql
+\ir ../migrations/0009_center_membership_db_session_boundary.sql
+\ir ../migrations/0010_local_plan_revision_foundation.sql
+\ir ../migrations/0011_local_plan_atomic_revision_command.sql
+\ir ../migrations/0012_restricted_draft_command_owner.sql
+\ir ../migrations/0013_national_program_issuance_foundation.sql
+\ir ../migrations/0014_national_to_local_plan_trace.sql
+\ir ../migrations/0015_activity_report_evidence_lineage.sql
+\ir ../migrations/0016_learning_events_source_ownership.sql
+\ir ../migrations/0029_center_event_private_planning.sql
+INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
+ VALUES('a','Center A',true,'fixture',now()),('b','Center B',true,'fixture',now());
+INSERT INTO centers.memberships(center_id,subject_id,role_code,is_active,recorded_by_subject,recorded_at)
+ VALUES('a','actor-a','test',true,'fixture',now()),('b','actor-b','test',true,'fixture',now()),
+ ('a','actor-revoked','test',false,'fixture',now());
+INSERT INTO programs.national_program_versions(program_id,version,title,national_objectives,
+ mandatory_requirements,created_by_subject,created_at)
+ VALUES('national-1',1,'National','[]','[]','fixture',now());
+INSERT INTO programs.national_program_publications(program_id,version,publisher_subject,published_at)
+ VALUES('national-1',1,'fixture',now());
+INSERT INTO programs.center_plan_draft_revisions(center_id,draft_id,revision,program_id,
+ national_version,local_title,local_activities,actor_subject)
+ VALUES('a','11111111-1111-4111-8111-111111111111',1,'national-1',1,'A','[]','actor-a'),
+ ('b','22222222-2222-4222-8222-222222222222',1,'national-1',1,'B','[]','actor-b');
+CREATE ROLE kanoonyar_s29_sql_ci NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT USAGE ON SCHEMA events TO kanoonyar_s29_sql_ci;
+GRANT EXECUTE ON FUNCTION events.append_center_event_plan(
+ text,uuid,bigint,uuid,bigint,text,text,text,timestamptz,text,uuid,uuid,text)
+ TO kanoonyar_s29_sql_ci;
+SET ROLE kanoonyar_s29_sql_ci;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $test$ DECLARE
+ e uuid:='33333333-3333-4333-8333-333333333333';
+ d uuid:='11111111-1111-4111-8111-111111111111';
+BEGIN
+ IF events.append_center_event_plan('a',e,0,d,1,'Event','Purpose','Civic hall',
+ '2026-11-10T10:00:00Z','actor-a',gen_random_uuid(),gen_random_uuid(),'first')<>1
+ THEN RAISE EXCEPTION 'Failed to create event plan'; END IF;
+ IF events.append_center_event_plan('a',e,1,d,1,'Revised event','Purpose','Room B',
+ '2026-11-11T10:00:00Z','actor-a',gen_random_uuid(),gen_random_uuid(),'second')<>2
+ THEN RAISE EXCEPTION 'Failed to revise event plan'; END IF;
+ BEGIN
+  PERFORM events.append_center_event_plan('a',e,1,d,1,'Old','Purpose','Room',
+   now(),'actor-a',gen_random_uuid(),gen_random_uuid(),'stale');
+  RAISE EXCEPTION 'Stale event revision succeeded';
+ EXCEPTION WHEN serialization_failure THEN NULL; END;
+ BEGIN
+  PERFORM events.append_center_event_plan('a',gen_random_uuid(),0,
+   '22222222-2222-4222-8222-222222222222',1,'Cross','Purpose','Room',
+   now(),'actor-a',gen_random_uuid(),gen_random_uuid(),'foreign');
+  RAISE EXCEPTION 'Cross-center pinned plan accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+  PERFORM events.append_center_event_plan('a',gen_random_uuid(),0,d,1,'Revoked',
+   'Purpose','Room',now(),'actor-revoked',gen_random_uuid(),gen_random_uuid(),'revoked');
+  RAISE EXCEPTION 'Revoked membership accepted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ BEGIN
+  PERFORM events.append_center_event_plan('a',e,2,
+   '22222222-2222-4222-8222-222222222222',1,'Rebound','Purpose','Room',
+   now(),'actor-a',gen_random_uuid(),gen_random_uuid(),'rebind');
+  RAISE EXCEPTION 'Rebinding accepted';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+END;$test$;
+RESET ROLE;
+DO $verify$ BEGIN
+ IF (SELECT count(*) FROM events.center_events WHERE center_id='a')<>1
+  OR (SELECT count(*) FROM events.center_event_plan_bindings WHERE center_id='a')<>1
+  OR (SELECT count(*) FROM events.center_event_plan_revisions WHERE center_id='a')<>2
+  OR (SELECT count(*) FROM governance.command_audit WHERE action_code='CENTER_EVENT_PLAN_REVISION_APPENDED')<>2
+  OR (SELECT count(*) FROM governance.outbox_events WHERE event_type='CenterEventPlanRevisionAppended')<>2
+  OR has_table_privilege('kanoonyar_s29_sql_ci','events.center_event_plan_revisions','INSERT')
+  OR pg_has_role('kanoonyar_s29_sql_ci','kanoonyar_event_plan_owner','SET')
+  OR has_function_privilege('public','events.append_center_event_plan(text,uuid,bigint,uuid,bigint,text,text,text,timestamptz,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Unsafe or incomplete event plan persistence'; END IF;
+ IF (SELECT event_title FROM events.center_events WHERE center_id='a')
+   IS DISTINCT FROM 'Event' THEN RAISE EXCEPTION 'Canonical source event was rewritten'; END IF;
+ BEGIN
+  UPDATE events.center_event_plan_revisions SET title='tamper' WHERE center_id='a';
+  RAISE EXCEPTION 'Append-only revision was changed';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+END;$verify$;
+CREATE ROLE kanoonyar_s29_read_ci NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT USAGE ON SCHEMA events TO kanoonyar_s29_read_ci;
+GRANT SELECT ON events.center_events,events.center_event_plan_bindings,
+ events.center_event_plan_revisions TO kanoonyar_s29_read_ci;
+SET ROLE kanoonyar_s29_read_ci;
+SELECT set_config('kanoonyar.center_id','b',false);
+DO $isolation$ BEGIN
+ IF EXISTS(SELECT 1 FROM events.center_event_plan_bindings)
+  OR EXISTS(SELECT 1 FROM events.center_event_plan_revisions)
+ THEN RAISE EXCEPTION 'Foreign event plan visible'; END IF;
+END;$isolation$;
+SELECT set_config('kanoonyar.center_id','a',false);
+DO $own$ BEGIN
+ IF (SELECT count(*) FROM events.center_event_plan_revisions)<>2
+ THEN RAISE EXCEPTION 'Own event versions inaccessible'; END IF;
+END;$own$;
+RESET ROLE;

@@ -28,6 +28,7 @@
 \ir ../migrations/0026_campaign_source_report_links.sql
 \ir ../migrations/0027_campaign_report_inspection_notes.sql
 \ir ../migrations/0028_campaign_inspection_followup.sql
+\ir ../migrations/0029_center_event_private_planning.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -391,3 +392,24 @@ DO $guard$ BEGIN
   'campaigns.append_inspection_followup(text,uuid,uuid,uuid,uuid,uuid,text,text,text,uuid,uuid,text)','EXECUTE')
  THEN RAISE EXCEPTION 'Followup CI role privilege violation'; END IF;
 END;$guard$;
+
+-- Sprint 29: test-only SQL principal; NOT an operational permission grant.
+CREATE ROLE kanoonyar_event_plan_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_event_plan_api_ci;
+GRANT USAGE ON SCHEMA events,centers,programs,governance TO kanoonyar_event_plan_api_ci;
+GRANT EXECUTE ON FUNCTION events.append_center_event_plan(
+ text,uuid,bigint,uuid,bigint,text,text,text,timestamptz,text,uuid,uuid,text)
+ TO kanoonyar_event_plan_api_ci;
+GRANT USAGE ON SCHEMA events TO kanoonyar_draft_read_ci;
+GRANT SELECT ON events.center_event_plan_bindings,events.center_event_plan_revisions
+ TO kanoonyar_draft_read_ci;
+DO $event_plan_guard$ BEGIN
+ IF has_table_privilege('kanoonyar_event_plan_api_ci','events.center_events','INSERT')
+  OR has_table_privilege('kanoonyar_event_plan_api_ci','events.center_event_plan_revisions','INSERT')
+  OR has_table_privilege('kanoonyar_event_plan_api_ci','governance.command_audit','INSERT')
+  OR has_function_privilege('kanoonyar_draft_read_ci',
+   'events.append_center_event_plan(text,uuid,bigint,uuid,bigint,text,text,text,timestamptz,text,uuid,uuid,text)','EXECUTE')
+  OR pg_has_role('kanoonyar_event_plan_api_ci','kanoonyar_event_plan_owner','SET')
+ THEN RAISE EXCEPTION 'Unsafe event planner SQL fixture'; END IF;
+END;$event_plan_guard$;
