@@ -67,7 +67,22 @@ export function CenterEventSourceDossier(p:Props){
     !Array.isArray(data.activityReports)||data.activityReports.length>20||
     !data.activityReports.every(x=>validReport(x,p))||
     !(data.nextBeforeSequence===null||(Number.isSafeInteger(data.nextBeforeSequence)&&
-      Number(data.nextBeforeSequence)>0)))throw Error('Forged event dossier');
+      Number(data.nextBeforeSequence)>0))){
+     console.warn('S30 envelope guard failures',JSON.stringify({
+      event:data.eventId!==p.eventId,draft:data.draftId!==p.draftId,
+      pin:data.pinnedPlanRevision!==p.pinnedPlanRevision,
+      revision:data.revision!==p.revision,title:data.title!==p.title,
+      scheduled:!time(data.scheduledAt)||Date.parse(data.scheduledAt)!==Date.parse(p.scheduledAt),
+      private:data.visibility!=='PRIVATE_DRAFT'||data.isPublished!==false||
+       data.isExecuted!==false||data.isRegistrationOpen!==false,
+      reportEnvelope:data.verificationStatus!=='UNVERIFIED'||data.isApproved!==false||data.isOutcome!==false,
+      reports:!Array.isArray(data.activityReports)||data.activityReports.length>20||
+       !data.activityReports.every(x=>validReport(x,p)),
+      cursor:!(data.nextBeforeSequence===null||(Number.isSafeInteger(data.nextBeforeSequence)&&
+       Number(data.nextBeforeSequence)>0))
+     }));
+     throw Error('Forged event dossier');
+    }
    const reports=data.activityReports as Report[];
    if(reports.some((r,i)=>(before!==null&&r.reportSequence>=before)||
     (i>0&&reports[i-1].reportSequence<=r.reportSequence))||
@@ -75,7 +90,7 @@ export function CenterEventSourceDossier(p:Props){
      reports[19].reportSequence!==data.nextBeforeSequence))throw Error('Bad source cursor');
    setRows(old=>before?[...old,...reports]:reports);
    setCursor(data.nextBeforeSequence as number|null);setStatus('ready');
-  }catch{if(current===epoch.current){setRows([]);setCursor(null);setStatus('error');}}
+  }catch(e){console.warn('S30 dossier exception',e instanceof Error?e.message:'unknown');if(current===epoch.current){setRows([]);setCursor(null);setStatus('error');}}
  }
  return <section aria-label="پرونده منبع و گزارش رویداد" style={{marginTop:10}}>
   <button type="button" onClick={()=>{epoch.current++;setExpanded(v=>!v);

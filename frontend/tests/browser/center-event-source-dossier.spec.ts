@@ -39,6 +39,7 @@ function packet(records:ReturnType<typeof report>[],next:number|null){
 }
 test('source-first dossier uses true cursor and never claims execution',async({page:p})=>{
  const paths:string[]=[];
+ p.on('console',message=>console.log('S30 PAGE:',message.text()));
  await p.route('**/events/plans/*/source-dossier**',r=>{
   paths.push(r.request().url());
   const before=new URL(r.request().url()).searchParams.get('beforeSequence');
