@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
+import { CenterRecipientPrivateNotes } from './CenterRecipientPrivateNotes';
 
 type Proposal={proposalId:string;sourceCenterId:string;targetCenterId:string;
  title:string;summary:string;recordedAt:string;visibility:'EXPLICIT_TARGET_ONLY';
@@ -107,6 +108,8 @@ export function CenterCollaborationProposals({centerId,token}:{
     <strong>{x.title}</strong> — {x.summary}
     <p>مبدأ: {x.sourceCenterId}؛ مقصد: {x.targetCenterId}</p>
     <p>فقط پیشنهاد بررسی‌نشده؛ پذیرش یا اجرا تأیید نشده است.</p>
+    {inc&&<CenterRecipientPrivateNotes key={centerId+':'+token+':'+x.proposalId}
+      centerId={centerId} token={token} proposalId={x.proposalId}/>}
    </li>)}</ul>}
    {data.state==='ready'&&data.cursor!==null&&<button type="button"
     onClick={()=>void read(direction,data.cursor)}>پیشنهادهای بیشتر</button>}

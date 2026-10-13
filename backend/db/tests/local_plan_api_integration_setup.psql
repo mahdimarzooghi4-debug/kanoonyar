@@ -33,6 +33,7 @@
 \ir ../migrations/0033_center_private_work_cards.sql
 \ir ../migrations/0034_center_private_collaboration_proposals.sql
 \ir ../migrations/0035_center_session_private_preparation.sql
+\ir ../migrations/0036_collaboration_recipient_notes.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -517,3 +518,26 @@ DO $prep_guard$ BEGIN
     'learning.append_session_preparation(text,uuid,uuid,bigint,text,text,text,text,uuid,uuid,text)','EXECUTE')
  THEN RAISE EXCEPTION 'Unsafe session preparation disposable role'; END IF;
 END;$prep_guard$;
+
+-- S36: disposable synthetic function-only writer; never a Production permission.
+CREATE ROLE kanoonyar_recipient_note_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_recipient_note_ci;
+GRANT USAGE ON SCHEMA collaboration,centers,governance,programs TO kanoonyar_recipient_note_ci;
+GRANT EXECUTE ON FUNCTION collaboration.append_recipient_private_note(
+ uuid,uuid,text,text,text,uuid,uuid,text) TO kanoonyar_recipient_note_ci;
+GRANT SELECT(note_id,proposal_id,target_center_id,note_text,recorded_at)
+ ON collaboration.recipient_private_notes TO kanoonyar_draft_read_ci;
+DO $s36$ BEGIN
+ IF has_table_privilege('kanoonyar_recipient_note_ci','collaboration.recipient_private_notes','INSERT')
+  OR has_table_privilege('kanoonyar_recipient_note_ci','collaboration.recipient_private_notes','SELECT')
+  OR has_table_privilege('kanoonyar_recipient_note_ci','governance.command_audit','INSERT')
+  OR pg_has_role('kanoonyar_recipient_note_ci','kanoonyar_recipient_note_owner','SET')
+  OR has_column_privilege('kanoonyar_draft_read_ci','collaboration.recipient_private_notes',
+      'recorded_by_subject','SELECT')
+  OR has_function_privilege('kanoonyar_draft_read_ci',
+   'collaboration.append_recipient_private_note(uuid,uuid,text,text,text,uuid,uuid,text)','EXECUTE')
+  OR has_function_privilege('public',
+   'collaboration.append_recipient_private_note(uuid,uuid,text,text,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Unsafe recipient notes SQL roles'; END IF;
+END;$s36$;
