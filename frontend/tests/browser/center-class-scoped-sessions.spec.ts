@@ -32,6 +32,8 @@ function catalogue(p:import('@playwright/test').Page){
 }
 test('class-owner catalogue -> original per-class S12 20+2 sessions without global source scan',async({page:p})=>{
  const urls:string[]=[];
+ p.on('console',message=>{if(message.text().startsWith('[S47 source validation]'))
+  console.log(message.text());});
  await catalogue(p);
  await p.route(/\/classes\/[^/]+\/source-sessions(?:\?.*)?$/,r=>{
   urls.push(r.request().url());
