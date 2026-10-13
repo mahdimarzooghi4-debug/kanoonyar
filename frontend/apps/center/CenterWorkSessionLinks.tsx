@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import { CenterSessionPreparations } from './CenterSessionPreparations';
+import { ClassCapacityIntake } from './ClassCapacityIntake';
 import { CenterLinkedSessionReportHandoff } from './CenterLinkedSessionReportHandoff';
 
 type Session={sourceId:string;classId:string;title:string;classTitle:string;scheduledAt:string|null};
@@ -41,6 +42,7 @@ export function CenterWorkSessionLinks({centerId,workCardId,token,draftId,pinned
  const [links,setLinks]=useState<Link[]>([]),[cursor,setCursor]=useState<string|null>(null);
  const [state,setState]=useState<State>('idle'),[selected,setSelected]=useState('');
  const [write,setWrite]=useState<Write>('idle'),[openPrep,setOpenPrep]=useState(false);
+ const [openClass,setOpenClass]=useState<string|null>(null);
  useEffect(()=>()=>{epoch.current++;},[]);
  const path=root+'/operations/work-cards/'+encodeURIComponent(workCardId)+'/session-links';
  async function sources(before:string|null){
@@ -72,7 +74,7 @@ export function CenterWorkSessionLinks({centerId,workCardId,token,draftId,pinned
  async function list(before:string|null){
   if(!token.trim()||!centerId||state==='loading')return;
   const request=++epoch.current;setState('loading');
-  if(before===null){setLinks([]);setCursor(null);}
+  if(before===null){setLinks([]);setCursor(null);setOpenClass(null);}
   try{
    const r=await fetch(path+(before?'?beforeSessionId='+encodeURIComponent(before):''),
     {headers,cache:'no-store'});
@@ -148,6 +150,20 @@ export function CenterWorkSessionLinks({centerId,workCardId,token,draftId,pinned
     sessionId={s.sessionId} pinnedRevision={pinnedRevision}
     programId={programId} nationalVersion={nationalVersion}/>
   </li>)}</ul>}
+  {state==='ready'&&links.length>0&&<div>
+   <h6>پیگیری درخواست‌های اولیه کلاس‌های پیوندخورده</h6>
+   <p>ورود به درخواست‌ها به مجوز جداگانه کلاس نیاز دارد؛ ارتباط با کارت کار حق پذیرش یا رزرو ظرفیت ایجاد نمی‌کند.</p>
+   <ul>{Array.from(new Map(links.map(x=>[x.classId.toLowerCase(),
+    {classId:x.classId,title:x.classTitle}])).values()).map(cls=><li key={cls.classId}>
+    {cls.title}
+    <button type="button" onClick={()=>setOpenClass(x=>x===cls.classId?null:cls.classId)}>
+     {openClass===cls.classId?'بستن درخواست‌های این کلاس':'درخواست‌ها و بررسی انسانی این کلاس'}</button>
+    {openClass===cls.classId&&<ClassCapacityIntake
+     key={centerId+':'+token+':'+cls.classId}
+     centerId={centerId} token={token} classId={cls.classId}
+     onClose={()=>setOpenClass(null)}/>}
+   </li>)}</ul>
+  </div>}
   {cursor&&<button type="button" onClick={()=>void list(cursor)}>جلسات پیوندخورده بیشتر</button>}
   {state==='ready'&&links.length>0&&<button type="button" onClick={()=>setOpenPrep(v=>!v)}>
    {openPrep?'بستن دفتر آماده‌سازی':'باز کردن دفتر اصلی آماده‌سازی جلسات'}</button>}

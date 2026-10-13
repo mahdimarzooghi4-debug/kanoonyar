@@ -4,6 +4,7 @@ import { StoredDraftTrace } from './StoredDraftTrace';
 import { StoredActivityReports } from './StoredActivityReports';
 import { StoredActivitySources } from './StoredActivitySources';
 import { CenterClassSessionPlanner } from './CenterClassSessionPlanner';
+import { CenterExistingClassIntakeWorkspace } from './CenterExistingClassIntakeWorkspace';
 import { CenterSitePageDrafts } from './CenterSitePageDrafts';
 import { CenterSiteDesignDrafts } from './CenterSiteDesignDrafts';
 import { CenterSiteNavigationDrafts } from './CenterSiteNavigationDrafts';
@@ -63,6 +64,7 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
   return <section aria-label="پیش‌نویس‌های ثبت‌شده" style={{ marginTop: '2rem' }}>
     <h2>آخرین نسخه پیش‌نویس‌های ثبت‌شده</h2>
     <CenterClassSessionPlanner token={token} centerId={selectedCenter} />
+    <CenterExistingClassIntakeWorkspace key={'existing-classes:'+selectedCenter+':'+token} centerId={selectedCenter} token={token} />
     <CenterSitePageDrafts key={selectedCenter+':'+token} token={token} centerId={selectedCenter} />
     <CenterSiteDesignDrafts key={'design:'+selectedCenter+':'+token} token={token} centerId={selectedCenter} />
     <CenterSiteNavigationDrafts key={'navigation:'+selectedCenter+':'+token} token={token} centerId={selectedCenter} />
