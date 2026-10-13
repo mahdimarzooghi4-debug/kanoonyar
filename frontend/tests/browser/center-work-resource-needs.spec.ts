@@ -70,7 +70,9 @@ test('forged allocation, purchase or fulfillment is never shown',async({page:p})
  await expect(x.getByText('تجهیزات آموزشی',{exact:true})).toHaveCount(0);
 });
 test('separate resource-read and write grants default deny',async({page:p})=>{
- await p.route('**/api/v1/centers/*/operations/work-cards/*/resource-needs*',r=>r.fulfill({
+ await p.route('**/api/v1/centers/*/operations/work-cards/*/resource-needs/revisions',r=>r.fulfill({
+  status:403,contentType:'application/problem+json',body:'{}'}));
+ await p.route('**/api/v1/centers/*/operations/work-cards/*/resource-needs',r=>r.fulfill({
   status:403,contentType:'application/problem+json',body:'{}'}));
  await setup(p);
  const x=p.locator('section[aria-label="نیازهای منابع کارت '+card+'"]');
