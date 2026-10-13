@@ -1,6 +1,8 @@
 import React,{useEffect,useRef,useState} from 'react';
 import { ClassCapacityIntake } from './ClassCapacityIntake';
 import { CenterClassSessionPlanner } from './CenterClassSessionPlanner';
+import { CenterSessionPreparations } from './CenterSessionPreparations';
+import { SessionClaimReporter } from './SessionClaimReporter';
 
 type SourceSession={sourceId:string;classId:string;title:string;classTitle:string;scheduledAt:string|null};
 type Stage='idle'|'loading'|'ready'|'denied'|'error';
@@ -23,12 +25,15 @@ export function CenterExistingClassIntakeWorkspace({centerId,token}:{centerId:st
  const [status,setStatus]=useState<Stage>('idle');
  const [opened,setOpened]=useState<string|null>(null);
  const [openedScheduler,setOpenedScheduler]=useState<string|null>(null);
+ const [openedSessions,setOpenedSessions]=useState<string|null>(null);
+ const [sessionTask,setSessionTask]=useState<{sourceId:string;kind:'PREPARATION'|'CLAIM'}|null>(null);
  const prefix='/api/v1/centers/'+encodeURIComponent(centerId);
  useEffect(()=>()=>{generation.current++;},[]);
  async function load(before:string|null){
   if(!centerId||!token.trim()||status==='loading')return;
   const current=++generation.current;
   setStatus('loading');setOpened(null);setOpenedScheduler(null);
+  setOpenedSessions(null);setSessionTask(null);
   if(before===null){setSessions([]);setCursor(null);}
   try{
    const response=await fetch(prefix+'/activity-sources/class-sessions'+
@@ -92,6 +97,32 @@ export function CenterExistingClassIntakeWorkspace({centerId,token}:{centerId:st
    {opened===c.classId&&<ClassCapacityIntake key={centerId+':'+token+':'+c.classId}
     centerId={centerId} token={token} classId={c.classId}
     onClose={()=>setOpened(null)}/>}
+   <button type="button" onClick={()=>{setSessionTask(null);
+    setOpenedSessions(x=>x===c.classId?null:c.classId);}}>
+    {openedSessions===c.classId?'بستن عملیات جلسات کلاس':'عملیات جلسات واقعی همین کلاس'}</button>
+   {openedSessions===c.classId&&<section aria-label={'میزکار جلسات کلاس '+c.classId}>
+    <h4>جلسات ثبت‌شده در منبع اصلی این کلاس</h4>
+    <p>فقط جلسات بازیابی‌شده از صفحات کاتالوگ اصلی نمایش داده می‌شوند؛
+     ممکن است جلسه‌های قدیمی‌تر هنوز بارگذاری نشده باشند. برنامه‌ریزی، تأیید اجرا نیست.</p>
+    <ul>{sessions.filter(x=>x.classId.toLowerCase()===c.classId.toLowerCase()).map(item=><li key={item.sourceId}>
+     <strong>{item.title}</strong> — زمان پیشنهادی: {item.scheduledAt===null?'نامعلوم':
+      new Date(item.scheduledAt).toLocaleString('fa-IR')}
+     <p>شناسه جلسه: {item.sourceId}</p>
+     <button type="button" onClick={()=>setSessionTask(x=>x?.sourceId===item.sourceId&&
+      x.kind==='PREPARATION'?null:{sourceId:item.sourceId,kind:'PREPARATION'})}>
+      آماده‌سازی خصوصی همین جلسه</button>
+     <button type="button" onClick={()=>setSessionTask(x=>x?.sourceId===item.sourceId&&
+      x.kind==='CLAIM'?null:{sourceId:item.sourceId,kind:'CLAIM'})}>
+      ادعای وقوع و حضور همین جلسه</button>
+     {sessionTask?.sourceId===item.sourceId&&sessionTask.kind==='PREPARATION'&&
+      <CenterSessionPreparations key={'session-prep:'+centerId+':'+token+':'+item.sourceId}
+       centerId={centerId} token={token} initialSession={item}/>}
+     {sessionTask?.sourceId===item.sourceId&&sessionTask.kind==='CLAIM'&&
+      <SessionClaimReporter key={'session-claim:'+centerId+':'+token+':'+item.sourceId}
+       centerId={centerId} token={token} sessionId={item.sourceId}
+       onClose={()=>setSessionTask(null)}/>}
+    </li>)}</ul>
+   </section>}
   </li>)}</ul>}
   {status==='ready'&&cursor!==null&&<button type="button" onClick={()=>void load(cursor)}>
    جلسات بعدی برای یافتن کلاس‌های بیشتر</button>}
