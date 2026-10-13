@@ -143,7 +143,10 @@ public sealed class CenterEventSourceDossierPostgresTests
     new ReportGrant(reportGrant),center,source??plannedEvent,before,default);
   Assert.Equal(403,Status(await Get(eventGrant:false)));
   Assert.Equal(403,Status(await Get(reportGrant:false)));
-  Assert.Equal(404,Status(await Get(actor:"actor-revoked")));
+  var revokedResult=await Get(actor:"actor-revoked");
+  Assert.True(Status(revokedResult)==404,
+   "Revoked read must return 404; actual="+Status(revokedResult)+
+   " title="+(revokedResult as IProblemHttpResult)?.ProblemDetails.Title);
   Assert.Equal(404,Status(await Get(actor:"actor-b",center:"center-b")));
   Assert.Equal(404,Status(await Get(source:otherEvent)));
   Assert.Equal(503,Status(await Get(cs:Admin)));

@@ -46,7 +46,8 @@ public static class CenterEventSourceDossierEndpoint
      AND NOT (
       has_table_privilege(current_user,'programs.center_activity_reports'::regclass,'INSERT')
       OR has_table_privilege(current_user,'programs.activity_report_source_bindings'::regclass,'INSERT')
-      OR has_table_privilege(current_user,'governance.command_audit'::regclass,'INSERT')
+      -- Audit/outbox mutation and SET ROLE are already checked by VerifyReadOnlyAsync;
+      -- never resolve governance regclass through an unprivileged reader schema.
       OR has_function_privilege(current_user,
        'programs.record_center_sourced_activity_command(text,uuid,uuid,uuid,text,uuid,text,text,timestamptz,text,uuid,uuid,text)','EXECUTE'))
     """,db,tx))
