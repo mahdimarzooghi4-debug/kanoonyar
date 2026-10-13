@@ -830,6 +830,34 @@ public sealed class SignedOidcHttpIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task Signed_superadmin_without_independent_work_card_grants_is_denied()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var app=fixture.Server();
+        using var client=app.CreateClient();
+        foreach(var path in new[]{
+            "/api/v1/centers/center-a/operations/work-cards",
+            "/api/v1/centers/center-a/operations/work-cards/"+Guid.NewGuid()+"/revisions"
+        })
+        {
+            using var anonymous=Request(HttpMethod.Get,path,null);
+            using var rejected=await client.SendAsync(anonymous);
+            Assert.Equal(HttpStatusCode.Unauthorized,rejected.StatusCode);
+            using var signed=Request(HttpMethod.Get,path,fixture.Token(roleClaim:true));
+            using var response=await client.SendAsync(signed);
+            Assert.Equal(HttpStatusCode.Forbidden,response.StatusCode);
+        }
+        using var write=Request(HttpMethod.Post,
+            "/api/v1/centers/center-a/operations/work-cards/revisions",
+            fixture.Token(roleClaim:true));
+        write.Content=JsonContent.Create(new {workCardId=Guid.NewGuid(),expectedRevision=0,
+            draftId=Guid.NewGuid(),pinnedPlanRevision=1,title="Test only",planningNote="",
+            plannedDueAt=(DateTimeOffset?)null});
+        using var writeResponse=await client.SendAsync(write);
+        Assert.Equal(HttpStatusCode.Forbidden,writeResponse.StatusCode);
+    }
+
     private sealed class TestSessionClaimWriteGrant : ICenterSessionClaimWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal user,string center,
