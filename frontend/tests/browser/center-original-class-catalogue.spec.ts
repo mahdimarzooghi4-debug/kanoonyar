@@ -89,3 +89,23 @@ test('independent directory denial and forged cursor never disclose class or sch
  await expect(x.getByRole('alert')).toContainText('کاتالوگ اصلی معتبر کلاس‌ها دریافت نشد.');
  await expect(x.getByText(classRecord.title,{exact:true})).toHaveCount(0);
 });
+
+test('session-source response cannot contradict an independently retrieved canonical class',async({page:p})=>{
+ await p.route(/\\/classes\\/catalogue(?:\\?.*)?$/,r=>r.fulfill({
+  status:200,contentType:'application/json',
+  body:JSON.stringify({classes:[classRecord],nextBeforeClassId:null})}));
+ await p.route(/\\/activity-sources\\/class-sessions(?:\\?.*)?$/,r=>r.fulfill({
+  status:200,contentType:'application/json',body:JSON.stringify({
+   sourceKind:'CLASS_SESSION',records:[{
+    sourceId:'bbbbbbbb-bbbb-4bbb-8bbb-000000000046',
+    classId:noSession,title:'جلسه ساختگی',classTitle:'عنوان متناقض',scheduledAt:null
+   }],nextBeforeSourceId:null})}));
+ await enter(p);
+ const x=directory(p);
+ await x.getByRole('button',{name:'دریافت کاتالوگ اصلی همه کلاس‌ها'}).click();
+ await expect(x.getByText(classRecord.title,{exact:true})).toBeVisible();
+ await x.getByRole('button',{name:'دریافت کلاس‌ها از جلسات واقعی'}).click();
+ await expect(x.getByRole('alert')).toContainText('کاتالوگ معتبر کلاس‌های موجود دریافت نشد.');
+ await expect(x.getByText('جلسه ساختگی',{exact:true})).toHaveCount(0);
+ await expect(x.getByRole('button',{name:'عملیات جلسات واقعی همین کلاس'})).toHaveCount(0);
+});
