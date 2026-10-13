@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import { CenterCampaignInspectionNotes } from './CenterCampaignInspectionNotes';
+import { CenterCampaignReviewWorkspace } from './CenterCampaignReviewWorkspace';
 
 type Activity={activityKey:string;title:string};
 type Report={reportId:string;reportSequence:number;linkId:string;sourceKind:'CLASS_SESSION'|'CENTER_EVENT';
@@ -177,6 +178,10 @@ export function CenterCampaignSourceReports({centerId,token,campaignId,draftId,
     {a.activityKey} — {a.sourceKind} — {a.reportedSummary}
     {' '}<strong>UNVERIFIED — اجرای قطعی نیست</strong>
     {' '}(نسخه {a.campaignRevision})
+    <CenterCampaignReviewWorkspace key={'workspace:'+a.associationId}
+     centerId={centerId} token={token} campaignId={campaignId}
+     associationId={a.associationId} reportId={a.reportId}
+     activityKey={a.activityKey} campaignRevision={a.campaignRevision} linkId={a.linkId}/>
     <CenterCampaignInspectionNotes key={a.associationId}
      centerId={centerId} token={token} campaignId={campaignId} associationId={a.associationId}/>
    </li>)}</ul>}
