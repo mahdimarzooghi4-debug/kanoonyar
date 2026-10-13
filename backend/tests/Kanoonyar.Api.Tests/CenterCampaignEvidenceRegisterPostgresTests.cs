@@ -136,43 +136,58 @@ public sealed class CenterCampaignEvidenceRegisterPostgresTests
    }
   }
 
-  // More genuine original owner records, never fabricated report counts.
+  // Synthetic original-owner commands executed with genuine Npgsql bound parameters.
+  // A DO dollar-quoted body cannot bind @parameter placeholders.
   await using(var db=new NpgsqlConnection(Admin)){
    await db.OpenAsync();
-   await using var populate=new NpgsqlCommand(
-    """
-    DO $fixture$
-    DECLARE v_session uuid;v_report uuid;v_assoc uuid;v_event uuid;
-    BEGIN
-     FOR i IN 1..22 LOOP
-      v_session:=gen_random_uuid();v_report:=gen_random_uuid();v_assoc:=gen_random_uuid();
-      INSERT INTO learning.class_sessions(center_id,session_id,class_id,session_title)
-      VALUES('center-a',v_session,@class,'Extra planned session');
-      PERFORM programs.record_center_sourced_activity_report(
-       v_report,'center-a',@link,@plan,'CLASS_SESSION',v_session,
-       'opaque-extra','Unverified synthetic claim',NULL,'actor-a',
-       gen_random_uuid(),gen_random_uuid(),'s28-fixture-'||i);
-      INSERT INTO campaigns.campaign_report_links(center_id,association_id,campaign_id,
-       campaign_revision,draft_id,pinned_plan_revision,activity_key,report_id,linked_by_subject)
-      VALUES('center-a',v_assoc,@campaign,1,@plan,1,'workshop',v_report,'actor-a');
-     END LOOP;
-     v_event:=gen_random_uuid();v_report:=gen_random_uuid();v_assoc:=gen_random_uuid();
-     INSERT INTO events.center_events(center_id,event_id,event_title)
-     VALUES('center-a',v_event,'Original center event');
-     PERFORM programs.record_center_sourced_activity_report(
-      v_report,'center-a',@link,@plan,'CENTER_EVENT',v_event,
-      'opaque-event','Unverified event report',NULL,'actor-a',
-      gen_random_uuid(),gen_random_uuid(),'s28-event');
+   for(var i=1;i<=22;i++){
+    var extraSession=Guid.NewGuid();var extraReport=Guid.NewGuid();
+    var extraAssociation=Guid.NewGuid();
+    await using var q=new NpgsqlCommand(
+     """
+     INSERT INTO learning.class_sessions(center_id,session_id,class_id,session_title)
+     VALUES('center-a',@session,@class,'Additional planned session');
+     SELECT programs.record_center_sourced_activity_report(
+      @report,'center-a',@link,@plan,'CLASS_SESSION',@session,
+      'opaque-extra','Unverified synthetic claim',NULL,'actor-a',
+      @audit,@event,'s28-fixture');
      INSERT INTO campaigns.campaign_report_links(center_id,association_id,campaign_id,
       campaign_revision,draft_id,pinned_plan_revision,activity_key,report_id,linked_by_subject)
-     VALUES('center-a',v_assoc,@campaign,1,@plan,1,'workshop',v_report,'actor-a');
-    END $fixture$;
+     VALUES('center-a',@association,@campaign,1,@plan,1,'workshop',@report,'actor-a');
+     """,db);
+    q.Parameters.AddWithValue("session",extraSession);
+    q.Parameters.AddWithValue("class",classId);
+    q.Parameters.AddWithValue("report",extraReport);
+    q.Parameters.AddWithValue("link",link);
+    q.Parameters.AddWithValue("plan",plan);
+    q.Parameters.AddWithValue("audit",Guid.NewGuid());
+    q.Parameters.AddWithValue("event",Guid.NewGuid());
+    q.Parameters.AddWithValue("association",extraAssociation);
+    q.Parameters.AddWithValue("campaign",campaign);
+    await q.ExecuteNonQueryAsync();
+   }
+   var originalEvent=Guid.NewGuid();var eventReport=Guid.NewGuid();var eventAssociation=Guid.NewGuid();
+   await using var eventCmd=new NpgsqlCommand(
+    """
+    INSERT INTO events.center_events(center_id,event_id,event_title)
+    VALUES('center-a',@source,'Real typed original event');
+    SELECT programs.record_center_sourced_activity_report(
+     @report,'center-a',@link,@plan,'CENTER_EVENT',@source,
+     'opaque-event','Unverified event report',NULL,'actor-a',
+     @audit,@event,'s28-event');
+    INSERT INTO campaigns.campaign_report_links(center_id,association_id,campaign_id,
+     campaign_revision,draft_id,pinned_plan_revision,activity_key,report_id,linked_by_subject)
+    VALUES('center-a',@association,@campaign,1,@plan,1,'workshop',@report,'actor-a');
     """,db);
-   populate.Parameters.AddWithValue("class",classId);
-   populate.Parameters.AddWithValue("link",link);
-   populate.Parameters.AddWithValue("plan",plan);
-   populate.Parameters.AddWithValue("campaign",campaign);
-   await populate.ExecuteNonQueryAsync();
+   eventCmd.Parameters.AddWithValue("source",originalEvent);
+   eventCmd.Parameters.AddWithValue("report",eventReport);
+   eventCmd.Parameters.AddWithValue("link",link);
+   eventCmd.Parameters.AddWithValue("plan",plan);
+   eventCmd.Parameters.AddWithValue("audit",Guid.NewGuid());
+   eventCmd.Parameters.AddWithValue("event",Guid.NewGuid());
+   eventCmd.Parameters.AddWithValue("association",eventAssociation);
+   eventCmd.Parameters.AddWithValue("campaign",campaign);
+   await eventCmd.ExecuteNonQueryAsync();
   }
  Task<IResult> Get(string actor="actor-a",string center="center-a",Guid? cid=null,
   Guid? cursor=null,string? kind=null,string? activity=null,IConfiguration? cfg=null,
