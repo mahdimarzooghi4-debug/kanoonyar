@@ -81,6 +81,24 @@ export function CenterEventSourceDossier(p:Props){
       cursor:!(data.nextBeforeSequence===null||(Number.isSafeInteger(data.nextBeforeSequence)&&
        Number(data.nextBeforeSequence)>0))
      }));
+     if(Array.isArray(data.activityReports)){
+      const r=data.activityReports.find(x=>!validReport(x,p)) as Record<string,unknown>|undefined;
+      if(r)console.warn('S30 bad report flags',JSON.stringify({
+       sequence:Number.isSafeInteger(r.reportSequence)&&Number(r.reportSequence)>0,
+       report:typeof r.reportId==='string'&&uuid.test(r.reportId),
+       link:typeof r.linkId==='string'&&uuid.test(r.linkId),
+       issuance:typeof r.issuanceId==='string'&&uuid.test(r.issuanceId),
+       program:typeof r.programId==='string'&&r.programId.length>0,
+       national:Number.isSafeInteger(r.nationalVersion)&&Number(r.nationalVersion)>0,
+       pin:r.pinnedRevision===p.pinnedPlanRevision,
+       summary:typeof r.reportedSummary==='string',
+       evidence:typeof r.evidenceRef==='string',
+       claimed:r.claimedOccurredAt===null||time(r.claimedOccurredAt),
+       recorded:time(r.recordedAt),kind:r.sourceKind==='CENTER_EVENT',
+       ref:r.sourceRecordRef===p.eventId,verify:r.verificationStatus==='UNVERIFIED',
+       approval:r.isApproved===false,execution:r.isExecuted===false
+      }));
+     }
      throw Error('Forged event dossier');
     }
    const reports=data.activityReports as Report[];
