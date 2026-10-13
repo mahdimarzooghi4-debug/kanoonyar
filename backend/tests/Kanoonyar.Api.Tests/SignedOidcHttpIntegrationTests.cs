@@ -579,6 +579,28 @@ public sealed class SignedOidcHttpIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task Signed_admin_token_cannot_read_or_write_campaign_inspection_notes()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var server=fixture.Server();
+        using var client=server.CreateClient();
+        var url="/api/v1/centers/center-a/campaigns/"+Guid.NewGuid()+
+          "/report-links/"+Guid.NewGuid()+"/inspection-notes";
+        using(var request=Request(HttpMethod.Get,url,null))
+        using(var denied=await client.SendAsync(request))
+            Assert.Equal(HttpStatusCode.Unauthorized,denied.StatusCode);
+        using(var request=Request(HttpMethod.Get,url,fixture.Token(roleClaim:true)))
+        using(var denied=await client.SendAsync(request))
+            Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        using(var request=Request(HttpMethod.Post,url,fixture.Token(roleClaim:true)))
+        {
+            request.Content=JsonContent.Create(new{noteId=Guid.NewGuid(),noteText="Comment only"});
+            using var denied=await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        }
+    }
+
     private sealed class TestOnlyReportReadGrant : ICenterActivityReportReadAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, string centerId,
