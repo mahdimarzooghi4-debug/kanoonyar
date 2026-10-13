@@ -48,6 +48,8 @@ test('class-owner catalogue -> original per-class S12 20+2 sessions without glob
  await enter(p);
  const panel=await open(p);
  await panel.getByRole('button',{name:'دریافت همه جلسات این کلاس از منبع اصلی'}).click();
+ await expect.poll(()=>urls.length).toBe(1);
+ await expect.poll(()=>panel.getByRole('alert').allTextContents()).toEqual([]);
  await expect(panel.getByRole('button',{name:'آماده‌سازی خصوصی همین جلسه'})).toHaveCount(20);
  await panel.getByRole('button',{name:'جلسات قدیمی‌تر همین کلاس'}).click();
  await expect(panel.getByRole('button',{name:'آماده‌سازی خصوصی همین جلسه'})).toHaveCount(22);
