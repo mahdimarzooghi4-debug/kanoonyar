@@ -4,7 +4,7 @@ type Entry={entryId:string;entryKind:'REQUEST'|'RESPONSE';requestId:string|null;
  isApproval:false;isExecuted:false;isResolved:false};
 type Mode='idle'|'loading'|'ready'|'denied'|'error';
 type Save='idle'|'saving'|'saved'|'denied'|'conflict'|'error';
-const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function validEntry(raw:unknown,kind:'REQUEST'|'RESPONSE',request:string|null):raw is Entry{
  if(!raw||typeof raw!=='object')return false;
  const x=raw as Record<string,unknown>;
