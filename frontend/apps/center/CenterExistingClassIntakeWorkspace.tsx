@@ -73,6 +73,8 @@ export function CenterExistingClassIntakeWorkspace({centerId,token}:{centerId:st
     seen.add(sourceKey);
     const prev=titles.get(classKey);
     if(prev!==undefined&&prev!==s.classTitle)throw Error('Conflicting class owner');
+    if(ownedClasses.some(c=>c.classId.toLowerCase()===classKey&&c.title!==s.classTitle))
+     throw Error('Inconsistent original owner');
     titles.set(classKey,s.classTitle);
    }
    setSessions(combined);setCursor(v.nextBeforeSourceId as string|null);
