@@ -887,6 +887,35 @@ public sealed class SignedOidcHttpIntegrationTests
         Assert.Equal(HttpStatusCode.Forbidden,reject.StatusCode);
     }
 
+    [Fact]
+    public async Task Signed_admin_cannot_change_or_read_private_session_preparation_without_two_grants()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var app=fixture.Server();
+        using var client=app.CreateClient();
+        foreach(var route in new[]{
+            "/api/v1/centers/center-a/learning/session-preparations",
+            "/api/v1/centers/center-a/learning/session-preparations/"+Guid.NewGuid()+"/revisions"
+        })
+        {
+            using var anonymous=Request(HttpMethod.Get,route,null);
+            using var anonymousResult=await client.SendAsync(anonymous);
+            Assert.Equal(HttpStatusCode.Unauthorized,anonymousResult.StatusCode);
+            using var role=Request(HttpMethod.Get,route,fixture.Token(roleClaim:true));
+            using var denied=await client.SendAsync(role);
+            Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        }
+        using var mutation=Request(HttpMethod.Post,
+           "/api/v1/centers/center-a/learning/session-preparations/revisions",
+           fixture.Token(roleClaim:true));
+        mutation.Content=JsonContent.Create(new{
+            sessionId=Guid.NewGuid(),classId=Guid.NewGuid(),expectedRevision=0,
+            title="Private test lesson",teachingOutline="Only planning",materialsNote=""
+        });
+        using var answer=await client.SendAsync(mutation);
+        Assert.Equal(HttpStatusCode.Forbidden,answer.StatusCode);
+    }
+
     private sealed class TestSessionClaimWriteGrant : ICenterSessionClaimWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal user,string center,
