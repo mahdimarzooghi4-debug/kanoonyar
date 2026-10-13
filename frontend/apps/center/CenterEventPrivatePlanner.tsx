@@ -163,7 +163,7 @@ export function CenterEventPrivatePlanner({centerId,token}:{centerId:string;toke
   <h2>رویدادهای کانون — پیش‌نویس خصوصی</h2>
   <p>زمان و مکان صرفاً برنامه‌ریزی است؛ برگزاری، انتشار، ثبت‌نام یا مشارکت قطعی ثبت نمی‌شود.</p>
   <button type="button" onClick={()=>void loadPlans()} disabled={planState==='loading'||!centerId}>دریافت طرح‌های محلی رویداد</button>{' '}
-  <button type="button" onClick={()=>void loadList(null)} disabled={listState==='loading'||!centerId}>دریافت رویدادهای خصوصی</button>{' '}
+  <button type="button" onClick={()=>void loadList(null)} disabled={listState==='loading'||!centerId}>بارگذاری برنامه‌های خصوصی رویداد</button>{' '}
   <button type="button" onClick={()=>edit(null)}>رویداد جدید</button>
   {planState==='denied'&&<p role="alert">مجوز مشاهده طرح‌های محلی وجود ندارد.</p>}
   {planState==='error'&&<p role="alert">دریافت طرح معتبر ناموفق بود.</p>}

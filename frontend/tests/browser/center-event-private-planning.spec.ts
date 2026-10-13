@@ -59,7 +59,7 @@ test('forged published or executed event is never rendered',async({page:p})=>{
    visibility:'PUBLIC',isPublished:true,isExecuted:true,isRegistrationOpen:true}],
    nextBeforeEventId:null})}));
  await enter(p);
- await p.getByRole('button',{name:'دریافت رویدادهای خصوصی'}).click();
+ await p.getByRole('button',{name:'بارگذاری برنامه‌های خصوصی رویداد'}).click();
  await expect(p.getByRole('alert')).toContainText('دریافت رویداد خصوصی ناموفق بود.');
  await expect(p.getByText('forged published event')).toHaveCount(0);
 });
@@ -67,6 +67,6 @@ test('independent denial does not expose event lists',async({page:p})=>{
  await p.route('**/api/v1/centers/*/events/plans',r=>r.fulfill({
   status:403,contentType:'application/problem+json',body:'{"title":"Forbidden"}'}));
  await enter(p);
- await p.getByRole('button',{name:'دریافت رویدادهای خصوصی'}).click();
+ await p.getByRole('button',{name:'بارگذاری برنامه‌های خصوصی رویداد'}).click();
  await expect(p.getByRole('alert')).toContainText('مجوز مستقل خواندن رویداد وجود ندارد.');
 });
