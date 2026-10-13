@@ -153,7 +153,7 @@ public sealed class CenterCampaignReviewWorkspacePostgresTests
   DateTimeOffset? lastAt;string? lastKind;Guid? lastId;
   using(var json=Payload(first))
   {
-   var root=json.RootElement,src=root.GetProperty("source");
+   var root=json.RootElement;var src=root.GetProperty("source");
    Assert.Equal(report,src.GetProperty("reportId").GetGuid());
    Assert.Equal(plan,src.GetProperty("draftId").GetGuid());
    Assert.Equal(link,src.GetProperty("linkId").GetGuid());
