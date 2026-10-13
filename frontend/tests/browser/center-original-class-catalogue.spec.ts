@@ -91,10 +91,10 @@ test('independent directory denial and forged cursor never disclose class or sch
 });
 
 test('session-source response cannot contradict an independently retrieved canonical class',async({page:p})=>{
- await p.route(/\\/classes\\/catalogue(?:\\?.*)?$/,r=>r.fulfill({
+ await p.route(/\/classes\/catalogue(?:\?.*)?$/,r=>r.fulfill({
   status:200,contentType:'application/json',
   body:JSON.stringify({classes:[classRecord],nextBeforeClassId:null})}));
- await p.route(/\\/activity-sources\\/class-sessions(?:\\?.*)?$/,r=>r.fulfill({
+ await p.route(/\/activity-sources\/class-sessions(?:\?.*)?$/,r=>r.fulfill({
   status:200,contentType:'application/json',body:JSON.stringify({
    sourceKind:'CLASS_SESSION',records:[{
     sourceId:'bbbbbbbb-bbbb-4bbb-8bbb-000000000046',
