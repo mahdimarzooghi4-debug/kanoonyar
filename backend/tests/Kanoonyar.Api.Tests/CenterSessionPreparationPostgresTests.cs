@@ -44,7 +44,7 @@ public sealed class CenterSessionPreparationPostgresTests
  {
   if(!Enabled())return;
   const string center="session-prep-s35",other="session-prep-s35-foreign",actor="s35-editor";
-  var classId=Guid.NewGuid();var sessionId=Guid.NewGuid(),foreignClass=Guid.NewGuid(),foreignSession=Guid.NewGuid();
+  var classId=Guid.NewGuid();var sessionId=Guid.NewGuid();var foreignClass=Guid.NewGuid();var foreignSession=Guid.NewGuid();
   await using(var db=new NpgsqlConnection(Admin))
   {
    await db.OpenAsync();
