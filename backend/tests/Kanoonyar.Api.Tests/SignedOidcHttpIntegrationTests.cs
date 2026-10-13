@@ -858,6 +858,35 @@ public sealed class SignedOidcHttpIntegrationTests
         Assert.Equal(HttpStatusCode.Forbidden,writeResponse.StatusCode);
     }
 
+    [Fact]
+    public async Task Signed_superadmin_cannot_send_or_read_private_collaboration_without_independent_rights()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var app=fixture.Server();
+        using var client=app.CreateClient();
+        foreach(var route in new[]{
+            "/api/v1/centers/center-a/collaboration/outgoing",
+            "/api/v1/centers/center-b/collaboration/incoming"
+        })
+        {
+            using var anonymous=Request(HttpMethod.Get,route,null);
+            using var anonymousResult=await client.SendAsync(anonymous);
+            Assert.Equal(HttpStatusCode.Unauthorized,anonymousResult.StatusCode);
+            using var superadmin=Request(HttpMethod.Get,route,fixture.Token(roleClaim:true));
+            using var signedResult=await client.SendAsync(superadmin);
+            Assert.Equal(HttpStatusCode.Forbidden,signedResult.StatusCode);
+        }
+        using var propose=Request(HttpMethod.Post,
+          "/api/v1/centers/center-a/collaboration/proposals",
+          fixture.Token(roleClaim:true));
+        propose.Content=JsonContent.Create(new {
+            proposalId=Guid.NewGuid(),targetCenterId="center-b",
+            title="Synthetic collaboration",summary="No business grant"
+        });
+        using var reject=await client.SendAsync(propose);
+        Assert.Equal(HttpStatusCode.Forbidden,reject.StatusCode);
+    }
+
     private sealed class TestSessionClaimWriteGrant : ICenterSessionClaimWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal user,string center,
