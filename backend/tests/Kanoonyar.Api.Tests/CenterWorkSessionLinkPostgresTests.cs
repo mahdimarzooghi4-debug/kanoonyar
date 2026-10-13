@@ -162,8 +162,9 @@ public sealed class CenterWorkSessionLinkPostgresTests
    Assert.Equal(JsonValueKind.Null,
     second.RootElement.GetProperty("nextBeforeSessionId").ValueKind);
   }
-  Assert.Equal(403,Status(await List(actor:"s41-revoked")));
-  Assert.Equal(403,Status(await List(actor:"s41-foreign")));
+  // Missing live membership deliberately hides the existence of the private work card.
+  Assert.Equal(404,Status(await List(actor:"s41-revoked")));
+  Assert.Equal(404,Status(await List(actor:"s41-foreign")));
   Assert.Equal(403,Status(await List(link:false)));
   Assert.Equal(403,Status(await List(cardRight:false)));
   Assert.Equal(403,Status(await List(plan:false)));
