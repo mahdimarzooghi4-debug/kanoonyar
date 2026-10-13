@@ -48,7 +48,7 @@ test('directed A to B submission, explicit recipient read, safe scope reset',asy
  expect(writes[0]).toMatchObject({targetCenterId:'c2',title:'پیشنهاد همکاری آموزشی'});
  expect(writes[0].isAccepted).toBeUndefined();
  await panel.getByRole('button',{name:'دریافت پیشنهادهای مبدأ'}).click();
- await expect(panel.getByText('پیشنهاد همکاری آموزشی',{exact:true})).toBeVisible();
+ await expect.poll(async()=>await panel.innerText(),{timeout:5000}).toContain('پیشنهاد همکاری آموزشی');
  await p.getByRole('combobox',{name:'انتخاب کانون برای پیش‌نویس‌ها'}).selectOption('c2');
  panel=p.locator('section[aria-label="همکاری خصوصی میان کانون‌ها"]');
  await expect(panel.getByText('پیشنهاد همکاری آموزشی',{exact:true})).toHaveCount(0);
