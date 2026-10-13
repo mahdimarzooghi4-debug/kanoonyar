@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
+import { CenterCampaignInspectionNotes } from './CenterCampaignInspectionNotes';
 
 type Activity={activityKey:string;title:string};
 type Report={reportId:string;reportSequence:number;linkId:string;sourceKind:'CLASS_SESSION'|'CENTER_EVENT';
@@ -176,6 +177,8 @@ export function CenterCampaignSourceReports({centerId,token,campaignId,draftId,
     {a.activityKey} — {a.sourceKind} — {a.reportedSummary}
     {' '}<strong>UNVERIFIED — اجرای قطعی نیست</strong>
     {' '}(نسخه {a.campaignRevision})
+    <CenterCampaignInspectionNotes key={a.associationId}
+     centerId={centerId} token={token} campaignId={campaignId} associationId={a.associationId}/>
    </li>)}</ul>}
   {associationCursor!==null&&<button type="button" onClick={()=>void loadLinks(associationCursor)}>
    پیوندهای قدیمی‌تر</button>}
