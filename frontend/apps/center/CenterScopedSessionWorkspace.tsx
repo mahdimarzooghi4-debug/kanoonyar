@@ -5,7 +5,7 @@ import {SessionClaimReporter} from './SessionClaimReporter';
 type Session={sourceId:string;classId:string;title:string;classTitle:string;scheduledAt:string|null};
 type Status='idle'|'loading'|'ready'|'denied'|'error';
 type Task={sourceId:string;kind:'PREPARATION'|'CLAIM'};
-const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const id=(v:unknown):v is string=>typeof v==='string'&&uuid.test(v);
 const stamp=(v:unknown):v is string=>typeof v==='string'&&
  !Number.isNaN(Date.parse(v));
@@ -48,16 +48,8 @@ export function CenterScopedSessionWorkspace({centerId,token,classId,classTitle,
    if(x.sourceKind!=='CLASS_SESSION'||x.classId!==classId||
     x.classTitle!==classTitle||!Array.isArray(x.records)||x.records.length>20||
     !x.records.every(v=>valid(v,classId,classTitle))||
-    !(x.nextBeforeSourceId===null||id(x.nextBeforeSourceId))){
-     console.warn('[S47 scope]',JSON.stringify({
-      responseKind:x.sourceKind,receivedClass:x.classId,expectedClass:classId,
-      receivedTitle:x.classTitle,expectedTitle:classTitle,
-      rowCount:Array.isArray(x.records)?x.records.length:-1,
-      invalidIndices:Array.isArray(x.records)?x.records.map((v,i)=>valid(v,classId,classTitle)?-1:i).filter(i=>i>=0):[],
-      next:x.nextBeforeSourceId,nextValid:x.nextBeforeSourceId===null||id(x.nextBeforeSourceId)
-     }));
+    !(x.nextBeforeSourceId===null||id(x.nextBeforeSourceId)))
      throw Error('Class scope mismatch');
-    }
    const rows=x.records as Session[];
    if(rows.some((v,i)=>(before!==null&&v.sourceId.toLowerCase()>=before.toLowerCase())||
     (i>0&&rows[i-1].sourceId.toLowerCase()<=v.sourceId.toLowerCase()))||
@@ -72,8 +64,7 @@ export function CenterScopedSessionWorkspace({centerId,token,classId,classTitle,
     seen.add(key);
    }
    setItems(combined);setCursor(x.nextBeforeSourceId as string|null);setStatus('ready');
-  }catch(error){
-   console.warn('[S47 source validation]',error instanceof Error?error.message:'unknown');
+  }catch{
    if(request===epoch.current){
     setItems([]);setCursor(null);setTask(null);setStatus('error');
    }
