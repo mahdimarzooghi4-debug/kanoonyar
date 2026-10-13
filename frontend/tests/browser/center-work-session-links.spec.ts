@@ -42,7 +42,7 @@ async function enter(p:import('@playwright/test').Page){
 }
 test('genuine session selected and linked to original work card, read and preparation available',async({page:p})=>{
  const posts:any[]=[];
- await p.route('**/api/v1/centers/*/activity-sources/class-sessions*',r=>r.fulfill({
+ await p.route(/\/activity-sources\/class-sessions(?:\?.*)?$/,r=>r.fulfill({
   status:200,contentType:'application/json',
   body:JSON.stringify({sourceKind:'CLASS_SESSION',records:[sessionSource],nextBeforeSourceId:null})}));
  await p.route('**/api/v1/centers/*/operations/work-cards/*/session-links',r=>{
@@ -83,7 +83,7 @@ test('forged delivery, attendance or publication is rejected without leaking tit
  await expect(panel.getByText('کلاس واقعی — جلسه واقعی آموزشی')).toHaveCount(0);
 });
 test('separate read/write link grants are visibly denied',async({page:p})=>{
- await p.route('**/api/v1/centers/*/activity-sources/class-sessions*',r=>r.fulfill({
+ await p.route(/\/activity-sources\/class-sessions(?:\?.*)?$/,r=>r.fulfill({
   status:200,contentType:'application/json',
   body:JSON.stringify({sourceKind:'CLASS_SESSION',records:[sessionSource],nextBeforeSourceId:null})}));
  await p.route('**/api/v1/centers/*/operations/work-cards/*/session-links',r=>r.fulfill({
