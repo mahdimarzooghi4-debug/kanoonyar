@@ -986,6 +986,31 @@ public sealed class SignedOidcHttpIntegrationTests
         Assert.Equal(HttpStatusCode.Forbidden,rejected.StatusCode);
     }
 
+    [Fact]
+    public async Task Signed_superadmin_cannot_read_or_append_resource_need_without_independent_grants()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var app=fixture.Server();
+        using var client=app.CreateClient();
+        var path="/api/v1/centers/center-a/operations/work-cards/"+Guid.NewGuid()+"/resource-needs";
+        using(var anonymous=Request(HttpMethod.Get,path,null))
+        {
+            using var result=await client.SendAsync(anonymous);
+            Assert.Equal(HttpStatusCode.Unauthorized,result.StatusCode);
+        }
+        using(var role=Request(HttpMethod.Get,path,fixture.Token(roleClaim:true)))
+        {
+            using var result=await client.SendAsync(role);
+            Assert.Equal(HttpStatusCode.Forbidden,result.StatusCode);
+        }
+        using var post=Request(HttpMethod.Post,path+"/revisions",fixture.Token(roleClaim:true));
+        post.Content=JsonContent.Create(new{needId=Guid.NewGuid(),expectedRevision=0,
+         resourceLabel="Needed device",planningDetail="Only planning",
+         desiredBy=(DateTimeOffset?)null});
+        using var denied=await client.SendAsync(post);
+        Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+    }
+
     private sealed class TestSessionClaimWriteGrant : ICenterSessionClaimWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal user,string center,

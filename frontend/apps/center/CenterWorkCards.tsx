@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
+import { CenterWorkResourceNeeds } from './CenterWorkResourceNeeds';
 
 type Plan={draftId:string;revision:number;localTitle:string;programId:string;nationalVersion:number;localActivities:unknown[]};
 type Card={workCardId:string;draftId:string;pinnedPlanRevision:number;revision:number;
@@ -169,6 +170,7 @@ export function CenterWorkCards({centerId,token}:{centerId:string;token:string})
    <p>موعد برنامه‌ریزی UTC: {x.plannedDueAt??'تعیین نشده'}</p>
    <p>طرح اصلی {x.draftId} / نسخه {x.pinnedPlanRevision}</p>
    <button type="button" onClick={()=>edit(x)}>ویرایش کارت برنامه‌ریزی‌شده</button>
+   <CenterWorkResourceNeeds key={centerId+':'+token+':'+x.workCardId} centerId={centerId} token={token} workCardId={x.workCardId}/>
   </li>)}</ul>}
   {cursor!==null&&<button type="button" onClick={()=>void loadCards(cursor)}>کارت‌های بعدی</button>}
   {selected&&<button type="button" onClick={()=>edit(null)}>کارت جدید</button>}
