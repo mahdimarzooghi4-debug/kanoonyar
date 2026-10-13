@@ -360,7 +360,7 @@ END;$deny$;
 CREATE ROLE kanoonyar_campaign_inspection_ci LOGIN NOSUPERUSER NOBYPASSRLS
  NOCREATEDB NOCREATEROLE NOREPLICATION;
 GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_campaign_inspection_ci;
-GRANT USAGE ON SCHEMA campaigns,centers,governance TO kanoonyar_campaign_inspection_ci;
+GRANT USAGE ON SCHEMA campaigns,programs,centers,governance TO kanoonyar_campaign_inspection_ci;
 GRANT EXECUTE ON FUNCTION campaigns.record_campaign_report_inspection(
  text,uuid,uuid,uuid,text,text,uuid,uuid,text) TO kanoonyar_campaign_inspection_ci;
 DO $safe$ BEGIN
