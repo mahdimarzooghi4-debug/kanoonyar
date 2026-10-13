@@ -66,7 +66,7 @@ test('genuine session selected and linked to original work card, read and prepar
  await expect(panel.getByRole('status')).toContainText('برگزاری یا حضور تأیید نشده');
  expect(posts).toEqual([{sessionId:session}]);
  await panel.getByRole('button',{name:'مشاهده جلسات پیوندخورده'}).click();
- await expect(panel.getByText('کلاس واقعی — جلسه واقعی آموزشی')).toBeVisible();
+ await expect(panel.locator('ul li strong').filter({hasText:'کلاس واقعی — جلسه واقعی آموزشی'})).toBeVisible();
  await panel.getByRole('button',{name:'باز کردن دفتر اصلی آماده‌سازی جلسات'}).click();
  await expect(panel.getByRole('heading',{name:'دفتر آماده‌سازی جلسات کلاس'})).toBeVisible();
  await p.getByRole('combobox',{name:'انتخاب کانون برای پیش‌نویس‌ها'}).selectOption('c2');
