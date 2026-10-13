@@ -50,7 +50,7 @@ public sealed class CenterAssembledSitePreviewPostgresTests
  {
   if(!Enabled())return;
   const string center="center-assembled-s37",other="center-assembled-foreign-s37",subject="s37-owner";
-  var first=Guid.NewGuid(),foreign=Guid.NewGuid();
+  var first=Guid.NewGuid();var foreign=Guid.NewGuid();
   await using(var db=new NpgsqlConnection(Admin)){
    await db.OpenAsync();
    await using var insert=new NpgsqlCommand("""
