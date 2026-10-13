@@ -36,6 +36,7 @@
 \ir ../migrations/0036_collaboration_recipient_notes.sql
 \ir ../migrations/0038_center_private_page_templates.sql
 \ir ../migrations/0039_center_work_resource_needs.sql
+\ir ../migrations/0041_private_work_session_links.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -593,3 +594,29 @@ DO $s39$ BEGIN
     'operations.append_work_resource_need(text,uuid,uuid,bigint,text,text,timestamptz,text,uuid,uuid,text)','EXECUTE')
  THEN RAISE EXCEPTION 'Unsafe disposable resource need role'; END IF;
 END;$s39$;
+
+-- S41 disposable role for explicit session-to-card planning links.
+CREATE ROLE kanoonyar_work_session_link_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_work_session_link_ci;
+GRANT USAGE ON SCHEMA operations,learning,centers,governance,programs
+ TO kanoonyar_work_session_link_ci;
+GRANT EXECUTE ON FUNCTION operations.append_work_card_session_link(
+ text,uuid,uuid,text,uuid,uuid,text) TO kanoonyar_work_session_link_ci;
+GRANT SELECT ON operations.work_card_session_links TO kanoonyar_draft_read_ci;
+DO $s41$ BEGIN
+ IF has_table_privilege('kanoonyar_work_session_link_ci',
+  'operations.work_card_session_links','INSERT')
+ OR has_table_privilege('kanoonyar_work_session_link_ci',
+  'operations.work_card_session_links','SELECT')
+ OR has_table_privilege('kanoonyar_work_session_link_ci',
+  'learning.class_sessions','INSERT')
+ OR has_table_privilege('kanoonyar_work_session_link_ci',
+  'governance.command_audit','INSERT')
+ OR pg_has_role('kanoonyar_work_session_link_ci','kanoonyar_work_session_link_owner','SET')
+ OR has_function_privilege('kanoonyar_draft_read_ci',
+  'operations.append_work_card_session_link(text,uuid,uuid,text,uuid,uuid,text)','EXECUTE')
+ OR has_function_privilege('public',
+  'operations.append_work_card_session_link(text,uuid,uuid,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Unsafe disposable work-session-link roles'; END IF;
+END;$s41$;
