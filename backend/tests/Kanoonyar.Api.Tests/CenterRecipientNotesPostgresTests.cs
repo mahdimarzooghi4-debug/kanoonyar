@@ -82,7 +82,7 @@ public sealed class CenterRecipientNotesPostgresTests
   Assert.Equal(403,Status(await Post(first,id,granted:false)));
   Assert.Equal(503,Status(await Post(first,id,config:Config(write:Admin))));
   Assert.Equal(503,Status(await Post(first,id,config:Config(write:Reader))));
-  Assert.Equal(409,Status(await Post(first,another)));
+  Assert.Equal(403,Status(await Post(first,another)));
   Assert.Equal(200,Status(await Post(first,id)));
   Assert.Equal(409,Status(await Post(first,id)));
   var all=new List<Guid>{first};
@@ -91,7 +91,7 @@ public sealed class CenterRecipientNotesPostgresTests
    var note=Guid.NewGuid();all.Add(note);
    Assert.Equal(200,Status(await Post(note,id,content:"Private recipient note "+n)));
   }
-  Assert.Equal(403,Status(await List(id,subject:"s36-sender",center:a)));
+  Assert.Equal(404,Status(await List(id,subject:"s36-sender",center:a)));
   Assert.Equal(403,Status(await List(id,subject:"s36-revoked")));
   Assert.Equal(403,Status(await List(id,subject:"s36-third-actor",center:b)));
   Assert.Equal(403,Status(await List(id,incoming:false)));

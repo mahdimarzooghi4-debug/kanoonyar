@@ -62,7 +62,7 @@ BEGIN
  END IF;
  IF NOT EXISTS(SELECT 1 FROM collaboration.center_proposals p
    WHERE p.proposal_id=p_proposal AND p.target_center_id=p_target) THEN
-  RAISE EXCEPTION 'Not explicitly directed to this recipient' USING ERRCODE='23503';
+  RAISE EXCEPTION 'Recipient proposal scope absent' USING ERRCODE='42501';
  END IF;
  INSERT INTO collaboration.recipient_private_notes
   (note_id,proposal_id,target_center_id,note_text,recorded_by_subject)

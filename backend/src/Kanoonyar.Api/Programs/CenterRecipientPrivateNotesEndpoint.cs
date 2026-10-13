@@ -75,6 +75,9 @@ public static class CenterRecipientPrivateNotesEndpoint
   catch(PostgresException e) when(e.SqlState=="42501"&&
     e.MessageText=="Recipient center membership or scope absent")
    {return Results.Problem(statusCode:403,title:"Live recipient membership required");}
+  catch(PostgresException e) when(e.SqlState=="42501"&&
+    e.MessageText=="Recipient proposal scope absent")
+   {return Results.Problem(statusCode:403,title:"Proposal is not addressed to requesting recipient");}
   catch(PostgresException e) when(e.SqlState=="42501")
    {return Results.Problem(statusCode:503,title:"Recipient note SQL access unavailable");}
   catch(PostgresException e) when(e.SqlState=="22023")
