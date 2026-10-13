@@ -7,7 +7,7 @@ type Link={sessionId:string;classId:string;sessionTitle:string;classTitle:string
  isPublished:false;isExecuted:false;isAttendanceVerified:false;isDeliveryVerified:false};
 type State='idle'|'loading'|'ready'|'denied'|'error';
 type Write='idle'|'saving'|'saved'|'denied'|'conflict'|'error';
-const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const date=(v:unknown):v is string=>typeof v==='string'&&!Number.isNaN(Date.parse(v));
 const flags=(v:Record<string,unknown>)=>v.visibility==='PRIVATE_PLANNING'&&
  v.isPublished===false&&v.isExecuted===false&&
