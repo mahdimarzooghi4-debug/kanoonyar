@@ -48,8 +48,16 @@ export function CenterScopedSessionWorkspace({centerId,token,classId,classTitle,
    if(x.sourceKind!=='CLASS_SESSION'||x.classId!==classId||
     x.classTitle!==classTitle||!Array.isArray(x.records)||x.records.length>20||
     !x.records.every(v=>valid(v,classId,classTitle))||
-    !(x.nextBeforeSourceId===null||id(x.nextBeforeSourceId)))
+    !(x.nextBeforeSourceId===null||id(x.nextBeforeSourceId))){
+     console.warn('[S47 scope]',JSON.stringify({
+      responseKind:x.sourceKind,receivedClass:x.classId,expectedClass:classId,
+      receivedTitle:x.classTitle,expectedTitle:classTitle,
+      rowCount:Array.isArray(x.records)?x.records.length:-1,
+      invalidIndices:Array.isArray(x.records)?x.records.map((v,i)=>valid(v,classId,classTitle)?-1:i).filter(i=>i>=0):[],
+      next:x.nextBeforeSourceId,nextValid:x.nextBeforeSourceId===null||id(x.nextBeforeSourceId)
+     }));
      throw Error('Class scope mismatch');
+    }
    const rows=x.records as Session[];
    if(rows.some((v,i)=>(before!==null&&v.sourceId.toLowerCase()>=before.toLowerCase())||
     (i>0&&rows[i-1].sourceId.toLowerCase()<=v.sourceId.toLowerCase()))||
