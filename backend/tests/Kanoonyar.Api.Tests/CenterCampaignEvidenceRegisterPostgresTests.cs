@@ -143,7 +143,7 @@ public sealed class CenterCampaignEvidenceRegisterPostgresTests
    for(var i=1;i<=22;i++){
     var extraSession=Guid.NewGuid();var extraReport=Guid.NewGuid();
     var extraAssociation=Guid.NewGuid();
-    await using var q=new NpgsqlCommand(
+    await using var fixtureCommand=new NpgsqlCommand(
      """
      INSERT INTO learning.class_sessions(center_id,session_id,class_id,session_title)
      VALUES('center-a',@session,@class,'Additional planned session');
@@ -155,16 +155,16 @@ public sealed class CenterCampaignEvidenceRegisterPostgresTests
       campaign_revision,draft_id,pinned_plan_revision,activity_key,report_id,linked_by_subject)
      VALUES('center-a',@association,@campaign,1,@plan,1,'workshop',@report,'actor-a');
      """,db);
-    q.Parameters.AddWithValue("session",extraSession);
-    q.Parameters.AddWithValue("class",classId);
-    q.Parameters.AddWithValue("report",extraReport);
-    q.Parameters.AddWithValue("link",link);
-    q.Parameters.AddWithValue("plan",plan);
-    q.Parameters.AddWithValue("audit",Guid.NewGuid());
-    q.Parameters.AddWithValue("event",Guid.NewGuid());
-    q.Parameters.AddWithValue("association",extraAssociation);
-    q.Parameters.AddWithValue("campaign",campaign);
-    await q.ExecuteNonQueryAsync();
+    fixtureCommand.Parameters.AddWithValue("session",extraSession);
+    fixtureCommand.Parameters.AddWithValue("class",classId);
+    fixtureCommand.Parameters.AddWithValue("report",extraReport);
+    fixtureCommand.Parameters.AddWithValue("link",link);
+    fixtureCommand.Parameters.AddWithValue("plan",plan);
+    fixtureCommand.Parameters.AddWithValue("audit",Guid.NewGuid());
+    fixtureCommand.Parameters.AddWithValue("event",Guid.NewGuid());
+    fixtureCommand.Parameters.AddWithValue("association",extraAssociation);
+    fixtureCommand.Parameters.AddWithValue("campaign",campaign);
+    await fixtureCommand.ExecuteNonQueryAsync();
    }
    var originalEvent=Guid.NewGuid();var eventReport=Guid.NewGuid();var eventAssociation=Guid.NewGuid();
    await using var eventCmd=new NpgsqlCommand(
