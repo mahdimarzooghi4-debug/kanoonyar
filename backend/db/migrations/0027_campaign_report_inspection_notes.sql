@@ -1,5 +1,9 @@
 -- Sprint 25: reviewer inspection notes are observations, NEVER verification/approval.
 BEGIN;
+-- Enforce the association's campaign owner relationally, even against a privileged direct insert.
+ALTER TABLE campaigns.campaign_report_links
+ ADD CONSTRAINT campaign_report_link_exact_campaign_unique
+ UNIQUE(center_id,association_id,campaign_id);
 CREATE TABLE campaigns.campaign_report_inspection_notes (
  center_id text NOT NULL,
  note_id uuid NOT NULL,
@@ -9,8 +13,8 @@ CREATE TABLE campaigns.campaign_report_inspection_notes (
  noted_by_subject text NOT NULL CHECK(length(btrim(noted_by_subject))>0),
  noted_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
  PRIMARY KEY(center_id,note_id),
- FOREIGN KEY(center_id,association_id) REFERENCES campaigns.campaign_report_links(center_id,association_id) ON DELETE RESTRICT,
- FOREIGN KEY(center_id,campaign_id) REFERENCES campaigns.center_campaigns(center_id,campaign_id) ON DELETE RESTRICT
+ FOREIGN KEY(center_id,association_id,campaign_id)
+ REFERENCES campaigns.campaign_report_links(center_id,association_id,campaign_id) ON DELETE RESTRICT
 );
 CREATE INDEX campaign_report_inspection_history ON campaigns.campaign_report_inspection_notes
  (center_id,campaign_id,association_id,note_id DESC);

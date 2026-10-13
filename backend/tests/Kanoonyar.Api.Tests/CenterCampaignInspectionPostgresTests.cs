@@ -190,5 +190,33 @@ public sealed class CenterCampaignInspectionPostgresTests
   Assert.True(await reader.ReadAsync());
   for(var i=0;i<5;i++)Assert.Equal(1L,reader.GetInt64(i));
   Assert.Equal(0L,reader.GetInt64(5));
+  await reader.DisposeAsync();
+  // Direct privileged bypass still cannot assign an association to another campaign.
+  var wrongCampaign=Guid.NewGuid();
+  await using(var createWrong=new NpgsqlCommand(
+   """
+   INSERT INTO campaigns.center_campaigns(
+     center_id,campaign_id,slug,draft_id,pinned_plan_revision,created_by_subject)
+   VALUES('center-a',@campaign,@slug,@plan,1,'actor-a')
+   """,db))
+  {
+   createWrong.Parameters.AddWithValue("campaign",wrongCampaign);
+   createWrong.Parameters.AddWithValue("slug","s25-wrong-"+Guid.NewGuid().ToString("N"));
+   createWrong.Parameters.AddWithValue("plan",plan);
+   await createWrong.ExecuteNonQueryAsync();
+  }
+  await using(var forged=new NpgsqlCommand(
+   """
+   INSERT INTO campaigns.campaign_report_inspection_notes(
+     center_id,note_id,campaign_id,association_id,note_text,noted_by_subject)
+   VALUES('center-a',@note,@wrong,@association,'Forgery','actor-a')
+   """,db))
+  {
+   forged.Parameters.AddWithValue("note",Guid.NewGuid());
+   forged.Parameters.AddWithValue("wrong",wrongCampaign);
+   forged.Parameters.AddWithValue("association",association);
+   var ex=await Assert.ThrowsAsync<PostgresException>(async()=>await forged.ExecuteNonQueryAsync());
+   Assert.Equal("23503",ex.SqlState);
+  }
  }
 }
