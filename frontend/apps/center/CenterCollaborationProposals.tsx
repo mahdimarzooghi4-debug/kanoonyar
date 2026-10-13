@@ -83,7 +83,19 @@ export function CenterCollaborationProposals({centerId,token}:{
     x.isExecuted!==false||!Array.isArray(x.proposals)||x.proposals.length>20||
     !x.proposals.every(p=>proposal(p,centerId,direction))||
     !(x.nextBeforeProposalId===null||(typeof x.nextBeforeProposalId==='string'&&
-    uuid.test(x.nextBeforeProposalId))))throw Error('Forged collaboration');
+    uuid.test(x.nextBeforeProposalId))))throw Error('Forged collaboration '+JSON.stringify({
+    selectedCenter:centerId,requestedDirection:direction,directionMatches:x.direction===direction,
+    visibilityMatches:x.visibility==='EXPLICIT_TARGET_ONLY',
+    reviewMatches:x.reviewStatus==='PROPOSED_UNREVIEWED',acceptanceFlag:x.isAccepted===false,
+    executionFlag:x.isExecuted===false,rows:Array.isArray(x.proposals)?x.proposals.map(z=>
+      ({valid:proposal(z,centerId,direction),idValid:!!z&&typeof z.proposalId==='string'&&uuid.test(z.proposalId),
+        scopeValid:!!z&&(direction==='INCOMING'?z.targetCenterId===centerId:z.sourceCenterId===centerId),
+        titleValid:!!z&&typeof z.title==='string'&&z.title.trim().length>0,
+        summaryValid:!!z&&typeof z.summary==='string'&&z.summary.trim().length>0,
+        timeValid:!!z&&typeof z.recordedAt==='string'&&!Number.isNaN(Date.parse(z.recordedAt)),
+        statusValid:!!z&&z.reviewStatus==='PROPOSED_UNREVIEWED'&&z.isAccepted===false&&z.isExecuted===false})):'none',
+    cursorValid:x.nextBeforeProposalId===null||(typeof x.nextBeforeProposalId==='string'&&uuid.test(x.nextBeforeProposalId))
+   }));
    const records=x.proposals as Proposal[];
    if(records.some((r,i)=>(before!==null&&r.proposalId.toLowerCase()>=before.toLowerCase())||
     (i>0&&records[i-1].proposalId.toLowerCase()<=r.proposalId.toLowerCase()))||
