@@ -37,14 +37,14 @@ test('loads source owner rows, honest statuses and ordered keyset page',async({p
  });
  await enter(p);
  await p.getByRole('button',{name:'خواندن تقویم خصوصی'}).click();
- await expect(p.getByText('جلسه کلاس 1')).toBeVisible();
+ await expect(p.getByText('جلسه کلاس 1',{exact:true})).toBeVisible();
  await expect(p.getByText('جلسه کلاس 20')).toBeVisible();
  await p.getByRole('button',{name:'ادامه تقویم خصوصی'}).click();
  await expect(p.getByText('جلسه کلاس 22')).toBeVisible();
  expect(urls).toHaveLength(2);
  expect(urls[1]).toContain('beforeKind=CLASS_SESSION');
  await p.getByRole('combobox',{name:'انتخاب کانون برای پیش‌نویس‌ها'}).selectOption('c2');
- await expect(p.getByText('جلسه کلاس 1')).toHaveCount(0);
+ await expect(p.getByText('جلسه کلاس 1',{exact:true})).toHaveCount(0);
 });
 test('forged published or executed source cannot enter calendar',async({page:p})=>{
  await p.route('**/api/v1/centers/*/schedule/private?*',r=>r.fulfill({
@@ -53,7 +53,7 @@ test('forged published or executed source cannot enter calendar',async({page:p})
  await enter(p);
  await p.getByRole('button',{name:'خواندن تقویم خصوصی'}).click();
  await expect(p.getByRole('alert')).toContainText('دریافت یا اعتبارسنجی تقویم خصوصی ممکن نشد.');
- await expect(p.getByText('جلسه کلاس 1')).toHaveCount(0);
+ await expect(p.getByText('جلسه کلاس 1',{exact:true})).toHaveCount(0);
 });
 test('revoked independent grant exposes no calendar data',async({page:p})=>{
  await p.route('**/api/v1/centers/*/schedule/private?*',r=>r.fulfill({

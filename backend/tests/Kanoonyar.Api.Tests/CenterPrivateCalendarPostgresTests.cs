@@ -28,8 +28,8 @@ public sealed class CenterPrivateCalendarPostgresTests
  private static int? Status(IResult r)=>(r as IStatusCodeHttpResult)?.StatusCode;
  private static JsonDocument Json(IResult r)=>JsonDocument.Parse(JsonSerializer.Serialize(
   Assert.IsAssignableFrom<IValueHttpResult>(r).Value,new JsonSerializerOptions(JsonSerializerDefaults.Web)));
- private static readonly DateTimeOffset Start=DateTimeOffset.Parse("2026-11-01T00:00:00Z");
- private static readonly DateTimeOffset End=DateTimeOffset.Parse("2026-12-01T00:00:00Z");
+ private static readonly DateTimeOffset Start=DateTimeOffset.Parse("2041-11-01T00:00:00Z");
+ private static readonly DateTimeOffset End=DateTimeOffset.Parse("2041-12-01T00:00:00Z");
  [Fact] public async Task Private_schedule_uses_actual_owners_latest_event_revision_and_real_keyset()
  {
   if(!Enabled())return;
@@ -50,7 +50,7 @@ public sealed class CenterPrivateCalendarPostgresTests
     INSERT INTO events.center_event_plan_revisions(center_id,event_id,revision,
      title,purpose,location_description,scheduled_at,changed_by_subject)
     VALUES('center-a',@event,1,'OLD DATE','plan','room','2026-10-04T10:00:00Z','actor-a'),
-          ('center-a',@event,2,'LATEST EVENT','plan','room','2026-11-14T10:00:00Z','actor-a');
+          ('center-a',@event,2,'LATEST EVENT','plan','room','2041-11-14T10:00:00Z','actor-a');
     """,db);
    q.Parameters.AddWithValue("draft",draftId);q.Parameters.AddWithValue("class",classId);
    q.Parameters.AddWithValue("event",eventId);await q.ExecuteNonQueryAsync();
@@ -61,7 +61,7 @@ public sealed class CenterPrivateCalendarPostgresTests
      """,db);
     item.Parameters.AddWithValue("id",Guid.NewGuid());item.Parameters.AddWithValue("class",classId);
     item.Parameters.AddWithValue("title","Original session "+i);
-    item.Parameters.AddWithValue("scheduled",new DateTime(2026,11,i,10,0,0,DateTimeKind.Utc));
+    item.Parameters.AddWithValue("scheduled",new DateTime(2041,11,i,10,0,0,DateTimeKind.Utc));
     await item.ExecuteNonQueryAsync();
    }
    await using var unknown=new NpgsqlCommand("""
@@ -114,7 +114,7 @@ public sealed class CenterPrivateCalendarPostgresTests
   }
   var aroundEvent=await CenterPrivateCalendarEndpoint.Get(Actor("actor-a"),Config(),
    new Events(true),new Classes(true),"center-a",
-   DateTimeOffset.Parse("2026-11-14T00:00:00Z"),DateTimeOffset.Parse("2026-11-15T00:00:00Z"),
+   DateTimeOffset.Parse("2041-11-14T00:00:00Z"),DateTimeOffset.Parse("2041-11-15T00:00:00Z"),
    null,null,null,default);
   Assert.Equal(200,Status(aroundEvent));
   using(var j=Json(aroundEvent)){
