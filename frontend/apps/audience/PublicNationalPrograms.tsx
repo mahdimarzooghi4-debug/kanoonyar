@@ -8,13 +8,15 @@ type PublicProgram = {
   mandatoryRequirements: string[];
 };
 type State = { phase: 'loading' | 'ready' | 'error'; rows: PublicProgram[] };
+type Cursor = { afterProgramId: string; afterVersion: number };
+type PublishedPage = { rows: PublicProgram[]; nextCursor: Cursor | null };
 const ENDPOINT = '/api/v1/programs/published';
 
 /** The *published-only* S04 response is the sole acceptable audience source.
  * It contains no class enrolments, local center drafts or actor/member metadata.
  * Never render arbitrary unknown response keys or inferred participation.
  */
-function parsePublishedResponse(value: unknown): PublicProgram[] | null {
+function parsePublishedResponse(value: unknown): PublishedPage | null {
   if (!value || typeof value !== 'object' || !('programs' in value)) return null;
   const rows = (value as { programs: unknown }).programs;
   if (!Array.isArray(rows) || rows.length > 500) return null;
@@ -39,7 +41,21 @@ function parsePublishedResponse(value: unknown): PublicProgram[] | null {
       mandatoryRequirements: [...p.mandatoryRequirements] as string[],
     });
   }
-  return out;
+  const next = (value as Record<string, unknown>).nextCursor;
+  if (next === undefined && out.length === 500) return null; // Old truncated sources are unsafe.
+  if (next !== null && next !== undefined) {
+    if (!next || typeof next !== 'object') return null;
+    const c = next as Record<string, unknown>;
+    if (typeof c.afterProgramId !== 'string' || !c.afterProgramId.trim() ||
+        c.afterProgramId.length > 256 ||
+        typeof c.afterVersion !== 'number' || !Number.isSafeInteger(c.afterVersion) ||
+        c.afterVersion <= 0 || out.length !== 500) return null;
+    const last = out[out.length - 1];
+    if (last.programId !== c.afterProgramId || last.version !== c.afterVersion) return null;
+    return { rows: out, nextCursor: { afterProgramId: c.afterProgramId,
+      afterVersion: c.afterVersion } };
+  }
+  return { rows: out, nextCursor: null };
 }
 
 function NationalVersion({ version, suffix }: { version: PublicProgram; suffix: string }) {
@@ -69,14 +85,37 @@ export function PublicNationalPrograms() {
     setPrevious(null);
     const fetchPublished = async () => {
       try {
-        const response = await fetch(ENDPOINT, {
-          method: 'GET', cache: 'no-store', credentials: 'omit',
-          headers: { Accept: 'application/json' }, signal: controller.signal,
-        });
-        if (!response.ok) throw new Error('Published source unavailable');
-        const value: unknown = await response.json();
-        const rows = parsePublishedResponse(value);
-        if (!rows) throw new Error('Untrusted published source');
+        const rows: PublicProgram[] = [];
+        const unique = new Set<string>();
+        const usedCursors = new Set<string>();
+        let cursor: Cursor | null = null;
+        do {
+          const url = cursor ? ENDPOINT + '?' + new URLSearchParams({
+            afterProgramId: cursor.afterProgramId,
+            afterVersion: String(cursor.afterVersion),
+          }) : ENDPOINT;
+          const response = await fetch(url, {
+            method: 'GET', cache: 'no-store', credentials: 'omit',
+            headers: { Accept: 'application/json' }, signal: controller.signal,
+          });
+          if (!response.ok) throw new Error('Published source unavailable');
+          const value: unknown = await response.json();
+          const page = parsePublishedResponse(value);
+          if (!page || (cursor && page.rows.length === 0))
+            throw new Error('Invalid published page');
+          for (const item of page.rows) {
+            const key = JSON.stringify([item.programId, item.version]);
+            if (unique.has(key)) throw new Error('Duplicate published page source');
+            unique.add(key);
+            rows.push(item);
+          }
+          cursor = page.nextCursor;
+          if (cursor) {
+            const key = JSON.stringify([cursor.afterProgramId, cursor.afterVersion]);
+            if (usedCursors.has(key)) throw new Error('Repeated published cursor');
+            usedCursors.add(key);
+          }
+        } while (cursor && !controller.signal.aborted);
         if (!controller.signal.aborted) setState({ phase: 'ready', rows });
       } catch {
         if (!controller.signal.aborted) {
