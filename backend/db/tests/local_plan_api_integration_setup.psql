@@ -37,6 +37,7 @@
 \ir ../migrations/0038_center_private_page_templates.sql
 \ir ../migrations/0039_center_work_resource_needs.sql
 \ir ../migrations/0041_private_work_session_links.sql
+\ir ../migrations/0042_permission_change_review_intents.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
