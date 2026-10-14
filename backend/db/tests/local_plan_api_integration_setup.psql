@@ -30,6 +30,7 @@
 \ir ../migrations/0028_campaign_inspection_followup.sql
 \ir ../migrations/0029_center_event_private_planning.sql
 \ir ../migrations/0032_center_site_navigation_drafts.sql
+\ir ../migrations/0033_center_private_work_cards.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -438,3 +439,26 @@ DO $nav_security$ BEGIN
     'web.append_center_site_navigation(text,bigint,uuid[],bigint[],text,uuid,uuid,text)','EXECUTE')
  THEN RAISE EXCEPTION 'Unsafe site navigation disposable SQL role'; END IF;
 END;$nav_security$;
+
+-- Sprint 33: synthetic EXECUTE-only SQL fixture; not a Production grant.
+CREATE ROLE kanoonyar_work_card_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_work_card_api_ci;
+GRANT USAGE ON SCHEMA operations,programs,centers,governance TO kanoonyar_work_card_api_ci;
+GRANT EXECUTE ON FUNCTION operations.append_center_work_card(
+ text,uuid,bigint,uuid,bigint,text,text,timestamptz,text,uuid,uuid,text)
+ TO kanoonyar_work_card_api_ci;
+GRANT USAGE ON SCHEMA operations TO kanoonyar_draft_read_ci;
+GRANT SELECT ON operations.center_work_cards,operations.center_work_card_revisions
+ TO kanoonyar_draft_read_ci;
+DO $task_guard$ BEGIN
+ IF has_table_privilege('kanoonyar_work_card_api_ci','operations.center_work_cards','INSERT')
+  OR has_table_privilege('kanoonyar_work_card_api_ci','operations.center_work_card_revisions','INSERT')
+  OR has_table_privilege('kanoonyar_work_card_api_ci','governance.command_audit','INSERT')
+  OR pg_has_role('kanoonyar_work_card_api_ci','kanoonyar_work_card_owner','SET')
+  OR has_function_privilege('kanoonyar_draft_read_ci',
+    'operations.append_center_work_card(text,uuid,bigint,uuid,bigint,text,text,timestamptz,text,uuid,uuid,text)','EXECUTE')
+  OR has_function_privilege('public',
+    'operations.append_center_work_card(text,uuid,bigint,uuid,bigint,text,text,timestamptz,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Unsafe work-card SQL principal'; END IF;
+END;$task_guard$;
