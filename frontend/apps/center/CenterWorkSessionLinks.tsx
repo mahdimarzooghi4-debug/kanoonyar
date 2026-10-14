@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import { CenterSessionPreparations } from './CenterSessionPreparations';
+import { CenterLinkedSessionReportHandoff } from './CenterLinkedSessionReportHandoff';
 
 type Session={sourceId:string;classId:string;title:string;classTitle:string;scheduledAt:string|null};
 type Link={sessionId:string;classId:string;sessionTitle:string;classTitle:string;
@@ -29,8 +30,9 @@ function link(v:unknown):v is Link{
  (x.scheduledAt===null||date(x.scheduledAt))&&
  date(x.recordedAt)&&flags(x);
 }
-export function CenterWorkSessionLinks({centerId,workCardId,token}:{
- centerId:string;workCardId:string;token:string
+export function CenterWorkSessionLinks({centerId,workCardId,token,draftId,pinnedRevision,programId,nationalVersion}:{
+ centerId:string;workCardId:string;token:string;draftId:string;
+ pinnedRevision:number;programId:string;nationalVersion:number
 }){
  const epoch=useRef(0),root='/api/v1/centers/'+encodeURIComponent(centerId);
  const headers={Authorization:'Bearer '+token.trim()};
@@ -141,6 +143,10 @@ export function CenterWorkSessionLinks({centerId,workCardId,token}:{
    <strong>{s.classTitle} — {s.sessionTitle}</strong>
    <p>شناسه جلسه: {s.sessionId}؛ زمان اصلی: {s.scheduledAt??'نامشخص'}</p>
    <p>برگزاری و حضور: نامشخص</p>
+   <CenterLinkedSessionReportHandoff key={centerId+':'+token+':'+s.sessionId}
+    centerId={centerId} token={token} draftId={draftId} workCardId={workCardId}
+    sessionId={s.sessionId} pinnedRevision={pinnedRevision}
+    programId={programId} nationalVersion={nationalVersion}/>
   </li>)}</ul>}
   {cursor&&<button type="button" onClick={()=>void list(cursor)}>جلسات پیوندخورده بیشتر</button>}
   {state==='ready'&&links.length>0&&<button type="button" onClick={()=>setOpenPrep(v=>!v)}>
