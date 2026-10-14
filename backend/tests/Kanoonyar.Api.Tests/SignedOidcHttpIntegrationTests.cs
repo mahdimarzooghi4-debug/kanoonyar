@@ -940,6 +940,23 @@ public sealed class SignedOidcHttpIntegrationTests
         Assert.Equal(HttpStatusCode.Forbidden,rejected.StatusCode);
     }
 
+    [Fact]
+    public async Task Signed_superadmin_without_all_three_site_read_rights_cannot_see_assembled_preview()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var app=fixture.Server();
+        using var client=app.CreateClient();
+        var path="/api/v1/centers/center-a/site/assembled-preview";
+        using(var anonymous=Request(HttpMethod.Get,path,null))
+        {
+            using var response=await client.SendAsync(anonymous);
+            Assert.Equal(HttpStatusCode.Unauthorized,response.StatusCode);
+        }
+        using var elevated=Request(HttpMethod.Get,path,fixture.Token(roleClaim:true));
+        using var denied=await client.SendAsync(elevated);
+        Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+    }
+
     private sealed class TestSessionClaimWriteGrant : ICenterSessionClaimWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal user,string center,

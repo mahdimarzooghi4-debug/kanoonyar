@@ -48,12 +48,12 @@ test('source-first dossier uses true cursor and never claims execution',async({p
  });
  await enter(p);
  await p.getByRole('button',{name:'خواندن گزارش‌های واقعی این رویداد'}).click();
- expect(paths).toHaveLength(1);
+ await expect.poll(()=>paths.length).toBe(1);
  await expect(p.getByText('ادعای گزارش 22 — UNVERIFIED')).toBeVisible();
  await expect(p.getByText('ادعای گزارش 3 — UNVERIFIED')).toBeVisible();
  await p.getByRole('button',{name:'گزارش‌های قدیمی‌تر این رویداد'}).click();
  await expect(p.getByText('ادعای گزارش 1 — UNVERIFIED')).toBeVisible();
- expect(paths).toHaveLength(2);
+ await expect.poll(()=>paths.length).toBe(2);
  expect(paths[1]).toContain('beforeSequence=3');
  await expect(p.getByText('بدون تأیید گزارش، برگزاری یا مشارکت').first()).toBeVisible();
  await p.getByRole('combobox',{name:'انتخاب کانون برای پیش‌نویس‌ها'}).selectOption('c2');
