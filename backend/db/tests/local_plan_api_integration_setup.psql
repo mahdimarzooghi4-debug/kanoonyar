@@ -31,6 +31,7 @@
 \ir ../migrations/0029_center_event_private_planning.sql
 \ir ../migrations/0032_center_site_navigation_drafts.sql
 \ir ../migrations/0033_center_private_work_cards.sql
+\ir ../migrations/0034_center_private_collaboration_proposals.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -462,3 +463,31 @@ DO $task_guard$ BEGIN
     'operations.append_center_work_card(text,uuid,bigint,uuid,bigint,text,text,timestamptz,text,uuid,uuid,text)','EXECUTE')
  THEN RAISE EXCEPTION 'Unsafe work-card SQL principal'; END IF;
 END;$task_guard$;
+
+-- Synthetic CI-only collaboration command login; no real operational grant.
+CREATE ROLE kanoonyar_collaboration_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_collaboration_api_ci;
+GRANT USAGE ON SCHEMA collaboration,programs,centers,governance
+ TO kanoonyar_collaboration_api_ci;
+GRANT EXECUTE ON FUNCTION collaboration.record_center_proposal(
+ uuid,text,text,text,text,text,uuid,uuid,text) TO kanoonyar_collaboration_api_ci;
+GRANT USAGE ON SCHEMA collaboration TO kanoonyar_draft_read_ci;
+GRANT SELECT(proposal_id,source_center_id,target_center_id,title,summary,recorded_at)
+ ON collaboration.center_proposals TO kanoonyar_draft_read_ci;
+DO $collaboration_guard$ BEGIN
+ IF has_table_privilege('kanoonyar_collaboration_api_ci',
+  'collaboration.center_proposals','INSERT')
+ OR has_table_privilege('kanoonyar_collaboration_api_ci',
+  'collaboration.center_proposals','SELECT')
+ OR has_table_privilege('kanoonyar_collaboration_api_ci',
+  'governance.command_audit','INSERT')
+ OR pg_has_role('kanoonyar_collaboration_api_ci','kanoonyar_collaboration_owner','SET')
+ OR has_column_privilege('kanoonyar_draft_read_ci',
+  'collaboration.center_proposals','created_by_subject','SELECT')
+ OR has_function_privilege('kanoonyar_draft_read_ci',
+  'collaboration.record_center_proposal(uuid,text,text,text,text,text,uuid,uuid,text)','EXECUTE')
+ OR has_function_privilege('public',
+  'collaboration.record_center_proposal(uuid,text,text,text,text,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Unsafe synthetic cross-center collaboration SQL role'; END IF;
+END;$collaboration_guard$;
