@@ -110,7 +110,7 @@ export function PublicNationalPrograms() {
   const selected = groups.find(g => g.id === opened);
   const prior = selected?.versions.find(v => v.version === previous) ?? null;
 
-  return <main dir="rtl" aria-label="کاوش برنامه‌های ملی منتشرشده"
+  return <section dir="rtl" aria-label="کاوش برنامه‌های ملی منتشرشده"
     style={{ maxWidth: 960, margin: '1rem auto', padding: 16, fontFamily: 'Tahoma,Arial,sans-serif' }}>
     <h2>برنامه‌های ملی قابل مشاهده برای عموم</h2>
     <p>این صفحه فقط نسخه‌هایی را نشان می‌دهد که در منبع رسمی سامانه منتشر شده‌اند.
@@ -159,5 +159,5 @@ export function PublicNationalPrograms() {
       </section>}
     <p>خدمات ثبت‌نام، حساب شخصی و پیگیری مخاطب هنوز فعال نشده‌اند؛
       هیچ درخواست ثبت‌نامی از این صفحه ارسال نمی‌شود.</p>
-  </main>;
+  </section>;
 }
