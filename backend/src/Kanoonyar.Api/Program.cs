@@ -177,6 +177,10 @@ else
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/activity-sources/{sourceKind}", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/classes/catalogue", () =>
+        Results.Problem(statusCode: 503, title: "OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/classes/{classId:guid}/source-sessions", () =>
+        Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/local-plan-drafts/revisions", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/classes", () =>
