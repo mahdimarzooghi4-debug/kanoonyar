@@ -32,6 +32,7 @@ if (oidcConfigured)
     app.UseAuthorization();
     app.MapGet("/api/v1/identity/me", AuthenticatedSubjectEndpoint.GetSubject).RequireAuthorization();
     app.MapGet("/api/v1/identity/center-memberships", CenterMembershipEndpoint.GetMine).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links/{associationId:guid}/review-workspace", CenterCampaignReviewWorkspaceEndpoint.Get).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links/{associationId:guid}/inspection-notes/{noteId:guid}/followups", CenterCampaignFollowupEndpoint.Append).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links/{associationId:guid}/inspection-notes/{noteId:guid}/followups", CenterCampaignFollowupEndpoint.List).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links/{associationId:guid}/inspection-notes", CenterCampaignInspectionNotesEndpoint.Append).RequireAuthorization();
@@ -76,6 +77,7 @@ else
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapGet("/api/v1/identity/center-memberships", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links/{associationId:guid}/review-workspace", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links/{associationId:guid}/inspection-notes/{noteId:guid}/followups", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links/{associationId:guid}/inspection-notes/{noteId:guid}/followups", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links/{associationId:guid}/inspection-notes", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
