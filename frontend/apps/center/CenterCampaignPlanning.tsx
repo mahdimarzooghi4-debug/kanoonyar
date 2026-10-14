@@ -1,6 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {CenterCampaignEvidenceRegister} from './CenterCampaignEvidenceRegister';
 import { CenterCampaignSourceReports } from './CenterCampaignSourceReports';
+import { CenterLocalPlanWorkspace } from './CenterLocalPlanWorkspace';
 
 type Activity={activityKey:string;title:string};
 type LocalPlan={draftId:string;revision:number;localTitle:string;programId:string;nationalVersion:number};
@@ -79,6 +80,7 @@ export function CenterCampaignPlanning({centerId,token}:{centerId:string;token:s
  const [save,setSave]=useState<Save>('idle');
  const [history,setHistory]=useState<Revision[]>([]),[historyState,setHistoryState]=useState<State>('idle');
  const [historyCursor,setHistoryCursor]=useState<number|null>(null);
+ const [openedPlanWorkspace,setOpenedPlanWorkspace]=useState(false);
  const prefix='/api/v1/centers/'+encodeURIComponent(centerId);
  const headers={Authorization:'Bearer '+token.trim()};
  useEffect(()=>{
@@ -86,10 +88,11 @@ export function CenterCampaignPlanning({centerId,token}:{centerId:string;token:s
   setCursor(null);setSelected(null);setPlanId('');setSlug('');setTitle('');setGoal('');
   setAudience('');setActivities([{activityKey:'step_one',title:''}]);setSave('idle');
   setHistory([]);setHistoryState('idle');setHistoryCursor(null);
+  setOpenedPlanWorkspace(false);
   return()=>{epoch.current++};
  },[centerId,token]);
  function edit(c:Campaign|null){
-  epoch.current++;setSelected(c);setPlanId(c?c.draftId+':'+c.pinnedPlanRevision:'');
+  epoch.current++;setOpenedPlanWorkspace(false);setSelected(c);setPlanId(c?c.draftId+':'+c.pinnedPlanRevision:'');
   setSlug(c?.slug??'');setTitle(c?.title??'');setGoal(c?.goalText??'');
   setAudience(c?.audienceDescription??'');
   setActivities(c?c.plannedActivities.map(a=>({...a})):[{activityKey:'step_one',title:''}]);
@@ -111,7 +114,7 @@ export function CenterCampaignPlanning({centerId,token}:{centerId:string;token:s
  async function loadList(before:string|null){
   if(!centerId||!token.trim()||listState==='loading')return;
   const id=++epoch.current;setListState('loading');
-  if(before===null){setCampaigns([]);setCursor(null);setSelected(null);setSave('idle');setHistory([]);}
+  if(before===null){setOpenedPlanWorkspace(false);setCampaigns([]);setCursor(null);setSelected(null);setSave('idle');setHistory([]);}
   try{
    const resp=await fetch(prefix+'/campaigns/drafts'+
     (before?'?beforeCampaignId='+encodeURIComponent(before):''),{headers,cache:'no-store'});
@@ -243,6 +246,15 @@ export function CenterCampaignPlanning({centerId,token}:{centerId:string;token:s
    {save==='denied'&&<p role="alert">مجوز مستقل ویرایش پویش تأیید نشده است.</p>}
    {save==='conflict'&&<p role="alert">طرح مبنا، نشانی یا نسخه پویش تعارض دارد؛ دوباره بررسی کنید.</p>}
    {save==='error'&&<p role="alert">ثبت پویش تأیید نشد.</p>}
+   {selected&&<>
+    <button type="button" onClick={()=>setOpenedPlanWorkspace(v=>!v)}>
+     {openedPlanWorkspace?'بستن میزکار منابع طرح مبنای پویش':
+      'کارت‌های کار و نیازهای طرح مبنای همین پویش'}</button>
+    {openedPlanWorkspace&&<CenterLocalPlanWorkspace
+     key={'campaign-plan-work:'+centerId+':'+token+':'+selected.campaignId+':'+selected.draftId+':'+selected.pinnedPlanRevision}
+     centerId={centerId} token={token}
+     pinnedPlan={{draftId:selected.draftId,revision:selected.pinnedPlanRevision}}/>}
+   </>}
    {selected&&<CenterCampaignEvidenceRegister
     key={'register:'+selected.campaignId+':'+selected.revision} centerId={centerId}
     token={token} campaignId={selected.campaignId}
