@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import { ClassCapacityIntake } from './ClassCapacityIntake';
+import { CenterClassSessionPlanner } from './CenterClassSessionPlanner';
 
 type SourceSession={sourceId:string;classId:string;title:string;classTitle:string;scheduledAt:string|null};
 type Stage='idle'|'loading'|'ready'|'denied'|'error';
@@ -21,12 +22,13 @@ export function CenterExistingClassIntakeWorkspace({centerId,token}:{centerId:st
  const [cursor,setCursor]=useState<string|null>(null);
  const [status,setStatus]=useState<Stage>('idle');
  const [opened,setOpened]=useState<string|null>(null);
+ const [openedScheduler,setOpenedScheduler]=useState<string|null>(null);
  const prefix='/api/v1/centers/'+encodeURIComponent(centerId);
  useEffect(()=>()=>{generation.current++;},[]);
  async function load(before:string|null){
   if(!centerId||!token.trim()||status==='loading')return;
   const current=++generation.current;
-  setStatus('loading');setOpened(null);
+  setStatus('loading');setOpened(null);setOpenedScheduler(null);
   if(before===null){setSessions([]);setCursor(null);}
   try{
    const response=await fetch(prefix+'/activity-sources/class-sessions'+
@@ -80,6 +82,11 @@ export function CenterExistingClassIntakeWorkspace({centerId,token}:{centerId:st
   {status==='ready'&&classes.length===0&&<p>در این بخش، جلسه‌ای برای شناسایی کلاس ثبت نشده است.</p>}
   {status==='ready'&&<ul>{classes.map(c=><li key={c.classId}>
    <strong>{c.title}</strong> — کلاس ثبت‌شده در منبع اصلی
+   <button type="button" onClick={()=>setOpenedScheduler(x=>x===c.classId?null:c.classId)}>
+    {openedScheduler===c.classId?'بستن برنامه‌ریزی جلسه':'برنامه‌ریزی جلسه جدید برای همین کلاس'}</button>
+   {openedScheduler===c.classId&&<CenterClassSessionPlanner
+    key={'existing-session:'+centerId+':'+token+':'+c.classId}
+    centerId={centerId} token={token} existingClass={{classId:c.classId,title:c.title}}/>}
    <button type="button" onClick={()=>setOpened(x=>x===c.classId?null:c.classId)}>
     {opened===c.classId?'بستن مدیریت ثبت‌نام اولیه':'مدیریت ظرفیت و درخواست‌های همین کلاس'}</button>
    {opened===c.classId&&<ClassCapacityIntake key={centerId+':'+token+':'+c.classId}

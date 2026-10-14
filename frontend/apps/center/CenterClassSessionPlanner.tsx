@@ -4,8 +4,10 @@ import { ClassCapacityIntake } from './ClassCapacityIntake';
 type State = 'idle' | 'saving' | 'saved' | 'denied' | 'conflict' | 'error';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function CenterClassSessionPlanner({ token, centerId }: {
+export function CenterClassSessionPlanner({ token, centerId, existingClass }: {
   token: string; centerId: string;
+  /** Previously persisted, original S12 class identified by a separate catalogue grant. */
+  existingClass?: { classId: string; title: string };
 }) {
   const epoch = useRef(0);
   const classRequest = useRef(crypto.randomUUID());
@@ -17,19 +19,21 @@ export function CenterClassSessionPlanner({ token, centerId }: {
   const [classState, setClassState] = useState<State>('idle');
   const [showIntake, setShowIntake] = useState(false);
   const [sessionState, setSessionState] = useState<State>('idle');
+  const [lastSessionId, setLastSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     epoch.current++;
     classRequest.current = crypto.randomUUID();
     sessionRequest.current = crypto.randomUUID();
-    setClassId(null); setClassTitle(''); setSessionTitle('');
+    setClassId(existingClass?.classId ?? null); setClassTitle(existingClass?.title ?? ''); setSessionTitle('');
     setScheduledLocal(''); setClassState('idle'); setSessionState('idle'); setShowIntake(false);
+    setLastSessionId(null);
     return () => { epoch.current++; };
-  }, [centerId, token]);
+  }, [centerId, token, existingClass?.classId, existingClass?.title]);
 
   async function createClass() {
     if (!centerId || !token.trim() || !classTitle.trim() || classTitle.length > 512 ||
-      classState === 'saving' || classId !== null) return;
+      classState === 'saving' || classId !== null || existingClass !== undefined) return;
     const current = ++epoch.current;
     setClassState('saving');
     const pendingId = classRequest.current;
@@ -83,25 +87,32 @@ export function CenterClassSessionPlanner({ token, centerId }: {
       if (current !== epoch.current || !payload || typeof payload !== 'object') throw new Error('Invalid response');
       const data = payload as Record<string, unknown>;
       if (data.sessionId !== sessionId || data.classId !== classId ||
-          (scheduledAt === null && data.scheduledAt !== null))
+          (scheduledAt === null ? data.scheduledAt !== null :
+            typeof data.scheduledAt !== 'string' ||
+            Number.isNaN(Date.parse(data.scheduledAt)) ||
+            Date.parse(data.scheduledAt) !== Date.parse(scheduledAt)))
         throw new Error('Invalid session acknowledgement');
       sessionRequest.current = crypto.randomUUID();
+      setLastSessionId(sessionId);
       setSessionTitle(''); setScheduledLocal('');
       setSessionState('saved');
     } catch { if (current === epoch.current) setSessionState('error'); }
   }
 
   function newClass() {
+    if (existingClass) return;
     epoch.current++;
     classRequest.current = crypto.randomUUID();
     sessionRequest.current = crypto.randomUUID();
     setClassId(null); setClassTitle(''); setSessionTitle('');
     setScheduledLocal(''); setClassState('idle'); setSessionState('idle');
+    setLastSessionId(null);
   }
 
-  return <section aria-label="برنامه‌ریزی کلاس و جلسه" style={{ border: '1px solid #aaa', padding: '1rem', marginTop: '1rem' }}>
-    <h3>ساخت کلاس و برنامه‌ریزی جلسه</h3>
+  return <section aria-label={existingClass ? 'برنامه‌ریزی جلسه کلاس موجود' : 'برنامه‌ریزی کلاس و جلسه'} style={{ border: '1px solid #aaa', padding: '1rem', marginTop: '1rem' }}>
+    <h3>{existingClass ? 'برنامه‌ریزی جلسه بعدی کلاس موجود' : 'ساخت کلاس و برنامه‌ریزی جلسه'}</h3>
     <p>ثبت کلاس و زمان جلسه، برگزاری واقعی یا حضور مخاطب را تأیید نمی‌کند.</p>
+    {existingClass ? <p>کلاس منبع اصلی: <strong>{existingClass.title}</strong> — شناسه: {existingClass.classId}</p> : <>
     <label>عنوان کلاس <input aria-label="عنوان کلاس جدید" value={classTitle}
       disabled={classId !== null} onChange={e => { setClassTitle(e.target.value); setClassState('idle'); }} /></label>{' '}
     <button type="button" onClick={() => void createClass()} disabled={!centerId || !token.trim() ||
@@ -111,12 +122,15 @@ export function CenterClassSessionPlanner({ token, centerId }: {
     {classState === 'denied' && <p role="alert">مجوز مستقل ثبت کلاس تأیید نشده است.</p>}
     {classState === 'conflict' && <p role="alert">شناسه کلاس از قبل ثبت شده است. از مسیر مشاهده منابع، رکورد موجود را بررسی کنید.</p>}
     {classState === 'error' && <p role="alert">ثبت کلاس تأیید نشد؛ وضعیت را از سرور بررسی کنید.</p>}
+    </>}
     {classId !== null && <div>
+      {!existingClass && <>
       <button type="button" onClick={()=>setShowIntake(value=>!value)}>
         {showIntake?'بستن مدیریت ظرفیت':'مدیریت ظرفیت کلاس جدید'}
       </button>
       {showIntake && <ClassCapacityIntake centerId={centerId} classId={classId} token={token}
         onClose={()=>setShowIntake(false)} />}
+      </>}
       <h4>جلسه کلاس «{classTitle}»</h4>
       <label>عنوان جلسه <input aria-label="عنوان جلسه جدید" value={sessionTitle}
         onChange={e => { setSessionTitle(e.target.value); setSessionState('idle'); }} /></label>{' '}
@@ -125,7 +139,7 @@ export function CenterClassSessionPlanner({ token, centerId }: {
         onChange={e => { setScheduledLocal(e.target.value); setSessionState('idle'); }} /></label>{' '}
       <button type="button" onClick={() => void scheduleSession()}
         disabled={!sessionTitle.trim() || sessionState === 'saving'}>ثبت جلسه برنامه‌ریزی‌شده</button>
-      {sessionState === 'saved' && <p role="status">جلسه برنامه‌ریزی‌شده در API ثبت شد؛ برگزاری تأیید نشده است.</p>}
+      {sessionState === 'saved' && <p role="status">جلسه برنامه‌ریزی‌شده در API ثبت شد؛ برگزاری تأیید نشده است. شناسه جلسه: {lastSessionId}</p>}
       {sessionState === 'denied' && <p role="alert">مجوز مستقل برنامه‌ریزی جلسه تأیید نشده است.</p>}
       {sessionState === 'conflict' && <p role="alert">تعارض در ثبت جلسه؛ رکورد موجود را از سرور بررسی کنید.</p>}
       {sessionState === 'error' && <p role="alert">ثبت جلسه تأیید نشد.</p>}
