@@ -93,6 +93,8 @@ jobs:
           PGDATABASE=kanoonyar_campaign_links_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/campaign_source_report_links_integrity.psql
           createdb kanoonyar_event_plan_ci
           PGDATABASE=kanoonyar_event_plan_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_event_private_planning_integrity.psql
+          createdb kanoonyar_permission_review_ci
+          PGDATABASE=kanoonyar_permission_review_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/permission_change_review_intent_integrity.psql
           createdb kanoonyar_draft_api_ci
           PGDATABASE=kanoonyar_draft_api_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/local_plan_api_integration_setup.psql
       - name: Real restricted PostgreSQL to API-handler integration
