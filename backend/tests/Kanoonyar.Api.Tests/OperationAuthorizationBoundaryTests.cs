@@ -167,7 +167,7 @@ POST /api/v1/centers/{centerId}/site/templates/revisions
     }
 
     [Fact]
-    public void Every_operational_route_fails_closed_when_identity_provider_is_unconfigured()
+    public async Task Every_operational_route_fails_closed_when_identity_provider_is_unconfigured()
     {
         using var factory = Create(configured: false);
         var endpoints = Endpoints(factory);
@@ -189,7 +189,7 @@ POST /api/v1/centers/{centerId}/site/templates/revisions
                     m.Value.Contains("sourceKind", StringComparison.Ordinal) ? "class-sessions" :
                     "s51-test-center");
             using var request = new HttpRequestMessage(new HttpMethod(method), path);
-            using var response = client.Send(request);
+            using var response = await client.SendAsync(request);
             Assert.Equal(System.Net.HttpStatusCode.ServiceUnavailable, response.StatusCode);
         }
     }
