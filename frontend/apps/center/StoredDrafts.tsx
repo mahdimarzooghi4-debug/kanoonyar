@@ -8,6 +8,7 @@ import { CenterSitePageDrafts } from './CenterSitePageDrafts';
 import { CenterSiteDesignDrafts } from './CenterSiteDesignDrafts';
 import { CenterFormDraftBuilder } from './CenterFormDraftBuilder';
 import { CenterCampaignPlanning } from './CenterCampaignPlanning';
+import { CenterEventPrivatePlanner } from './CenterEventPrivatePlanner';
 
 type Membership = { centerId: string; displayName: string; roleCode: string };
 export type Draft = { draftId: string; revision: number; programId: string; nationalVersion: number; localTitle: string; localActivities: unknown[] };
@@ -58,6 +59,7 @@ export function StoredDrafts({ token, memberships, selectedCenter, onCenterChang
     <CenterSiteDesignDrafts key={'design:'+selectedCenter+':'+token} token={token} centerId={selectedCenter} />
     <CenterFormDraftBuilder key={'forms:'+selectedCenter+':'+token} token={token} centerId={selectedCenter} />
     <CenterCampaignPlanning key={'campaigns:'+selectedCenter+':'+token} token={token} centerId={selectedCenter}/>
+    <CenterEventPrivatePlanner key={'events:'+selectedCenter+':'+token} token={token} centerId={selectedCenter}/>
     <StoredActivitySources token={token} centerId={selectedCenter} />
     <p>مشاهده پیش‌نویس‌ها نیز به مجوز مستقل نیاز دارد؛ عضویت کانون به‌تنهایی مجوز مشاهده یا ویرایش نیست.</p>
     <label>انتخاب کانون <select aria-label="انتخاب کانون برای پیش‌نویس‌ها" value={selectedCenter}
