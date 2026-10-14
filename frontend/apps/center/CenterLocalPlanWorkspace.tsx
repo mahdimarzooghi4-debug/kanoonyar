@@ -81,8 +81,10 @@ function snapshot(x:unknown,draftId:string,revision:number,before:string|null):x
   cards[19].workCardId.toLowerCase()!==String(v.nextBeforeCardId).toLowerCase())))return false;
  return true;
 }
-export function CenterLocalPlanWorkspace({centerId,token}:{
- centerId:string;token:string
+export function CenterLocalPlanWorkspace({centerId,token,pinnedPlan}:{
+ centerId:string;token:string;
+ /** Original S23 campaign's immutable S08/S10 plan identity; S40 verifies source rights again. */
+ pinnedPlan?:{draftId:string;revision:number};
 }){
  const epoch=useRef(0),prefix='/api/v1/centers/'+encodeURIComponent(centerId);
  const headers={Authorization:'Bearer '+token.trim()};
@@ -94,7 +96,7 @@ export function CenterLocalPlanWorkspace({centerId,token}:{
  const [expanded,setExpanded]=useState('');
  useEffect(()=>()=>{epoch.current++;},[]);
  async function loadPlans(){
-  if(!token.trim()||!centerId||planState==='loading')return;
+  if(pinnedPlan||!token.trim()||!centerId||planState==='loading')return;
   const request=++epoch.current;setPlanState('loading');setPlans([]);
   setSelection('');setCards([]);setSource(null);setCursor(null);setExpanded('');setState('idle');
   try{
@@ -111,8 +113,8 @@ export function CenterLocalPlanWorkspace({centerId,token}:{
   }catch{if(epoch.current===request)setPlanState('error');}
  }
  async function load(before:string|null){
-  if(!selection||!token.trim()||state==='loading')return;
-  const selected=plans.find(p=>p.draftId+':'+p.revision===selection);
+  if(!(pinnedPlan||selection)||!token.trim()||state==='loading')return;
+  const selected=pinnedPlan??plans.find(p=>p.draftId+':'+p.revision===selection);
   if(!selected)return;
   const request=++epoch.current;setState('loading');
   if(before===null){setCards([]);setCursor(null);setSource(null);setExpanded('');}
@@ -141,11 +143,13 @@ export function CenterLocalPlanWorkspace({centerId,token}:{
   <h3>میزکار یکپارچه اجرای طرح بومی</h3>
   <p>طرح نسخه‌دار ← کارت‌های کار ← نیازهای منابع ثبت‌شده؛ صرفاً برنامه‌ریزی داخلی.
    هیچ اجرا، موجودی، خرید یا تخصیصی تأیید نشده است.</p>
-  <button type="button" onClick={()=>void loadPlans()} disabled={planState==='loading'||!token.trim()}>
-   دریافت طرح‌های واقعی کانون</button>
-  {planState==='denied'&&<p role="alert">مجوز دیدن طرح‌های مبنا موجود نیست.</p>}
-  {planState==='error'&&<p role="alert">طرح‌های معتبر دریافت نشدند.</p>}
-  {planState==='ready'&&<label>نسخه طرح بومی
+  {pinnedPlan?<p>نسخه طرح مبنای پویش: {pinnedPlan.draftId} / {pinnedPlan.revision}.
+    تغییر طرح مبنا در این نما مجاز نیست و نمایش اطلاعات منوط به مجوز مستقل S40 است.</p>:
+   <button type="button" onClick={()=>void loadPlans()} disabled={planState==='loading'||!token.trim()}>
+    دریافت طرح‌های واقعی کانون</button>}
+  {!pinnedPlan&&planState==='denied'&&<p role="alert">مجوز دیدن طرح‌های مبنا موجود نیست.</p>}
+  {!pinnedPlan&&planState==='error'&&<p role="alert">طرح‌های معتبر دریافت نشدند.</p>}
+  {!pinnedPlan&&planState==='ready'&&<label>نسخه طرح بومی
    <select aria-label="انتخاب نسخه طرح برای میزکار" value={selection} onChange={e=>{
     epoch.current++;setSelection(e.target.value);setCards([]);setCursor(null);
     setSource(null);setExpanded('');setState('idle');}}>
@@ -153,7 +157,8 @@ export function CenterLocalPlanWorkspace({centerId,token}:{
     {plans.map(p=><option key={p.draftId+':'+p.revision} value={p.draftId+':'+p.revision}>
      {p.localTitle} — نسخه {p.revision}</option>)}
    </select></label>}
-  <button type="button" onClick={()=>void load(null)} disabled={!selection||state==='loading'}>
+  <button type="button" onClick={()=>void load(null)}
+   disabled={!(pinnedPlan||selection)||!token.trim()||state==='loading'}>
    نمایش کارت‌ها و نیازهای این نسخه طرح</button>
   {state==='denied'&&<p role="alert">مجوز مستقل خواندن طرح، کارت یا نیازهای هر کارت وجود ندارد.</p>}
   {state==='missing'&&<p role="alert">نسخه طرح مبنا دیگر معتبر نیست.</p>}
