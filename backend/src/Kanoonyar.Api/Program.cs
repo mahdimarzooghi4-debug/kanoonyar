@@ -41,6 +41,7 @@ if (oidcConfigured)
     app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links/{associationId:guid}/inspection-notes", CenterCampaignInspectionNotesEndpoint.List).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links", CenterCampaignReportLinkEndpoint.Link).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links", CenterCampaignReportLinkEndpoint.List).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/schedule/private", CenterPrivateCalendarEndpoint.Get).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/events/plans/{eventId:guid}/source-dossier", CenterEventSourceDossierEndpoint.Get).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/events/plans/revisions", CenterEventPlanEndpoint.Append).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/events/plans", CenterEventPlanEndpoint.List).RequireAuthorization();
@@ -91,6 +92,7 @@ else
     app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links/{associationId:guid}/inspection-notes", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/schedule/private", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/events/plans/{eventId:guid}/source-dossier", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/events/plans/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/events/plans", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
