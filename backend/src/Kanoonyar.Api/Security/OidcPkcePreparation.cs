@@ -116,7 +116,7 @@ public sealed class OidcPkcePreparation
         if (supplied.Length != actual.Length ||
             !CryptographicOperations.FixedTimeEquals(supplied, actual))
             return false;
-        if (!_pending.TryRemove(new KeyValuePair<string, Pending>(state, pending)))
+        if (!_pending.TryRemove(state, out var removed) || !ReferenceEquals(removed, pending))
             return false;
 
         redemption = new Redemption(pending.Verifier, pending.Nonce, pending.RedirectUri);
