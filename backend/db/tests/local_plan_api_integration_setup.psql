@@ -32,6 +32,7 @@
 \ir ../migrations/0032_center_site_navigation_drafts.sql
 \ir ../migrations/0033_center_private_work_cards.sql
 \ir ../migrations/0034_center_private_collaboration_proposals.sql
+\ir ../migrations/0035_center_session_private_preparation.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -491,3 +492,28 @@ DO $collaboration_guard$ BEGIN
   'collaboration.record_center_proposal(uuid,text,text,text,text,text,uuid,uuid,text)','EXECUTE')
  THEN RAISE EXCEPTION 'Unsafe synthetic cross-center collaboration SQL role'; END IF;
 END;$collaboration_guard$;
+
+-- Synthetic CI-only preparation command login, NOT a production grant.
+CREATE ROLE kanoonyar_session_prep_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_session_prep_api_ci;
+GRANT USAGE ON SCHEMA learning,centers,governance,programs TO kanoonyar_session_prep_api_ci;
+GRANT EXECUTE ON FUNCTION learning.append_session_preparation(
+ text,uuid,uuid,bigint,text,text,text,text,uuid,uuid,text)
+ TO kanoonyar_session_prep_api_ci;
+GRANT SELECT ON learning.session_preparations,learning.session_preparation_revisions
+ TO kanoonyar_draft_read_ci;
+DO $prep_guard$ BEGIN
+ IF has_table_privilege('kanoonyar_session_prep_api_ci',
+    'learning.session_preparation_revisions','INSERT')
+  OR has_table_privilege('kanoonyar_session_prep_api_ci',
+    'learning.class_sessions','INSERT')
+  OR has_table_privilege('kanoonyar_session_prep_api_ci',
+    'governance.command_audit','INSERT')
+  OR pg_has_role('kanoonyar_session_prep_api_ci','kanoonyar_session_prep_owner','SET')
+  OR has_function_privilege('kanoonyar_draft_read_ci',
+    'learning.append_session_preparation(text,uuid,uuid,bigint,text,text,text,text,uuid,uuid,text)','EXECUTE')
+  OR has_function_privilege('public',
+    'learning.append_session_preparation(text,uuid,uuid,bigint,text,text,text,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Unsafe session preparation disposable role'; END IF;
+END;$prep_guard$;
