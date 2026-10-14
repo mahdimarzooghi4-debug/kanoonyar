@@ -3,7 +3,7 @@ permissions:
   contents: read
 on:
   push:
-    branches: [main, planning/sprint-01-foundation, sprint-02-center-membership-read-foundation, sprint-03-center-workspace-ui, sprint-04-national-program-public-read, sprint-05-national-program-catalog-ui, sprint-06-center-national-program-discovery, sprint-07-local-execution-plan-draft, sprint-08-local-plan-operations, sprint-09-national-program-issuance-foundation, sprint-10-national-local-execution-trace, sprint-11-activity-report-evidence-lineage, sprint-12-learning-events-source-ownership, sprint-13-class-session-planning-commands, sprint-14-session-occurrence-attendance-claims, sprint-15-session-claim-history, sprint-16-session-activity-report-lineage, sprint-17-sourced-activity-report-command, sprint-18-class-capacity-registration-intake, sprint-19-registration-review-requirements, sprint-20-center-site-page-drafts, sprint-21-center-site-design-drafts, sprint-22-center-form-builder-private]
+    branches: [main, planning/sprint-01-foundation, sprint-02-center-membership-read-foundation, sprint-03-center-workspace-ui, sprint-04-national-program-public-read, sprint-05-national-program-catalog-ui, sprint-06-center-national-program-discovery, sprint-07-local-execution-plan-draft, sprint-08-local-plan-operations, sprint-09-national-program-issuance-foundation, sprint-10-national-local-execution-trace, sprint-11-activity-report-evidence-lineage, sprint-12-learning-events-source-ownership, sprint-13-class-session-planning-commands, sprint-14-session-occurrence-attendance-claims, sprint-15-session-claim-history, sprint-16-session-activity-report-lineage, sprint-17-sourced-activity-report-command, sprint-18-class-capacity-registration-intake, sprint-19-registration-review-requirements, sprint-20-center-site-page-drafts, sprint-21-center-site-design-drafts, sprint-22-center-form-builder-private, sprint-23-center-campaign-planning]
   pull_request:
 jobs:
   backend:
@@ -87,11 +87,14 @@ jobs:
           PGDATABASE=kanoonyar_site_design_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_site_design_integrity.psql
           createdb kanoonyar_form_builder_ci
           PGDATABASE=kanoonyar_form_builder_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_form_builder_integrity.psql
+          createdb kanoonyar_campaign_ci
+          PGDATABASE=kanoonyar_campaign_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_campaign_planning_integrity.psql
           createdb kanoonyar_draft_api_ci
           PGDATABASE=kanoonyar_draft_api_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/local_plan_api_integration_setup.psql
       - name: Real restricted PostgreSQL to API-handler integration
         env:
           CENTER_DRAFT_INTEGRATION_REQUIRED: '1'
+          CENTER_CAMPAIGN_INTEGRATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_campaign_api_ci;Pooling=false
           CENTER_FORM_DRAFT_INTEGRATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_form_draft_api_ci;Pooling=false
           CENTER_SITE_DESIGN_INTEGRATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_site_design_api_ci;Pooling=false
           CENTER_SITE_DRAFT_INTEGRATION_DATABASE_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=kanoonyar_site_draft_api_ci;Pooling=false
@@ -105,7 +108,7 @@ jobs:
           CENTER_DRAFT_INTEGRATION_ADMIN_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=postgres;Pooling=false
         run: |
           dotnet restore backend/Kanoonyar.slnx -p:NuGetAudit=true -p:NuGetAuditLevel=high -p:TreatWarningsAsErrors=true
-          dotnet test backend/tests/Kanoonyar.Api.Tests/Kanoonyar.Api.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~LocalDraftPostgresIntegrationTests|FullyQualifiedName~SignedOidcHttpIntegrationTests|FullyQualifiedName~CenterSourcedActivityReportPostgresTests|FullyQualifiedName~CenterClassIntakePostgresTests|FullyQualifiedName~CenterRegistrationReviewPostgresTests|FullyQualifiedName~CenterSiteDraftPostgresTests|FullyQualifiedName~CenterSiteDesignPostgresTests|FullyQualifiedName~CenterFormDraftPostgresTests"
+          dotnet test backend/tests/Kanoonyar.Api.Tests/Kanoonyar.Api.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~LocalDraftPostgresIntegrationTests|FullyQualifiedName~SignedOidcHttpIntegrationTests|FullyQualifiedName~CenterSourcedActivityReportPostgresTests|FullyQualifiedName~CenterClassIntakePostgresTests|FullyQualifiedName~CenterRegistrationReviewPostgresTests|FullyQualifiedName~CenterSiteDraftPostgresTests|FullyQualifiedName~CenterSiteDesignPostgresTests|FullyQualifiedName~CenterFormDraftPostgresTests|FullyQualifiedName~CenterCampaignPostgresTests"
   frontend:
     runs-on: ubuntu-latest
     permissions:
