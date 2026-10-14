@@ -132,14 +132,12 @@ BEGIN
  BEGIN
   UPDATE identity_access.permission_change_review_intents SET review_approved=true;
   RAISE EXCEPTION 'Review record was updated';
- EXCEPTION WHEN raise_exception THEN
-  IF SQLERRM = 'Review record was updated' THEN RAISE; END IF;
+ EXCEPTION WHEN check_violation THEN NULL;
  END;
  BEGIN
   DELETE FROM identity_access.permission_change_review_intents;
   RAISE EXCEPTION 'Review record was deleted';
- EXCEPTION WHEN raise_exception THEN
-  IF SQLERRM = 'Review record was deleted' THEN RAISE; END IF;
+ EXCEPTION WHEN check_violation THEN NULL;
  END;
  -- A physical constraint also prevents a forged effective/approved row.
  BEGIN
