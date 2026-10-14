@@ -39,20 +39,27 @@ function preparation(x:unknown):x is Prep{
   typeof v.sessionTitle==='string'&&v.sessionTitle.trim().length>0&&
   typeof v.classTitle==='string'&&v.classTitle.trim().length>0;
 }
-export function CenterSessionPreparations({centerId,token}:{centerId:string;token:string}){
+export function CenterSessionPreparations({centerId,token,initialSession}:{centerId:string;token:string;
+ /** Optional original S12 session selected in an independently secured source workspace. */
+ initialSession?:Session;
+}){
  const epoch=useRef(0),prefix='/api/v1/centers/'+encodeURIComponent(centerId);
  const headers={Authorization:'Bearer '+token.trim()};
- const [sources,setSources]=useState<Session[]>([]),[sourceCursor,setSourceCursor]=useState<string|null>(null);
- const [sourceState,setSourceState]=useState<State>('idle');
+ const [sources,setSources]=useState<Session[]>(initialSession?[initialSession]:[]),[sourceCursor,setSourceCursor]=useState<string|null>(null);
+ const [sourceState,setSourceState]=useState<State>(initialSession?'ready':'idle');
  const [items,setItems]=useState<Prep[]>([]),[cursor,setCursor]=useState<string|null>(null);
  const [listState,setListState]=useState<State>('idle');
- const [selected,setSelected]=useState<Prep|null>(null),[sourceKey,setSourceKey]=useState('');
+ const [selected,setSelected]=useState<Prep|null>(null),
+  [sourceKey,setSourceKey]=useState(initialSession?initialSession.sourceId+':'+initialSession.classId:'');
  const [title,setTitle]=useState(''),[outline,setOutline]=useState(''),[materials,setMaterials]=useState('');
  const [writeState,setWriteState]=useState<Result>('idle'),[history,setHistory]=useState<Revision[]>([]);
  const [historyState,setHistoryState]=useState<State>('idle'),[historyCursor,setHistoryCursor]=useState<number|null>(null);
  useEffect(()=>()=>{epoch.current++;},[]);
  function edit(x:Prep|null){
-  epoch.current++;setSelected(x);setSourceKey(x?x.sessionId+':'+x.classId:'');
+  if(initialSession&&x&&(x.sessionId!==initialSession.sourceId||
+    x.classId!==initialSession.classId))return;
+  epoch.current++;setSelected(x);setSourceKey(x?x.sessionId+':'+x.classId:
+   initialSession?initialSession.sourceId+':'+initialSession.classId:'');
   setTitle(x?.title??'');setOutline(x?.teachingOutline??'');setMaterials(x?.materialsNote??'');
   setWriteState('idle');setHistory([]);setHistoryState('idle');setHistoryCursor(null);
  }
@@ -107,7 +114,9 @@ export function CenterSessionPreparations({centerId,token}:{centerId:string;toke
     (x.nextBeforeSessionId!==null&&(records.length!==20||
      records[19].sessionId.toLowerCase()!==String(x.nextBeforeSessionId).toLowerCase())))
     throw Error('Preparation cursor invalid');
-   setItems(old=>before?[...old,...records]:records);
+   const relevant=initialSession?records.filter(v=>v.sessionId===initialSession.sourceId&&
+    v.classId===initialSession.classId):records;
+   setItems(old=>before?[...old,...relevant]:relevant);
    setCursor(x.nextBeforeSessionId as string|null);setListState('ready');
   }catch{if(run===epoch.current){setItems([]);setCursor(null);setListState('error');}}
  }
@@ -115,7 +124,9 @@ export function CenterSessionPreparations({centerId,token}:{centerId:string;toke
   if(!centerId||!token.trim()||writeState==='saving'||!title.trim()||
    title.length>160||outline.length>4000||materials.length>2000)return;
   const choice=selected?{sourceId:selected.sessionId,classId:selected.classId}:
-   sources.find(x=>x.sourceId+':'+x.classId===sourceKey);
+   initialSession??sources.find(x=>x.sourceId+':'+x.classId===sourceKey);
+  if(initialSession&&choice&&
+    (choice.sourceId!==initialSession.sourceId||choice.classId!==initialSession.classId))return;
   if(!choice)return;
   const run=++epoch.current;setWriteState('saving');
   const expectedRevision=selected?.revision??0;
@@ -166,22 +177,24 @@ export function CenterSessionPreparations({centerId,token}:{centerId:string;toke
  return <section aria-label="دفتر آماده‌سازی خصوصی جلسات" style={{border:'1px solid #aaa',padding:12,marginTop:16}}>
   <h3>دفتر آماده‌سازی جلسات کلاس</h3>
   <p>طرح تدریس برای استفاده خصوصی مربیان؛ نه انتشار درس، نمره، حضور یا تأیید برگزاری.</p>
-  <button type="button" disabled={!centerId||!token.trim()||sourceState==='loading'}
-   onClick={()=>void loadSources(null)}>جلسه‌های واقعی کانون</button>{' '}
+  {!initialSession&&<button type="button" disabled={!centerId||!token.trim()||sourceState==='loading'}
+   onClick={()=>void loadSources(null)}>جلسه‌های واقعی کانون</button>}{' '}
   <button type="button" disabled={!centerId||!token.trim()||listState==='loading'}
    onClick={()=>void loadList(null)}>دریافت دفترهای آماده‌سازی</button>
   {sourceState==='denied'&&<p role="alert">مجوز مستقل مشاهده جلسات وجود ندارد.</p>}
   {sourceState==='error'&&<p role="alert">فهرست معتبر جلسات دریافت نشد.</p>}
   {listState==='denied'&&<p role="alert">مجوز مستقل مشاهده دفتر آماده‌سازی وجود ندارد.</p>}
   {listState==='error'&&<p role="alert">دفتر آماده‌سازی معتبر دریافت نشد.</p>}
-  {sourceCursor&&<button type="button" onClick={()=>void loadSources(sourceCursor)}>جلسات بیشتر</button>}
+  {!initialSession&&sourceCursor&&<button type="button" onClick={()=>void loadSources(sourceCursor)}>جلسات بیشتر</button>}
   {listState==='ready'&&<ul>{items.map(x=><li key={x.sessionId}>
    <strong>{x.title}</strong> — {x.classTitle} / {x.sessionTitle} — نسخه {x.revision}
    <button type="button" onClick={()=>edit(x)}>ویرایش طرح خصوصی جلسه</button>
   </li>)}</ul>}
   {cursor&&<button type="button" onClick={()=>void loadList(cursor)}>آماده‌سازی‌های بیشتر</button>}
   {selected&&<button type="button" onClick={()=>edit(null)}>شروع آماده‌سازی جدید</button>}
-  {!selected&&<label>جلسه مبنا <select aria-label="انتخاب جلسه آموزشی" value={sourceKey}
+  {initialSession&&<p>جلسه اصلی انتخاب‌شده: {initialSession.classTitle} / {initialSession.title}.
+   مشاهده یا ویرایش آماده‌سازی به مجوز مستقل S35 نیاز دارد.</p>}
+  {!selected&&!initialSession&&<label>جلسه مبنا <select aria-label="انتخاب جلسه آموزشی" value={sourceKey}
    onChange={e=>{setSourceKey(e.target.value);setWriteState('idle');}}>
    <option value="">جلسه معتبر را انتخاب کنید</option>
    {sources.map(x=><option key={x.sourceId} value={x.sourceId+':'+x.classId}>
