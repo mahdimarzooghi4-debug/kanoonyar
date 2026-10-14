@@ -14,7 +14,8 @@
     "test:browser": "node scripts/run-browser-tests.mjs",
     "preview:center": "vite preview --host 127.0.0.1 --port 4173",
     "preview:audience": "vite preview --host 127.0.0.1 --port 4173",
-    "test:deployment": "node --test scripts/package-experiences.test.mjs scripts/verify-deployment.test.mjs && node scripts/package-experiences.mjs && node scripts/verify-deployment.mjs"
+    "test:deployment": "node --test scripts/package-experiences.test.mjs scripts/verify-deployment.test.mjs && node scripts/package-experiences.mjs && node scripts/verify-deployment.mjs",
+    "build:audience:ci": "KANOONYAR_EXPERIENCE=audience KANOONYAR_AUDIENCE_TEST_BUNDLE=1 vite build --mode audience-ci"
   },
   "dependencies": {
     "react": "19.2.0",
