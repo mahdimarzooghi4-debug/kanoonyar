@@ -44,6 +44,64 @@ public static class NationalProgramReadEndpoint
         return ReadPage(configuration, new Cursor(id, version), cancellationToken);
     }
 
+    /// <summary>
+    /// Source-pinned public version lookup for a shareable audience permalink.
+    /// This is NOT a general program-definition read: publication is mandatory.
+    /// Unpublished, nonexistent and inaccessible versions are indistinguishable (404).
+    /// </summary>
+    public static async Task<IResult> ReadPublishedVersion(HttpContext context,
+        IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        var query = context.Request.Query;
+        if (query.Count != 2 || query["programId"].Count != 1 ||
+            query["version"].Count != 1)
+            return Results.BadRequest();
+        var id = query["programId"].ToString();
+        var rawVersion = query["version"].ToString();
+        if (string.IsNullOrWhiteSpace(id) || id != id.Trim() ||
+            id.Length > 256 || id.Any(char.IsControl) ||
+            !int.TryParse(rawVersion, NumberStyles.None, CultureInfo.InvariantCulture,
+                out var version) || version <= 0 ||
+            rawVersion != version.ToString(CultureInfo.InvariantCulture))
+            return Results.BadRequest();
+
+        var url = configuration["PROGRAM_READ_DATABASE_URL"];
+        if (string.IsNullOrWhiteSpace(url))
+            return Results.Problem(statusCode: 503, title: "Published program version unavailable");
+        try
+        {
+            await using var connection = new NpgsqlConnection(url);
+            await connection.OpenAsync(cancellationToken);
+            await using var command = new NpgsqlCommand(
+                """
+                SELECT v.program_id,v.version,v.title,v.national_objectives::text,
+                  v.mandatory_requirements::text
+                FROM programs.national_program_publications AS p
+                INNER JOIN programs.national_program_versions AS v
+                  ON v.program_id=p.program_id AND v.version=p.version
+                WHERE p.program_id=@program_id AND p.version=@version
+                LIMIT 1
+                """, connection);
+            command.Parameters.Add("program_id", NpgsqlDbType.Text).Value = id;
+            command.Parameters.Add("version", NpgsqlDbType.Integer).Value = version;
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+                return Results.NotFound();
+            return Results.Ok(new Published(reader.GetString(0), reader.GetInt32(1),
+                reader.GetString(2),
+                JsonSerializer.Deserialize<JsonElement>(reader.GetString(3)),
+                JsonSerializer.Deserialize<JsonElement>(reader.GetString(4))));
+        }
+        catch (NpgsqlException)
+        {
+            return Results.Problem(statusCode: 503, title: "Published program version unavailable");
+        }
+        catch (TimeoutException)
+        {
+            return Results.Problem(statusCode: 503, title: "Published program version unavailable");
+        }
+    }
+
     private static async Task<IResult> ReadPage(IConfiguration configuration, Cursor? cursor,
         CancellationToken cancellationToken)
     {

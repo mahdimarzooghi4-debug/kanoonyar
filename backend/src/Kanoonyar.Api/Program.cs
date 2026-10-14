@@ -207,6 +207,7 @@ else
 }
 
 app.MapGet("/api/v1/programs/published", NationalProgramReadEndpoint.ListPublishedPage);
+app.MapGet("/api/v1/programs/published/version", NationalProgramReadEndpoint.ReadPublishedVersion);
 
 app.UseStatusCodePages(async context =>
 {
