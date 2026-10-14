@@ -206,7 +206,7 @@ else
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
 }
 
-app.MapGet("/api/v1/programs/published", NationalProgramReadEndpoint.ListPublished);
+app.MapGet("/api/v1/programs/published", NationalProgramReadEndpoint.ListPublishedPage);
 
 app.UseStatusCodePages(async context =>
 {
