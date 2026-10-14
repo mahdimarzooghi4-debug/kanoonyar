@@ -47,7 +47,9 @@ DO $check$ BEGIN
  THEN RAISE EXCEPTION 'Permission review role security violation'; END IF;
 END;$check$;
 
-SET ROLE kanoonyar_permission_review_ci;
+-- Open a NEW session as the real restricted login: SET ROLE from postgres
+-- leaves session_user=superuser and cannot prove privilege escalation denial.
+\connect - kanoonyar_permission_review_ci
 SELECT set_config('kanoonyar.center_id','s52-center-a',false);
 -- A proposal is durable under a synthetic only SQL writer; not an approved grant.
 SELECT identity_access.record_permission_change_review_intent(
@@ -105,7 +107,7 @@ BEGIN
   RAISE EXCEPTION 'role escalation unexpectedly allowed';
  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 END;$negative$;
-RESET ROLE;
+\connect - postgres
 
 DO $verify$
 DECLARE n bigint;
