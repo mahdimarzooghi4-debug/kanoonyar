@@ -129,13 +129,15 @@ POST /api/v1/centers/{centerId}/site/templates/revisions
         var endpoints = Endpoints(factory);
         var expected = ExpectedAuthenticatedRoutes.OrderBy(x => x, StringComparer.Ordinal).ToArray();
         var actual = Inventory(endpoints);
-        Assert.Equal(expected.Append("GET /api/v1/programs/published")
+        Assert.Equal(expected.Concat(new[] { "GET /api/v1/programs/published",
+            "GET /api/v1/programs/published/version" })
             .OrderBy(x => x, StringComparer.Ordinal), actual);
-        Assert.Equal(expected.Length + 1, endpoints.Length);
+        Assert.Equal(expected.Length + 2, endpoints.Length);
 
         foreach (var endpoint in endpoints)
         {
-            if (endpoint.RoutePattern.RawText == "/api/v1/programs/published")
+            if (endpoint.RoutePattern.RawText is "/api/v1/programs/published" or
+                "/api/v1/programs/published/version")
             {
                 Assert.Null(endpoint.Metadata.GetMetadata<IAuthorizeData>());
                 continue;
@@ -173,7 +175,8 @@ POST /api/v1/centers/{centerId}/site/templates/revisions
         var endpoints = Endpoints(factory);
         var expected = ExpectedAuthenticatedRoutes.OrderBy(x => x, StringComparer.Ordinal).ToArray();
         var actual = Inventory(endpoints);
-        Assert.Equal(expected.Append("GET /api/v1/programs/published")
+        Assert.Equal(expected.Concat(new[] { "GET /api/v1/programs/published",
+            "GET /api/v1/programs/published/version" })
             .OrderBy(x => x, StringComparer.Ordinal), actual);
 
         using var client = factory.CreateClient();
