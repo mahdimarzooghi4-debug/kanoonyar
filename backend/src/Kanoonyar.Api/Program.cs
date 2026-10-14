@@ -59,6 +59,8 @@ if (oidcConfigured)
     app.MapPost("/api/v1/centers/{centerId}/learning/session-preparations/revisions", CenterSessionPreparationEndpoint.Append).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/learning/session-preparations", CenterSessionPreparationEndpoint.List).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/learning/session-preparations/{sessionId:guid}/revisions", CenterSessionPreparationEndpoint.History).RequireAuthorization();
+    app.MapPost("/api/v1/centers/{centerId}/collaboration/proposals/{proposalId:guid}/recipient-notes", CenterRecipientPrivateNotesEndpoint.Append).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/collaboration/proposals/{proposalId:guid}/recipient-notes", CenterRecipientPrivateNotesEndpoint.List).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/collaboration/proposals", CenterCollaborationEndpoint.Submit).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/collaboration/outgoing", CenterCollaborationEndpoint.Outgoing).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/collaboration/incoming", CenterCollaborationEndpoint.Incoming).RequireAuthorization();
@@ -122,6 +124,8 @@ else
     app.MapPost("/api/v1/centers/{centerId}/learning/session-preparations/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/learning/session-preparations", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/learning/session-preparations/{sessionId:guid}/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
+    app.MapPost("/api/v1/centers/{centerId}/collaboration/proposals/{proposalId:guid}/recipient-notes", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/collaboration/proposals/{proposalId:guid}/recipient-notes", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/collaboration/proposals", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/collaboration/outgoing", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/collaboration/incoming", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
