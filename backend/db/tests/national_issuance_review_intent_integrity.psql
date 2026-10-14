@@ -1,0 +1,247 @@
+\set ON_ERROR_STOP on
+-- S60: a fresh disposable original DB, NO production issuer or reviewer.
+\ir ../migrations/0001_national_program_foundation.sql
+\ir ../migrations/0002_append_only_national_versions.sql
+\ir ../migrations/0003_center_registry.sql
+\ir ../migrations/0004_command_audit.sql
+\ir ../migrations/0005_transactional_outbox.sql
+\ir ../migrations/0006_center_scope_rls.sql
+\ir ../migrations/0013_national_program_issuance_foundation.sql
+\ir ../migrations/0043_national_issuance_review_intent_ledger.sql
+
+INSERT INTO centers.registry(center_id,display_name,is_active,
+ registered_by_subject,registered_at)
+SELECT 's60-center-' || lpad(i::text,2,'0'),
+  'Synthetic original center '||i, i<>3,'s60-fixture',now()
+FROM generate_series(0,79) AS i;
+INSERT INTO programs.national_program_versions(program_id,version,title,
+ national_objectives,mandatory_requirements,created_by_subject,created_at)
+SELECT 's60-original-program',i,'Version '||i,
+ '["synthetic goal"]'::jsonb,'["synthetic requirement"]'::jsonb,'s60-fixture',now()
+FROM generate_series(1,3) AS i;
+INSERT INTO programs.national_program_publications(
+ program_id,version,publisher_subject,published_at)
+SELECT 's60-original-program',i,'s60-fixture',now()
+FROM generate_series(1,2) AS i;
+INSERT INTO programs.national_program_issuances(
+ issuance_id,center_id,program_id,national_version,issued_by_subject,issued_at)
+VALUES
+ ('aa600000-0000-4000-8000-000000000101','s60-center-00','s60-original-program',2,'s60-fixture',now()),
+ ('aa600000-0000-4000-8000-000000000102','s60-center-01','s60-original-program',1,'s60-fixture',now());
+
+-- A normal SQL account is NEVER given grant/EXECUTE to create or approve
+-- HQ review intents; the function is ONLY exercised via test postgres.
+CREATE ROLE kanoonyar_s60_unprivileged_ci LOGIN NOINHERIT NOSUPERUSER
+ NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_issuance_review_intent_ci
+ TO kanoonyar_s60_unprivileged_ci;
+GRANT USAGE ON SCHEMA programs TO kanoonyar_s60_unprivileged_ci;
+DO $deny$ BEGIN
+ IF has_function_privilege('public',
+   'programs.capture_national_issuance_review_intent(uuid,text,integer,text[],text,text,uuid,uuid,text)',
+   'EXECUTE')
+ OR has_function_privilege('kanoonyar_s60_unprivileged_ci',
+   'programs.capture_national_issuance_review_intent(uuid,text,integer,text[],text,text,uuid,uuid,text)',
+   'EXECUTE')
+ OR has_table_privilege('kanoonyar_s60_unprivileged_ci',
+   'programs.national_issuance_review_intents','INSERT')
+ OR has_table_privilege('kanoonyar_s60_unprivileged_ci',
+   'programs.national_issuance_review_intents','SELECT')
+ OR has_table_privilege('kanoonyar_s60_unprivileged_ci',
+   'programs.national_program_issuances','INSERT')
+ OR (SELECT rolsuper OR rolbypassrls OR rolcreaterole
+     FROM pg_roles WHERE rolname='kanoonyar_s60_unprivileged_ci')
+ OR NOT (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class
+         WHERE oid='programs.national_issuance_review_intents'::regclass)
+ OR EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='programs'
+      AND tablename='national_issuance_review_intents')
+ THEN RAISE EXCEPTION 'S60 authority boundary has been opened'; END IF;
+END;$deny$;
+
+-- The source inspection and immutable append-only review request are a
+-- single explicit repeatable-read write transaction.
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT programs.capture_national_issuance_review_intent(
+ 'aa600000-0000-4000-8000-000000000001',
+ 's60-original-program',2,
+ ARRAY(SELECT 's60-center-'||lpad(i::text,2,'0')
+       FROM generate_series(79,0,-1) i),
+ 'UNVERIFIED-s60-fixture-actor','Synthetic review request only',
+ 'aa600000-0000-4000-8000-000000000002',
+ 'aa600000-0000-4000-8000-000000000003',
+ 's60-synthetic-correlation');
+COMMIT;
+
+DO $verify$
+DECLARE
+ v_source jsonb;
+ v_digest text;
+ v_ids text[];
+ n bigint;
+BEGIN
+ SELECT original_source_snapshot,source_digest_sha256,explicit_center_ids
+ INTO v_source,v_digest,v_ids
+ FROM programs.national_issuance_review_intents
+ WHERE request_id='aa600000-0000-4000-8000-000000000001';
+ IF v_source IS NULL OR v_source->>'programId'<>'s60-original-program'
+ OR (v_source->>'nationalVersion')::integer<>2
+ OR (v_source->>'exactPublicationExists')::boolean IS NOT TRUE
+ OR v_source->>'formatVersion'<>'S60_SOURCE_SNAPSHOT_V1'
+ OR jsonb_array_length(v_source->'centers')<>80
+ OR v_source->'centers'->0->>'centerId'<>'s60-center-79'
+ OR v_source->'centers'->79->>'centerId'<>'s60-center-00'
+ OR v_ids[1]<>'s60-center-79'
+ OR v_ids[80]<>'s60-center-00'
+ OR (v_source->'centers'->79->>'exactIssuanceExists')::boolean IS NOT TRUE
+ OR (v_source->'centers'->78->>'exactIssuanceExists')::boolean IS TRUE
+ OR (v_source->'centers'->76->>'registryActive')::boolean IS NOT FALSE
+ OR v_digest<>encode(sha256(convert_to(v_source::text,'UTF8')),'hex')
+ THEN RAISE EXCEPTION 'Original 80-center source review snapshot invalid'; END IF;
+ IF EXISTS(SELECT 1 FROM programs.national_issuance_review_intents
+  WHERE requester_authorized OR human_review_recorded OR issuance_authorized
+   OR issuance_executed) THEN
+  RAISE EXCEPTION 'Non-authorizing review intent acquired authority'; END IF;
+ SELECT count(*) INTO n FROM programs.national_program_issuances;
+ IF n<>2 THEN RAISE EXCEPTION 'Review request issued a national program'; END IF;
+ SELECT count(*) INTO n FROM governance.command_audit
+ WHERE action_code='NATIONAL_ISSUANCE_REVIEW_INTENT_CAPTURED';
+ IF n<>1 THEN RAISE EXCEPTION 'Review request audit cardinality %',n; END IF;
+ SELECT count(*) INTO n FROM governance.outbox_events
+ WHERE event_type='NationalIssuanceReviewIntentCaptured';
+ IF n<>1 THEN RAISE EXCEPTION 'Review request outbox cardinality %',n; END IF;
+ IF EXISTS(SELECT 1 FROM governance.outbox_events
+ WHERE event_type='NationalIssuanceReviewIntentCaptured' AND
+  (payload ? 'explicit_center_ids' OR payload ? 'unverified_requester'
+   OR payload ? 'stated_review_reason'
+   OR payload->>'issuance_authorized'<>'false'
+   OR payload->>'issuance_executed'<>'false'))
+ THEN RAISE EXCEPTION 'Review event leaked private selectors or implied authority'; END IF;
+END;$verify$;
+
+-- Duplicate UUID, malformed center IDs, malformed operation and an
+-- unapproved read-committed transaction cannot produce a second request.
+DO $negative$
+BEGIN
+ BEGIN
+  PERFORM programs.capture_national_issuance_review_intent(
+   gen_random_uuid(),'s60-original-program',2,ARRAY['s60-center-00'],
+   'fixture','fixture',gen_random_uuid(),gen_random_uuid(),'wrong-isolation');
+  RAISE EXCEPTION 'Unpinned transaction accepted';
+ EXCEPTION WHEN SQLSTATE '25001' THEN NULL; END;
+END;$negative$;
+
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+DO $negative$
+BEGIN
+ BEGIN
+  PERFORM programs.capture_national_issuance_review_intent(
+   'aa600000-0000-4000-8000-000000000001',
+   's60-original-program',2,ARRAY['s60-center-00'],
+   'fixture','replay',gen_random_uuid(),gen_random_uuid(),'duplicate');
+  RAISE EXCEPTION 'Replay accepted';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+ BEGIN
+  PERFORM programs.capture_national_issuance_review_intent(
+   gen_random_uuid(),'s60-original-program',2,
+   ARRAY['s60-center-00','s60-center-00'],
+   'fixture','duplicate center',gen_random_uuid(),gen_random_uuid(),'bad');
+  RAISE EXCEPTION 'Duplicate centers accepted';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+ BEGIN
+  PERFORM programs.capture_national_issuance_review_intent(
+   gen_random_uuid(),'s60-original-program',2,ARRAY['s60-center-00',' '],
+   'fixture','bad ID',gen_random_uuid(),gen_random_uuid(),'bad');
+  RAISE EXCEPTION 'Blank center accepted';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+ BEGIN
+  PERFORM programs.capture_national_issuance_review_intent(
+   gen_random_uuid(),'s60-original-program',0,ARRAY['s60-center-00'],
+   'fixture','bad version',gen_random_uuid(),gen_random_uuid(),'bad');
+  RAISE EXCEPTION 'Invalid version accepted';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+END;$negative$;
+COMMIT;
+
+-- A real independent, non-superuser LOGIN must not call capture, write
+-- the table, or SET ROLE a trusted database actor.
+\connect - kanoonyar_s60_unprivileged_ci
+DO $deny$
+BEGIN
+ BEGIN
+  PERFORM programs.capture_national_issuance_review_intent(
+   gen_random_uuid(),'s60-original-program',2,ARRAY['s60-center-00'],
+   'spoofed-actor','forgery',gen_random_uuid(),gen_random_uuid(),'forgery');
+  RAISE EXCEPTION 'Restricted account invoked private function';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ BEGIN
+  INSERT INTO programs.national_issuance_review_intents(
+   request_id,program_id,national_version,explicit_center_ids,
+   original_source_snapshot,source_digest_sha256,stated_review_reason,
+   unverified_requester_subject)
+  VALUES(gen_random_uuid(),'s60-original-program',2,ARRAY['s60-center-00'],
+   '{}'::jsonb,repeat('0',64),'forged','forged');
+  RAISE EXCEPTION 'Restricted account inserted review';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ BEGIN
+  EXECUTE 'SET ROLE postgres';
+  RAISE EXCEPTION 'Restricted account escalated SQL role';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END;$deny$;
+\connect - postgres
+
+-- The original immutable review and append-only audit/outbox cannot be
+-- retroactively turned into an approval, deleted or replaced.
+DO $history$
+BEGIN
+ BEGIN
+  UPDATE programs.national_issuance_review_intents SET human_review_recorded=true;
+  RAISE EXCEPTION 'Old review row was updated';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+  DELETE FROM programs.national_issuance_review_intents;
+  RAISE EXCEPTION 'Old review row was deleted';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+  INSERT INTO programs.national_issuance_review_intents(
+   request_id,program_id,national_version,explicit_center_ids,
+   original_source_snapshot,source_digest_sha256,stated_review_reason,
+   unverified_requester_subject,issuance_authorized)
+  VALUES(gen_random_uuid(),'s60-original-program',2,ARRAY['s60-center-00'],
+    '{}'::jsonb,repeat('0',64),'forged','forged',true);
+  RAISE EXCEPTION 'Forged active review was recorded';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+END;$history$;
+
+-- A later registry mutation is real external source drift. Captured
+-- historical review never silently rewrites its original snapshot.
+UPDATE centers.registry SET is_active=false WHERE center_id='s60-center-04';
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT programs.capture_national_issuance_review_intent(
+ 'aa600000-0000-4000-8000-000000000011',
+ 's60-original-program',2,ARRAY['s60-center-04'],
+ 'UNVERIFIED-s60-fixture-actor','New source state reviewed separately',
+ 'aa600000-0000-4000-8000-000000000012',
+ 'aa600000-0000-4000-8000-000000000013','s60-drift');
+COMMIT;
+DO $final$
+DECLARE old_value boolean; new_value boolean; n bigint;
+BEGIN
+ SELECT (original_source_snapshot->'centers'->75->>'registryActive')::boolean
+ INTO old_value FROM programs.national_issuance_review_intents
+ WHERE request_id='aa600000-0000-4000-8000-000000000001';
+ SELECT (original_source_snapshot->'centers'->0->>'registryActive')::boolean
+ INTO new_value FROM programs.national_issuance_review_intents
+ WHERE request_id='aa600000-0000-4000-8000-000000000011';
+ IF old_value IS NOT TRUE OR new_value IS NOT FALSE
+ THEN RAISE EXCEPTION 'Source history overwritten instead of preserving review snapshots'; END IF;
+ SELECT count(*) INTO n FROM programs.national_issuance_review_intents;
+ IF n<>2 THEN RAISE EXCEPTION 'Wrong review request cardinality %',n; END IF;
+ SELECT count(*) INTO n FROM governance.command_audit
+ WHERE action_code='NATIONAL_ISSUANCE_REVIEW_INTENT_CAPTURED';
+ IF n<>2 THEN RAISE EXCEPTION 'Audit not atomic %',n; END IF;
+ SELECT count(*) INTO n FROM governance.outbox_events
+ WHERE event_type='NationalIssuanceReviewIntentCaptured';
+ IF n<>2 THEN RAISE EXCEPTION 'Outbox not atomic %',n; END IF;
+ SELECT count(*) INTO n FROM programs.national_program_issuances;
+ IF n<>2 THEN RAISE EXCEPTION 'Real issuance count mutated %',n; END IF;
+END;$final$;
