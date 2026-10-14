@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
+import { CenterCampaignFollowup } from './CenterCampaignFollowup';
 type Note={noteId:string;noteText:string;notedBySubject:string;notedAt:string;
  verificationStatus:'UNVERIFIED';isApproval:false;isExecuted:false};
 type Mode='idle'|'loading'|'ready'|'denied'|'error';
@@ -90,6 +91,8 @@ export function CenterCampaignInspectionNotes({centerId,token,campaignId,associa
   {status==='ready'&&<ul>{notes.map(n=><li key={n.noteId}>
    {n.noteText} — ثبت‌کننده: {n.notedBySubject}
    {' '}<strong>UNVERIFIED — بدون تأیید</strong>
+   <CenterCampaignFollowup key={n.noteId} centerId={centerId} token={token}
+    campaignId={campaignId} associationId={associationId} noteId={n.noteId}/>
   </li>)}</ul>}
   {cursor!==null&&<button type="button" onClick={()=>void load(cursor)}>یادداشت‌های قدیمی‌تر</button>}
   <label>متن یادداشت بدون اطلاعات شخصی

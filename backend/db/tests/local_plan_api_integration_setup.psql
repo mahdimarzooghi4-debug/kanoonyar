@@ -27,6 +27,7 @@
 \ir ../migrations/0025_center_campaign_planning.sql
 \ir ../migrations/0026_campaign_source_report_links.sql
 \ir ../migrations/0027_campaign_report_inspection_notes.sql
+\ir ../migrations/0028_campaign_inspection_followup.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -94,6 +95,7 @@ GRANT USAGE ON SCHEMA campaigns TO kanoonyar_draft_read_ci;
 GRANT SELECT ON campaigns.center_campaigns,campaigns.center_campaign_revisions TO kanoonyar_draft_read_ci;
 GRANT SELECT ON campaigns.campaign_report_links TO kanoonyar_draft_read_ci;
 GRANT SELECT ON campaigns.campaign_report_inspection_notes TO kanoonyar_draft_read_ci;
+GRANT SELECT ON campaigns.inspection_followup_requests,campaigns.inspection_followup_responses TO kanoonyar_draft_read_ci;
 DO $test$
 BEGIN
   IF has_table_privilege('kanoonyar_draft_read_ci',
@@ -371,3 +373,21 @@ DO $safe$ BEGIN
   'campaigns.record_campaign_report_inspection(text,uuid,uuid,uuid,text,text,uuid,uuid,text)','EXECUTE')
  THEN RAISE EXCEPTION 'Inspection SQL credential unsafe'; END IF;
 END;$safe$;
+
+-- Synthetic CI-only EXECUTE login; NO Production authority.
+CREATE ROLE kanoonyar_campaign_followup_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_campaign_followup_ci;
+GRANT USAGE ON SCHEMA campaigns,programs,centers,governance TO kanoonyar_campaign_followup_ci;
+GRANT EXECUTE ON FUNCTION campaigns.append_inspection_followup(
+ text,uuid,uuid,uuid,uuid,uuid,text,text,text,uuid,uuid,text)
+ TO kanoonyar_campaign_followup_ci;
+DO $guard$ BEGIN
+ IF has_table_privilege('kanoonyar_campaign_followup_ci','campaigns.inspection_followup_requests','INSERT')
+ OR has_table_privilege('kanoonyar_campaign_followup_ci','campaigns.inspection_followup_responses','INSERT')
+ OR has_table_privilege('kanoonyar_campaign_followup_ci','governance.command_audit','INSERT')
+ OR pg_has_role('kanoonyar_campaign_followup_ci','kanoonyar_campaign_followup_owner','SET')
+ OR has_function_privilege('kanoonyar_draft_read_ci',
+  'campaigns.append_inspection_followup(text,uuid,uuid,uuid,uuid,uuid,text,text,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Followup CI role privilege violation'; END IF;
+END;$guard$;
