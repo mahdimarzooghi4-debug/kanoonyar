@@ -803,6 +803,33 @@ public sealed class SignedOidcHttpIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task Signed_admin_cannot_read_or_write_private_navigation_without_independent_grants()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var app=fixture.Server();
+        using var client=app.CreateClient();
+        foreach(var route in new[]{
+            "/api/v1/centers/center-a/site/navigation",
+            "/api/v1/centers/center-a/site/navigation/revisions"
+        })
+        {
+            using var anonymous=Request(HttpMethod.Get,route,null);
+            using var anonymousReply=await client.SendAsync(anonymous);
+            Assert.Equal(HttpStatusCode.Unauthorized,anonymousReply.StatusCode);
+            using var signed=Request(HttpMethod.Get,route,fixture.Token(roleClaim:true));
+            using var signedReply=await client.SendAsync(signed);
+            Assert.Equal(HttpStatusCode.Forbidden,signedReply.StatusCode);
+        }
+        using(var request=Request(HttpMethod.Post,
+            "/api/v1/centers/center-a/site/navigation/revisions",fixture.Token(roleClaim:true)))
+        {
+            request.Content=JsonContent.Create(new {expectedRevision=0,items=Array.Empty<object>()});
+            using var response=await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.Forbidden,response.StatusCode);
+        }
+    }
+
     private sealed class TestSessionClaimWriteGrant : ICenterSessionClaimWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal user,string center,
