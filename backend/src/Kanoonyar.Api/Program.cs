@@ -21,6 +21,7 @@ builder.Services.AddSingleton<ICenterRegistrationReviewAuthorization, Unapproved
 builder.Services.AddSingleton<ICenterSiteDraftAuthorization, UnapprovedCenterSiteDraftAuthorization>();
 builder.Services.AddSingleton<ICenterSiteDesignAuthorization, UnapprovedCenterSiteDesignAuthorization>();
 builder.Services.AddSingleton<ICenterSiteNavigationAuthorization, UnapprovedCenterSiteNavigationAuthorization>();
+builder.Services.AddSingleton<ICenterPrivatePageTemplateAuthorization, UnapprovedPrivatePageTemplateAuthorization>();
 builder.Services.AddSingleton<ICenterWorkCardAuthorization, UnapprovedCenterWorkCardAuthorization>();
 builder.Services.AddSingleton<ICenterCollaborationAuthorization, UnapprovedCenterCollaborationAuthorization>();
 builder.Services.AddSingleton<ICenterSessionPreparationAuthorization, UnapprovedCenterSessionPreparationAuthorization>();
@@ -68,6 +69,9 @@ if (oidcConfigured)
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards", CenterWorkCardEndpoint.List).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/revisions", CenterWorkCardEndpoint.History).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/site/navigation/revisions", CenterSiteNavigationEndpoint.Append).RequireAuthorization();
+    app.MapPost("/api/v1/centers/{centerId}/site/templates/revisions", CenterPrivatePageTemplateEndpoint.Append).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/site/templates", CenterPrivatePageTemplateEndpoint.List).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/site/templates/{templateId:guid}/revisions", CenterPrivatePageTemplateEndpoint.History).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/site/assembled-preview", CenterAssembledSitePreviewEndpoint.Read).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/site/navigation", CenterSiteNavigationEndpoint.Latest).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/site/navigation/revisions", CenterSiteNavigationEndpoint.History).RequireAuthorization();
@@ -134,6 +138,9 @@ else
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/site/navigation/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
+    app.MapPost("/api/v1/centers/{centerId}/site/templates/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/site/templates", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/site/templates/{templateId:guid}/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/site/assembled-preview", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/site/navigation", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/site/navigation/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
