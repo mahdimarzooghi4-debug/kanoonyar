@@ -47,8 +47,8 @@ async function enter(p:import('@playwright/test').Page){
  await p.getByRole('textbox',{name:'توکن دسترسی'}).fill('synthetic-s48');
  await p.getByRole('button',{name:'دریافت عضویت‌ها'}).click();
  await p.getByRole('combobox',{name:'انتخاب کانون برای پیش‌نویس‌ها'}).selectOption('c1');
- await p.getByRole('textbox',{name:'شروع بازه تقویم'}).fill('2026-11-01');
- await p.getByRole('textbox',{name:'پایان انحصاری بازه تقویم'}).fill('2026-12-01');
+ await p.locator('input[aria-label="شروع بازه تقویم"]').fill('2026-11-01');
+ await p.locator('input[aria-label="پایان انحصاری بازه تقویم"]').fill('2026-12-01');
 }
 function permitCalendar(p:import('@playwright/test').Page,rows:unknown[]=[calendarSession,calendarEvent]){
  return p.route('**/api/v1/centers/*/schedule/private?*',r=>r.fulfill({
@@ -150,7 +150,7 @@ test('denied calendar and changed UTC window cannot retain event dossiers or ses
  await c.getByRole('button',{name:'خواندن تقویم خصوصی'}).click();
  await c.getByRole('button',{name:'پرونده شواهد همین رویداد از تقویم'}).click();
  await expect(c.locator('section[aria-label="پرونده منبع و گزارش رویداد"]')).toBeVisible();
- await p.getByRole('textbox',{name:'شروع بازه تقویم'}).fill('2026-11-02');
+ await p.locator('input[aria-label="شروع بازه تقویم"]').fill('2026-11-02');
  await expect(c.locator('section[aria-label="پرونده منبع و گزارش رویداد"]')).toHaveCount(0);
  // A new window is a new authorization read; never reuse an old event action.
  denied=true;
