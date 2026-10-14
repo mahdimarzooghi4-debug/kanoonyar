@@ -1,4 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
+import {CenterEventSourceDossier} from './CenterEventSourceDossier';
+import {SessionClaimReporter} from './SessionClaimReporter';
 type SourceKind='CLASS_SESSION'|'CENTER_EVENT';
 type Item={scheduledAt:string;sourceKind:SourceKind;sourceId:string;title:string;
  draftId:string|null;pinnedPlanRevision:number|null;planRevision:number|null;
@@ -30,6 +32,7 @@ export function CenterPrivateCalendar({token,centerId}:{token:string;centerId:st
  const [items,setItems]=useState<Item[]>([]),[cursor,setCursor]=useState<Cursor|null>(null);
  const [status,setStatus]=useState<'idle'|'loading'|'ready'|'denied'|'error'>('idle');
  const [activeWindow,setActiveWindow]=useState<{from:string;until:string}|null>(null);
+ const [opened,setOpened]=useState<string|null>(null);
  useEffect(()=>()=>{epoch.current++;},[]);
  const datesValid=from!==''&&until!==''&&from<until;
  async function load(before:Cursor|null){
@@ -37,6 +40,7 @@ export function CenterPrivateCalendar({token,centerId}:{token:string;centerId:st
   const window=before===null?{from,until}:activeWindow;
   if(!window||!window.from||!window.until||window.from>=window.until)return;
   const current=++epoch.current;
+  setOpened(null);
   setStatus('loading');
   if(!before){setItems([]);setCursor(null);setActiveWindow(window);}
   try{
@@ -49,7 +53,7 @@ export function CenterPrivateCalendar({token,centerId}:{token:string;centerId:st
     '/schedule/private?'+params,{headers:{Authorization:'Bearer '+token.trim()},cache:'no-store'});
    if(epoch.current!==current)return;
    if(response.status===401||response.status===403){
-    setStatus('denied');setItems([]);setCursor(null);return;
+    setStatus('denied');setItems([]);setCursor(null);setOpened(null);return;
    }
    if(!response.ok)throw Error('Unavailable');
    const payload:unknown=await response.json();
@@ -75,15 +79,17 @@ export function CenterPrivateCalendar({token,centerId}:{token:string;centerId:st
     throw Error('Invalid order');
    setItems(old=>before===null?list:[...old,...list]);
    setCursor(next as Cursor|null);setStatus('ready');
-  }catch{if(epoch.current===current){setItems([]);setCursor(null);setStatus('error');}}
+  }catch{if(epoch.current===current){setItems([]);setCursor(null);setOpened(null);setStatus('error');}}
  }
  return <section aria-label="تقویم خصوصی کانون" style={{border:'1px solid #aaa',padding:12,marginTop:16}}>
   <h3>تقویم برنامه‌ریزی خصوصی کانون</h3>
-  <p>فقط زمان‌های برنامه‌ریزی‌شده کلاس و رویداد؛ نه برگزاری، حضور، ثبت‌نام یا انتشار عمومی.</p>
+  <p>فقط زمان‌های برنامه‌ریزی‌شده کلاس و رویداد؛ نه برگزاری، حضور، ثبت‌نام یا انتشار عمومی.
+   بازکردن پرونده شواهد رویداد یا ثبت ادعای جلسه، به مجوزهای مستقل اصلی نیاز دارد.
+   تغییر بازه یا بازیابی مجدد، عملیات باز را می‌بندد.</p>
   <label>از تاریخ (UTC) <input aria-label="شروع بازه تقویم" type="date" value={from}
-   onChange={e=>{epoch.current++;setFrom(e.target.value);setStatus('idle');setItems([]);setCursor(null);setActiveWindow(null);}}/></label>{' '}
+   onChange={e=>{epoch.current++;setFrom(e.target.value);setStatus('idle');setItems([]);setCursor(null);setActiveWindow(null);setOpened(null);}}/></label>{' '}
   <label>تا تاریخ، انحصاری (UTC) <input aria-label="پایان انحصاری بازه تقویم" type="date" value={until}
-   onChange={e=>{epoch.current++;setUntil(e.target.value);setStatus('idle');setItems([]);setCursor(null);setActiveWindow(null);}}/></label>{' '}
+   onChange={e=>{epoch.current++;setUntil(e.target.value);setStatus('idle');setItems([]);setCursor(null);setActiveWindow(null);setOpened(null);}}/></label>{' '}
   <button type="button" disabled={!centerId||!token.trim()||!datesValid||status==='loading'}
    onClick={()=>void load(null)}>خواندن تقویم خصوصی</button>
   {status==='loading'&&<p role="status">در حال دریافت زمان‌بندی…</p>}
@@ -95,6 +101,23 @@ export function CenterPrivateCalendar({token,centerId}:{token:string;centerId:st
    <p>زمان UTC: {x.scheduledAt} — فقط برنامه‌ریزی‌شده</p>
    <p>شناسه منبع: {x.sourceId}</p>
    {x.sourceKind==='CENTER_EVENT'&&<p>نسخه رویداد {x.planRevision}، نسخه طرح محلی {x.pinnedPlanRevision}</p>}
+   <button type="button" onClick={()=>setOpened(current=>current===
+    x.sourceKind+':'+x.sourceId?null:x.sourceKind+':'+x.sourceId)}>
+    {opened===x.sourceKind+':'+x.sourceId?'بستن عملیات منبع تقویم':
+      x.sourceKind==='CENTER_EVENT'?'پرونده شواهد همین رویداد از تقویم':
+      'گزارش ادعای همین جلسه از تقویم'}
+   </button>
+   {opened===x.sourceKind+':'+x.sourceId&&x.sourceKind==='CENTER_EVENT'&&
+    <CenterEventSourceDossier
+     key={'calendar-dossier:'+centerId+':'+token+':'+x.sourceId+':'+x.planRevision}
+     centerId={centerId} token={token} eventId={x.sourceId}
+     draftId={x.draftId!} pinnedPlanRevision={x.pinnedPlanRevision!}
+     revision={x.planRevision!} title={x.title} scheduledAt={x.scheduledAt}/>}
+   {opened===x.sourceKind+':'+x.sourceId&&x.sourceKind==='CLASS_SESSION'&&
+    <SessionClaimReporter
+     key={'calendar-session:'+centerId+':'+token+':'+x.sourceId}
+     centerId={centerId} token={token} sessionId={x.sourceId}
+     onClose={()=>setOpened(null)}/>}
   </li>)}</ol>}
   {status==='ready'&&cursor!==null&&<button type="button" onClick={()=>void load(cursor)}>
    ادامه تقویم خصوصی</button>}
