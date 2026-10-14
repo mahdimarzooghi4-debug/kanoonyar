@@ -682,6 +682,21 @@ public sealed class SignedOidcHttpIntegrationTests
     }
 
     [Fact]
+    public async Task Signed_jwt_role_claim_cannot_grant_owner_class_directory_read()
+    {
+        using var fixture = new SignedJwtFixture();
+        await using var app = fixture.Server();
+        using var client = app.CreateClient();
+        const string path = "/api/v1/centers/center-a/classes/catalogue";
+        using(var anonymous = Request(HttpMethod.Get,path,null))
+        using(var denied = await client.SendAsync(anonymous))
+            Assert.Equal(HttpStatusCode.Unauthorized,denied.StatusCode);
+        using(var signed = Request(HttpMethod.Get,path,fixture.Token(roleClaim:true)))
+        using(var denied = await client.SendAsync(signed))
+            Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+    }
+
+    [Fact]
     public async Task Signed_jwt_still_needs_independent_class_and_session_write_grants()
     {
         using var fixture=new SignedJwtFixture();

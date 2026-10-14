@@ -5,10 +5,16 @@ import { CenterSessionPreparations } from './CenterSessionPreparations';
 import { SessionClaimReporter } from './SessionClaimReporter';
 
 type SourceSession={sourceId:string;classId:string;title:string;classTitle:string;scheduledAt:string|null};
+type OwnedClass={classId:string;title:string};
 type Stage='idle'|'loading'|'ready'|'denied'|'error';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const id=(x:unknown):x is string=>typeof x==='string'&&uuid.test(x);
 const date=(x:unknown):x is string=>typeof x==='string'&&!Number.isNaN(Date.parse(x));
+function validClass(x:unknown):x is OwnedClass{
+ if(!x||typeof x!=='object')return false;const v=x as Record<string,unknown>;
+ return id(v.classId)&&typeof v.title==='string'&&v.title.trim().length>0&&
+  v.title.length<=512;
+}
 function valid(x:unknown):x is SourceSession{
  if(!x||typeof x!=='object')return false;const v=x as Record<string,unknown>;
  return id(v.sourceId)&&id(v.classId)&&
@@ -19,16 +25,19 @@ function valid(x:unknown):x is SourceSession{
 /** Existing center-owned classes discoverable from original S12 sessions.
  * No standalone class directory claim: classes without a session are not listed here. */
 export function CenterExistingClassIntakeWorkspace({centerId,token}:{centerId:string;token:string}){
- const generation=useRef(0);
+ const generation=useRef(0),classEpoch=useRef(0);
  const [sessions,setSessions]=useState<SourceSession[]>([]);
  const [cursor,setCursor]=useState<string|null>(null);
+ const [ownedClasses,setOwnedClasses]=useState<OwnedClass[]>([]);
+ const [ownerCursor,setOwnerCursor]=useState<string|null>(null);
+ const [ownerStatus,setOwnerStatus]=useState<Stage>('idle');
  const [status,setStatus]=useState<Stage>('idle');
  const [opened,setOpened]=useState<string|null>(null);
  const [openedScheduler,setOpenedScheduler]=useState<string|null>(null);
  const [openedSessions,setOpenedSessions]=useState<string|null>(null);
  const [sessionTask,setSessionTask]=useState<{sourceId:string;kind:'PREPARATION'|'CLAIM'}|null>(null);
  const prefix='/api/v1/centers/'+encodeURIComponent(centerId);
- useEffect(()=>()=>{generation.current++;},[]);
+ useEffect(()=>()=>{generation.current++;classEpoch.current++;},[]);
  async function load(before:string|null){
   if(!centerId||!token.trim()||status==='loading')return;
   const current=++generation.current;
@@ -64,6 +73,8 @@ export function CenterExistingClassIntakeWorkspace({centerId,token}:{centerId:st
     seen.add(sourceKey);
     const prev=titles.get(classKey);
     if(prev!==undefined&&prev!==s.classTitle)throw Error('Conflicting class owner');
+    if(ownedClasses.some(c=>c.classId.toLowerCase()===classKey&&c.title!==s.classTitle))
+     throw Error('Inconsistent original owner');
     titles.set(classKey,s.classTitle);
    }
    setSessions(combined);setCursor(v.nextBeforeSourceId as string|null);
@@ -72,20 +83,74 @@ export function CenterExistingClassIntakeWorkspace({centerId,token}:{centerId:st
    setSessions([]);setCursor(null);setStatus('error');setOpened(null);
   }}
  }
- const classes=Array.from(new Map(sessions.map(s=>[s.classId.toLowerCase(),
-  {classId:s.classId,title:s.classTitle}])).values());
+ async function loadOriginalClasses(before:string|null){
+  if(!centerId||!token.trim()||ownerStatus==='loading')return;
+  const current=++classEpoch.current;
+  setOwnerStatus('loading');setOpened(null);setOpenedScheduler(null);
+  setOpenedSessions(null);setSessionTask(null);
+  if(before===null){setOwnedClasses([]);setOwnerCursor(null);}
+  try{
+   const response=await fetch(prefix+'/classes/catalogue'+
+    (before===null?'':'?beforeClassId='+encodeURIComponent(before)),
+    {headers:{Authorization:'Bearer '+token.trim()},cache:'no-store'});
+   if(current!==classEpoch.current)return;
+   if(response.status===401||response.status===403){
+    setOwnedClasses([]);setOwnerCursor(null);setOwnerStatus('denied');return;
+   }
+   if(!response.ok)throw Error('Class catalogue unavailable');
+   const raw:unknown=await response.json();
+   if(current!==classEpoch.current||!raw||typeof raw!=='object')throw Error('Invalid');
+   const v=raw as Record<string,unknown>;
+   if(!Array.isArray(v.classes)||v.classes.length>20||
+    !v.classes.every(validClass)||
+    !(v.nextBeforeClassId===null||id(v.nextBeforeClassId)))throw Error('Forged class');
+   const rows=v.classes as OwnedClass[];
+   if(rows.some((c,i)=>(before!==null&&c.classId.toLowerCase()>=before.toLowerCase())||
+    (i>0&&rows[i-1].classId.toLowerCase()<=c.classId.toLowerCase()))||
+    (v.nextBeforeClassId!==null&&(rows.length!==20||
+     rows[19].classId.toLowerCase()!==String(v.nextBeforeClassId).toLowerCase())))
+    throw Error('Invalid original class cursor');
+   const combined=before===null?rows:[...ownedClasses,...rows];
+   const seen=new Set<string>();
+   for(const c of combined){
+    const k=c.classId.toLowerCase();
+    if(seen.has(k))throw Error('Duplicate original class');
+    seen.add(k);
+    if(sessions.some(x=>x.classId.toLowerCase()===k&&x.classTitle!==c.title))
+     throw Error('Conflicting original class');
+   }
+   setOwnedClasses(combined);setOwnerCursor(v.nextBeforeClassId as string|null);
+   setOwnerStatus('ready');
+  }catch{
+   if(current===classEpoch.current){
+    setOwnedClasses([]);setOwnerCursor(null);setOwnerStatus('error');
+   }
+  }
+ }
+ const classes=Array.from(new Map<string,OwnedClass>([
+  ...sessions.map(s=>[s.classId.toLowerCase(),{classId:s.classId,title:s.classTitle}] as [string,OwnedClass]),
+  ...ownedClasses.map(c=>[c.classId.toLowerCase(),c] as [string,OwnedClass])
+ ]).values());
+ const visible=status==='ready'||ownerStatus==='ready';
  return <section aria-label="مدیریت درخواست کلاس‌های موجود"
   style={{border:'1px solid #aaa',padding:12,marginTop:12}}>
-  <h3>مدیریت ظرفیت و درخواست کلاس‌های موجود</h3>
-  <p>کلاس‌ها تنها از جلسات واقعی ثبت‌شده همان کانون کشف می‌شوند.
-   نبودن کلاس در این فهرست به معنی نبود آن در سامانه نیست.
-   درخواست‌ها فقط REQUESTED هستند؛ صندلی رزرو یا رضایت قانونی تأیید نمی‌شود.</p>
+  <h3>کاتالوگ اصلی کلاس‌ها و عملیات آموزشی</h3>
+  <p>کاتالوگ اصلی همه کلاس‌های ثبت‌شده همان کانون، حتی کلاس‌های بدون جلسه، را
+   فقط با مجوز مستقل نمایش می‌دهد. مسیر قدیمی کشف از جلسات S12 جداگانه باقی می‌ماند.
+   فهرست جلسات تا بارگذاری تمام صفحات کامل نیست. درخواست‌ها فقط REQUESTED هستند؛
+   صندلی رزرو یا رضایت قانونی تأیید نمی‌شود.</p>
+  <button type="button" disabled={ownerStatus==='loading'||!token.trim()}
+   onClick={()=>void loadOriginalClasses(null)}>دریافت کاتالوگ اصلی همه کلاس‌ها</button>
+  {ownerStatus==='denied'&&<p role="alert">مجوز مستقل مشاهده کاتالوگ اصلی کلاس‌ها وجود ندارد.</p>}
+  {ownerStatus==='error'&&<p role="alert">کاتالوگ اصلی معتبر کلاس‌ها دریافت نشد.</p>}
+  {ownerStatus==='ready'&&ownerCursor!==null&&<button type="button"
+   onClick={()=>void loadOriginalClasses(ownerCursor)}>کلاس‌های اصلی بیشتر</button>}
   <button type="button" disabled={status==='loading'||!token.trim()} onClick={()=>void load(null)}>
    دریافت کلاس‌ها از جلسات واقعی</button>
   {status==='denied'&&<p role="alert">مجوز مستقل کاتالوگ کلاس و جلسه وجود ندارد.</p>}
   {status==='error'&&<p role="alert">کاتالوگ معتبر کلاس‌های موجود دریافت نشد.</p>}
-  {status==='ready'&&classes.length===0&&<p>در این بخش، جلسه‌ای برای شناسایی کلاس ثبت نشده است.</p>}
-  {status==='ready'&&<ul>{classes.map(c=><li key={c.classId}>
+  {visible&&classes.length===0&&<p>در صفحات بازیابی‌شده، کلاسی ثبت نشده است.</p>}
+  {visible&&<ul>{classes.map(c=><li key={c.classId}>
    <strong>{c.title}</strong> — کلاس ثبت‌شده در منبع اصلی
    <button type="button" onClick={()=>setOpenedScheduler(x=>x===c.classId?null:c.classId)}>
     {openedScheduler===c.classId?'بستن برنامه‌ریزی جلسه':'برنامه‌ریزی جلسه جدید برای همین کلاس'}</button>
@@ -97,9 +162,10 @@ export function CenterExistingClassIntakeWorkspace({centerId,token}:{centerId:st
    {opened===c.classId&&<ClassCapacityIntake key={centerId+':'+token+':'+c.classId}
     centerId={centerId} token={token} classId={c.classId}
     onClose={()=>setOpened(null)}/>}
+   {sessions.some(x=>x.classId.toLowerCase()===c.classId.toLowerCase())&&
    <button type="button" onClick={()=>{setSessionTask(null);
     setOpenedSessions(x=>x===c.classId?null:c.classId);}}>
-    {openedSessions===c.classId?'بستن عملیات جلسات کلاس':'عملیات جلسات واقعی همین کلاس'}</button>
+    {openedSessions===c.classId?'بستن عملیات جلسات کلاس':'عملیات جلسات واقعی همین کلاس'}</button>}
    {openedSessions===c.classId&&<section aria-label={'میزکار جلسات کلاس '+c.classId}>
     <h4>جلسات ثبت‌شده در منبع اصلی این کلاس</h4>
     <p>فقط جلسات بازیابی‌شده از صفحات کاتالوگ اصلی نمایش داده می‌شوند؛

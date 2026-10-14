@@ -11,6 +11,7 @@ builder.Services.AddSingleton<ILocalPlanDraftWriteAuthorization, UnapprovedLocal
 builder.Services.AddSingleton<ILocalPlanDraftReadAuthorization, UnapprovedLocalPlanDraftReadAuthorization>();
 builder.Services.AddSingleton<ICenterActivityReportReadAuthorization, UnapprovedCenterActivityReportReadAuthorization>();
 builder.Services.AddSingleton<ICenterSourceCatalogReadAuthorization, UnapprovedCenterSourceCatalogReadAuthorization>();
+builder.Services.AddSingleton<ICenterClassCatalogueAuthorization, UnapprovedCenterClassCatalogueAuthorization>();
 builder.Services.AddSingleton<ICenterLearningPlanWriteAuthorization, UnapprovedCenterLearningPlanWriteAuthorization>();
 builder.Services.AddSingleton<ICenterSessionClaimWriteAuthorization, UnapprovedCenterSessionClaimWriteAuthorization>();
 builder.Services.AddSingleton<ICenterSessionClaimHistoryAuthorization, UnapprovedCenterSessionClaimHistoryAuthorization>();
@@ -94,6 +95,7 @@ if (oidcConfigured)
     app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts/{draftId:guid}/execution-trace", CenterExecutionTraceEndpoint.GetTrace).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/local-plan-drafts/{draftId:guid}/activity-reports", CenterActivityReportReadEndpoint.ListReports).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/activity-sources/{sourceKind}", CenterSourceCatalogEndpoint.ListSources).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/classes/catalogue", CenterClassCatalogueEndpoint.List).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/local-plan-drafts/revisions", LocalPlanDraftWriteEndpoint.Append).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/classes", CenterLearningPlanWriteEndpoint.CreateClass).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/classes/sessions", CenterLearningPlanWriteEndpoint.ScheduleSession).RequireAuthorization();
