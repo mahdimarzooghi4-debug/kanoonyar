@@ -35,6 +35,7 @@
 \ir ../migrations/0035_center_session_private_preparation.sql
 \ir ../migrations/0036_collaboration_recipient_notes.sql
 \ir ../migrations/0038_center_private_page_templates.sql
+\ir ../migrations/0039_center_work_resource_needs.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -567,3 +568,28 @@ DO $private_template_security$ BEGIN
      'web.append_center_private_page_template(text,uuid,uuid,bigint,bigint,text,text,uuid,uuid,text)','EXECUTE')
  THEN RAISE EXCEPTION 'Unsafe private template test role'; END IF;
 END;$private_template_security$;
+
+-- Sprint 39 disposable synthetic resource planning credentials; never real grants.
+CREATE ROLE kanoonyar_work_resource_need_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_work_resource_need_ci;
+GRANT USAGE ON SCHEMA operations,programs,centers,governance TO kanoonyar_work_resource_need_ci;
+GRANT EXECUTE ON FUNCTION operations.append_work_resource_need(
+ text,uuid,uuid,bigint,text,text,timestamptz,text,uuid,uuid,text)
+ TO kanoonyar_work_resource_need_ci;
+GRANT SELECT ON operations.center_work_resource_needs,
+ operations.center_work_resource_need_revisions TO kanoonyar_draft_read_ci;
+DO $s39$ BEGIN
+ IF has_table_privilege('kanoonyar_work_resource_need_ci',
+    'operations.center_work_resource_need_revisions','INSERT')
+  OR has_table_privilege('kanoonyar_work_resource_need_ci',
+    'operations.center_work_resource_needs','SELECT')
+  OR has_table_privilege('kanoonyar_work_resource_need_ci',
+    'governance.command_audit','INSERT')
+  OR pg_has_role('kanoonyar_work_resource_need_ci','kanoonyar_work_resource_need_owner','SET')
+  OR has_function_privilege('kanoonyar_draft_read_ci',
+    'operations.append_work_resource_need(text,uuid,uuid,bigint,text,text,timestamptz,text,uuid,uuid,text)','EXECUTE')
+  OR has_function_privilege('public',
+    'operations.append_work_resource_need(text,uuid,uuid,bigint,text,text,timestamptz,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Unsafe disposable resource need role'; END IF;
+END;$s39$;
