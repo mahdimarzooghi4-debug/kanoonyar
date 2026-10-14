@@ -90,7 +90,7 @@ function NationalProgramCatalog() {
       } catch {
         if (!controller.signal.aborted) setState({
           status: 'error', programs: [],
-          error: 'فهرست کامل برنامه‌های ملی در دسترس نیست.',
+          error: 'فهرست برنامه‌های ملی در دسترس نیست.',
         });
       }
     }
