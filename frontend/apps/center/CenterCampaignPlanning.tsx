@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
+import { CenterCampaignSourceReports } from './CenterCampaignSourceReports';
 
 type Activity={activityKey:string;title:string};
 type LocalPlan={draftId:string;revision:number;localTitle:string;programId:string;nationalVersion:number};
@@ -241,6 +242,10 @@ export function CenterCampaignPlanning({centerId,token}:{centerId:string;token:s
    {save==='denied'&&<p role="alert">مجوز مستقل ویرایش پویش تأیید نشده است.</p>}
    {save==='conflict'&&<p role="alert">طرح مبنا، نشانی یا نسخه پویش تعارض دارد؛ دوباره بررسی کنید.</p>}
    {save==='error'&&<p role="alert">ثبت پویش تأیید نشد.</p>}
+   {selected&&<CenterCampaignSourceReports key={selected.campaignId+':'+selected.revision}
+    centerId={centerId} token={token} campaignId={selected.campaignId}
+    draftId={selected.draftId} campaignRevision={selected.revision}
+    activities={selected.plannedActivities}/>}
    {selected&&<>
     <button type="button" onClick={()=>void loadHistory(null)}>تاریخچه پویش</button>
     {historyState==='denied'&&<p role="alert">مجوز مشاهده تاریخچه پویش وجود ندارد.</p>}

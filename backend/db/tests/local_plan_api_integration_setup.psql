@@ -25,6 +25,7 @@
 \ir ../migrations/0023_center_site_design_drafts.sql
 \ir ../migrations/0024_center_form_builder_drafts.sql
 \ir ../migrations/0025_center_campaign_planning.sql
+\ir ../migrations/0026_campaign_source_report_links.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -90,6 +91,7 @@ GRANT SELECT ON web.center_site_design_revisions TO kanoonyar_draft_read_ci;
 GRANT SELECT ON web.center_forms,web.center_form_draft_revisions TO kanoonyar_draft_read_ci;
 GRANT USAGE ON SCHEMA campaigns TO kanoonyar_draft_read_ci;
 GRANT SELECT ON campaigns.center_campaigns,campaigns.center_campaign_revisions TO kanoonyar_draft_read_ci;
+GRANT SELECT ON campaigns.campaign_report_links TO kanoonyar_draft_read_ci;
 DO $test$
 BEGIN
   IF has_table_privilege('kanoonyar_draft_read_ci',
@@ -335,3 +337,19 @@ DO $verify$ BEGIN
   'campaigns.append_center_campaign(text,uuid,bigint,text,uuid,bigint,text,text,text,jsonb,text,uuid,uuid,text)','EXECUTE')
  THEN RAISE EXCEPTION 'Campaign CI SQL role unsafe'; END IF;
 END;$verify$;
+
+-- Test-only, EXECUTE-only association role; not an operational privilege.
+CREATE ROLE kanoonyar_campaign_link_api_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_campaign_link_api_ci;
+GRANT USAGE ON SCHEMA campaigns,programs,centers,governance TO kanoonyar_campaign_link_api_ci;
+GRANT EXECUTE ON FUNCTION campaigns.link_unverified_source_report(
+ text,uuid,uuid,bigint,text,uuid,text,uuid,uuid,text) TO kanoonyar_campaign_link_api_ci;
+DO $deny$ BEGIN
+ IF has_table_privilege('kanoonyar_campaign_link_api_ci','campaigns.campaign_report_links','INSERT')
+ OR has_table_privilege('kanoonyar_campaign_link_api_ci','governance.command_audit','INSERT')
+ OR pg_has_role('kanoonyar_campaign_link_api_ci','kanoonyar_campaign_report_link_owner','SET')
+ OR has_function_privilege('kanoonyar_draft_read_ci',
+  'campaigns.link_unverified_source_report(text,uuid,uuid,bigint,text,uuid,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Unsafe campaign association SQL account'; END IF;
+END;$deny$;
