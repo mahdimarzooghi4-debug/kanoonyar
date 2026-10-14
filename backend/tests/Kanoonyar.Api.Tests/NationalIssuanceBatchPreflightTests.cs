@@ -116,6 +116,16 @@ public sealed class NationalIssuanceBatchPreflightTests
         Assert.Equal(2, observed.NationalVersion);
         Assert.False(observed.IssuesAnyCommand);
         Assert.False(observed.HumanIssuanceAuthorizationVerified);
+        // The S59 packet binds this whole immutable S58 observation. No
+        // review, human authorization or new issuance is inferred.
+        var originalPacket = NationalIssuancePreflightReviewPacket.Create(observed);
+        Assert.True(NationalIssuancePreflightReviewPacket.HasUnmodifiedEvidence(originalPacket));
+        var unchanged = await NationalIssuancePreflightReviewPacket.RecheckAsync(
+            db, originalPacket, CancellationToken.None);
+        Assert.True(unchanged.SourceUnchanged);
+        Assert.Equal(originalPacket.DigestSha256, unchanged.CurrentPacket.DigestSha256);
+        Assert.False(unchanged.HumanReviewRecorded);
+        Assert.False(unchanged.IssuanceAuthorized);
         Assert.Equal(80, observed.Centers.Count);
         Assert.Equal(requested, observed.Centers.Select(x => x.CenterId));
         Assert.All(observed.Centers, c => Assert.True(c.RegistryExists));
@@ -137,6 +147,8 @@ public sealed class NationalIssuanceBatchPreflightTests
         var unpublished = await NationalIssuanceBatchPreflight.InspectAsync(
             db, programId, 3, new[] { centers[0], centers[1] }, CancellationToken.None);
         Assert.False(unpublished.ExactPublicationExists);
+        var unissuedPacket = NationalIssuancePreflightReviewPacket.Create(unpublished);
+        Assert.True(NationalIssuancePreflightReviewPacket.HasUnmodifiedEvidence(unissuedPacket));
         Assert.All(unpublished.Centers, c => Assert.False(c.ExactIssuanceExists));
         var unknown = await NationalIssuanceBatchPreflight.InspectAsync(db,
             programId, 2, new[] { "nonexistent-" + prefix, centers[2] }, CancellationToken.None);
@@ -168,5 +180,63 @@ public sealed class NationalIssuanceBatchPreflightTests
         Assert.False(repeated.Centers[0].RegistryActive);
         Assert.False(repeated.HumanIssuanceAuthorizationVerified);
         Assert.Equal(2L, await CountIssuances());
+
+        // A later center activity change makes the original 80-center review
+        // packet stale, without granting a future issuance operation.
+        var afterCenterChange = await NationalIssuancePreflightReviewPacket.RecheckAsync(
+            db, originalPacket, CancellationToken.None);
+        Assert.False(afterCenterChange.SourceUnchanged);
+        Assert.False(afterCenterChange.IssuanceAuthorized);
+        Assert.False(afterCenterChange.HumanReviewRecorded);
+        Assert.False(afterCenterChange.CurrentPacket.OriginalObservation.Centers
+            .Single(x => x.CenterId == centers[2]).RegistryActive);
+        Assert.True(NationalIssuancePreflightReviewPacket.HasUnmodifiedEvidence(
+            afterCenterChange.CurrentPacket));
+        Assert.Equal(2L, await CountIssuances());
+
+        // An independently seeded NEW publication also invalidates a packet
+        // observing that historical version as unpublished.
+        await using (var publishVersionThree = new NpgsqlCommand(
+            """
+            INSERT INTO programs.national_program_publications
+              (program_id, version, publisher_subject, published_at)
+            VALUES (@program,3,'s58-fixture',now())
+            """,db))
+        {
+            publishVersionThree.Parameters.AddWithValue("program",programId);
+            Assert.Equal(1,await publishVersionThree.ExecuteNonQueryAsync());
+        }
+        var publicationDrift = await NationalIssuancePreflightReviewPacket.RecheckAsync(
+            db, unissuedPacket, CancellationToken.None);
+        Assert.False(publicationDrift.SourceUnchanged);
+        Assert.True(publicationDrift.CurrentPacket.OriginalObservation.ExactPublicationExists);
+        Assert.False(publicationDrift.IssuanceAuthorized);
+        Assert.Equal(2L, await CountIssuances());
+
+        // A separate explicit synthetic source fixture now records an exact
+        // historical issuance for one previously unissued center. This
+        // mutation is TEST SETUP, never performed by packet/recheck code.
+        var centerPacket = NationalIssuancePreflightReviewPacket.Create(
+            await NationalIssuanceBatchPreflight.InspectAsync(db,programId,2,
+                new[] { centers[4] }, CancellationToken.None));
+        await using (var independentlySeededIssuance = new NpgsqlCommand(
+            """
+            INSERT INTO programs.national_program_issuances
+              (issuance_id,center_id,program_id,national_version,
+               issued_by_subject,issued_at)
+            VALUES (gen_random_uuid(),@center,@program,2,'fixture-only',now())
+            """,db))
+        {
+            independentlySeededIssuance.Parameters.AddWithValue("center",centers[4]);
+            independentlySeededIssuance.Parameters.AddWithValue("program",programId);
+            Assert.Equal(1,await independentlySeededIssuance.ExecuteNonQueryAsync());
+        }
+        Assert.Equal(3L,await CountIssuances());
+        var issuanceDrift = await NationalIssuancePreflightReviewPacket.RecheckAsync(
+            db,centerPacket,CancellationToken.None);
+        Assert.False(issuanceDrift.SourceUnchanged);
+        Assert.True(issuanceDrift.CurrentPacket.OriginalObservation.Centers[0].ExactIssuanceExists);
+        Assert.False(issuanceDrift.IssuanceAuthorized);
+        Assert.Equal(3L,await CountIssuances());
     }
 }
