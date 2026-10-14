@@ -5,7 +5,8 @@ import { PublicNationalPrograms } from './PublicNationalPrograms';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <Shell title="پرتال مخاطبان" />
-    <PublicNationalPrograms />
+    <Shell title="پرتال مخاطبان">
+      <PublicNationalPrograms />
+    </Shell>
   </React.StrictMode>,
 );
