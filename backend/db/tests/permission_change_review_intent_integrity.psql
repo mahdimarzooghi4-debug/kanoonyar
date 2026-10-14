@@ -1,0 +1,168 @@
+\set ON_ERROR_STOP on
+-- S52: independent disposable DB proof; no real identity/approval/permission.
+\ir ../migrations/0001_national_program_foundation.sql
+\ir ../migrations/0002_append_only_national_versions.sql
+\ir ../migrations/0003_center_registry.sql
+\ir ../migrations/0004_command_audit.sql
+\ir ../migrations/0005_transactional_outbox.sql
+\ir ../migrations/0006_center_scope_rls.sql
+\ir ../migrations/0042_permission_change_review_intents.sql
+
+INSERT INTO centers.registry
+(center_id,display_name,is_active,registered_by_subject,registered_at)
+VALUES('s52-center-a','Synthetic review A',true,'fixture',now()),
+ ('s52-center-b','Synthetic review B',true,'fixture',now()),
+ ('s52-inactive','Synthetic inactive',false,'fixture',now());
+INSERT INTO centers.memberships
+(center_id,subject_id,role_code,is_active,recorded_by_subject,recorded_at)
+VALUES('s52-center-a','s52-actor-a','fixture-only',true,'fixture',now()),
+ ('s52-center-b','s52-actor-b','fixture-only',true,'fixture',now()),
+ ('s52-center-a','s52-revoked','fixture-only',false,'fixture',now()),
+ ('s52-inactive','s52-actor-inactive','fixture-only',true,'fixture',now());
+
+CREATE ROLE kanoonyar_permission_review_ci LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_permission_review_ci
+ TO kanoonyar_permission_review_ci;
+GRANT USAGE ON SCHEMA identity_access TO kanoonyar_permission_review_ci;
+GRANT EXECUTE ON FUNCTION identity_access.record_permission_change_review_intent(
+ uuid,text,text,text,text,text,text,uuid,uuid,text) TO kanoonyar_permission_review_ci;
+
+DO $check$ BEGIN
+ IF has_function_privilege('public',
+   'identity_access.record_permission_change_review_intent(uuid,text,text,text,text,text,text,uuid,uuid,text)',
+   'EXECUTE')
+  OR has_function_privilege('kanoonyar_permission_review_ci',
+   'identity_access.record_permission_change_review_intent(uuid,text,text,text,text,text,text,uuid,uuid,text)',
+   'EXECUTE') IS NOT TRUE
+  OR has_table_privilege('kanoonyar_permission_review_ci',
+   'identity_access.permission_change_review_intents','INSERT')
+  OR has_table_privilege('kanoonyar_permission_review_ci',
+   'identity_access.permission_change_review_intents','SELECT')
+  OR has_table_privilege('kanoonyar_permission_review_ci',
+   'governance.command_audit','INSERT')
+  OR pg_has_role('kanoonyar_permission_review_ci','kanoonyar_permission_review_owner','SET')
+  OR (SELECT rolcanlogin OR rolsuper OR rolbypassrls OR rolcreaterole
+      FROM pg_roles WHERE rolname='kanoonyar_permission_review_owner')
+ THEN RAISE EXCEPTION 'Permission review role security violation'; END IF;
+END;$check$;
+
+SET ROLE kanoonyar_permission_review_ci;
+SELECT set_config('kanoonyar.center_id','s52-center-a',false);
+-- A proposal is durable under a synthetic only SQL writer; not an approved grant.
+SELECT identity_access.record_permission_change_review_intent(
+ 'aa520000-0000-4000-8000-000000000001',
+ 's52-center-a','s52-actor-a','synthetic-target-1',
+ 'SYNTHETIC_UNAPPROVED_OPERATION',NULL,'Review request only',
+ 'aa520000-0000-4000-8000-000000000002',
+ 'aa520000-0000-4000-8000-000000000003','synthetic-correlation-52');
+
+DO $negative$
+BEGIN
+ -- Duplicate identifier cannot produce a second intent or audit/outbox.
+ BEGIN
+  PERFORM identity_access.record_permission_change_review_intent(
+   'aa520000-0000-4000-8000-000000000001',
+   's52-center-a','s52-actor-a','synthetic-target-1',
+   'SYNTHETIC_UNAPPROVED_OPERATION',NULL,'Repeated review request',
+   gen_random_uuid(),gen_random_uuid(),'replayed');
+  RAISE EXCEPTION 'duplicate replay was unexpectedly accepted';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+ -- Requested center cannot differ from the transaction-local SQL center.
+ BEGIN
+  PERFORM identity_access.record_permission_change_review_intent(
+   gen_random_uuid(),'s52-center-b','s52-actor-a','synthetic-target-2',
+   'SYNTHETIC_UNAPPROVED_OPERATION',NULL,'Wrong center',
+   gen_random_uuid(),gen_random_uuid(),'wrong-center');
+  RAISE EXCEPTION 'cross-center replay accepted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ -- Inactive membership is rejected even with a syntactically valid actor.
+ BEGIN
+  PERFORM identity_access.record_permission_change_review_intent(
+   gen_random_uuid(),'s52-center-a','s52-revoked','synthetic-target-2',
+   'SYNTHETIC_UNAPPROVED_OPERATION',NULL,'Revoked actor',
+   gen_random_uuid(),gen_random_uuid(),'revoked');
+  RAISE EXCEPTION 'revoked membership accepted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ BEGIN
+  PERFORM identity_access.record_permission_change_review_intent(
+   gen_random_uuid(),'s52-center-a','s52-actor-a','synthetic-target-2',
+   '   ',NULL,'Empty operation',
+   gen_random_uuid(),gen_random_uuid(),'invalid');
+  RAISE EXCEPTION 'blank operation accepted';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+ -- A function-only caller cannot write an accepted grant or mutate review records.
+ BEGIN
+  INSERT INTO identity_access.permission_change_review_intents
+   (intent_id,center_id,requested_by_subject,proposed_subject,
+    proposed_operation,stated_reason,permission_effective)
+  VALUES(gen_random_uuid(),'s52-center-a','s52-actor-a','target',
+    'SYNTHETIC_UNAPPROVED_OPERATION','forged',true);
+  RAISE EXCEPTION 'direct SQL write unexpectedly granted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ BEGIN
+  EXECUTE 'SET ROLE kanoonyar_permission_review_owner';
+  RAISE EXCEPTION 'role escalation unexpectedly allowed';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END;$negative$;
+RESET ROLE;
+
+DO $verify$
+DECLARE n bigint;
+BEGIN
+ SELECT count(*) INTO n FROM identity_access.permission_change_review_intents;
+ IF n<>1 THEN RAISE EXCEPTION 'Expected one immutable proposal, found %',n; END IF;
+ IF EXISTS(SELECT 1 FROM identity_access.permission_change_review_intents
+  WHERE review_approved OR permission_effective) THEN
+  RAISE EXCEPTION 'Proposal acquired authority'; END IF;
+ SELECT count(*) INTO n FROM governance.command_audit
+  WHERE action_code='PERMISSION_CHANGE_REVIEW_INTENT_RECORDED';
+ IF n<>1 THEN RAISE EXCEPTION 'Unexpected audit count %',n; END IF;
+ SELECT count(*) INTO n FROM governance.outbox_events
+  WHERE event_type='PermissionChangeReviewIntentRecorded';
+ IF n<>1 THEN RAISE EXCEPTION 'Unexpected outbox count %',n; END IF;
+ IF EXISTS(SELECT 1 FROM governance.outbox_events
+  WHERE event_type='PermissionChangeReviewIntentRecorded'
+   AND (payload->>'permission_effective') <> 'false') THEN
+  RAISE EXCEPTION 'Outbox incorrectly suggests an active permission'; END IF;
+ IF EXISTS(SELECT 1 FROM governance.outbox_events
+  WHERE event_type='PermissionChangeReviewIntentRecorded'
+   AND payload ? 'proposed_subject') THEN
+  RAISE EXCEPTION 'Outbox leaked proposed user identity'; END IF;
+ BEGIN
+  UPDATE identity_access.permission_change_review_intents SET review_approved=true;
+  RAISE EXCEPTION 'Review record was updated';
+ EXCEPTION WHEN raise_exception OR check_violation THEN
+  -- Catch either append-only protection or immutable false check.
+  NULL;
+ END;
+ BEGIN
+  DELETE FROM identity_access.permission_change_review_intents;
+  RAISE EXCEPTION 'Review record was deleted';
+ EXCEPTION WHEN raise_exception THEN NULL; END;
+ -- A physical constraint also prevents a forged effective/approved row.
+ BEGIN
+  INSERT INTO identity_access.permission_change_review_intents
+   (intent_id,center_id,requested_by_subject,proposed_subject,proposed_operation,
+    stated_reason,permission_effective,review_approved)
+  VALUES(gen_random_uuid(),'s52-center-a','fixture','fake',
+    'SYNTHETIC_UNAPPROVED_OPERATION','forged',true,true);
+  RAISE EXCEPTION 'A self-authorizing review row was inserted';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+END;$verify$;
+
+-- FORCE RLS restricts the synthetic no-login owner even when query is direct.
+GRANT SELECT ON identity_access.permission_change_review_intents
+ TO kanoonyar_permission_review_owner;
+SET ROLE kanoonyar_permission_review_owner;
+SELECT set_config('kanoonyar.center_id','s52-center-b',false);
+DO $scope$ BEGIN
+ IF EXISTS(SELECT 1 FROM identity_access.permission_change_review_intents)
+ THEN RAISE EXCEPTION 'Cross-center permission review leaked'; END IF;
+END;$scope$;
+SELECT set_config('kanoonyar.center_id','s52-center-a',false);
+DO $scope$ BEGIN
+ IF (SELECT count(*) FROM identity_access.permission_change_review_intents)<>1
+ THEN RAISE EXCEPTION 'Owner center review not visible'; END IF;
+END;$scope$;
+RESET ROLE;
