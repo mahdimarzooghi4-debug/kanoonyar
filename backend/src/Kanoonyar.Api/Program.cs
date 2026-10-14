@@ -24,6 +24,7 @@ builder.Services.AddSingleton<ICenterSiteNavigationAuthorization, UnapprovedCent
 builder.Services.AddSingleton<ICenterPrivatePageTemplateAuthorization, UnapprovedPrivatePageTemplateAuthorization>();
 builder.Services.AddSingleton<ICenterWorkCardAuthorization, UnapprovedCenterWorkCardAuthorization>();
 builder.Services.AddSingleton<ICenterWorkResourceNeedAuthorization, UnapprovedWorkResourceNeedAuthorization>();
+builder.Services.AddSingleton<IWorkCardSessionLinkAuthorization, UnapprovedWorkCardSessionLinkAuthorization>();
 builder.Services.AddSingleton<ICenterCollaborationAuthorization, UnapprovedCenterCollaborationAuthorization>();
 builder.Services.AddSingleton<ICenterSessionPreparationAuthorization, UnapprovedCenterSessionPreparationAuthorization>();
 builder.Services.AddSingleton<ICenterFormDraftAuthorization, UnapprovedCenterFormDraftAuthorization>();
@@ -70,6 +71,8 @@ if (oidcConfigured)
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/resource-needs", CenterWorkResourceNeedEndpoint.List).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/resource-needs/{needId:guid}/revisions", CenterWorkResourceNeedEndpoint.History).RequireAuthorization();
     app.MapPost("/api/v1/centers/{centerId}/operations/work-cards/revisions", CenterWorkCardEndpoint.Append).RequireAuthorization();
+    app.MapPost("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/session-links", CenterWorkSessionLinkEndpoint.Append).RequireAuthorization();
+    app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/session-links", CenterWorkSessionLinkEndpoint.List).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/operations/local-plan-workspace/{draftId:guid}/{planRevision:long}", CenterLocalPlanWorkspaceEndpoint.Get).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards", CenterWorkCardEndpoint.List).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/revisions", CenterWorkCardEndpoint.History).RequireAuthorization();
@@ -143,6 +146,8 @@ else
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/resource-needs", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/resource-needs/{needId:guid}/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapPost("/api/v1/centers/{centerId}/operations/work-cards/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
+    app.MapPost("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/session-links", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
+    app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/session-links", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/operations/local-plan-workspace/{draftId:guid}/{planRevision:long}", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/operations/work-cards/{workCardId:guid}/revisions", () => Results.Problem(statusCode:503,title:"OIDC not configured"));

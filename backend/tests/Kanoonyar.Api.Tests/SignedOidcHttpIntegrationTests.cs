@@ -1029,6 +1029,30 @@ public sealed class SignedOidcHttpIntegrationTests
         Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
     }
 
+    [Fact]
+    public async Task Signed_superadmin_has_no_implicit_work_to_learning_session_link_grants()
+    {
+        using var fixture=new SignedJwtFixture();
+        await using var app=fixture.Server();
+        using var client=app.CreateClient();
+        var path="/api/v1/centers/center-a/operations/work-cards/"+
+          Guid.NewGuid()+"/session-links";
+        using(var anonymous=Request(HttpMethod.Get,path,null))
+        {
+            using var response=await client.SendAsync(anonymous);
+            Assert.Equal(HttpStatusCode.Unauthorized,response.StatusCode);
+        }
+        using(var role=Request(HttpMethod.Get,path,fixture.Token(roleClaim:true)))
+        {
+            using var denied=await client.SendAsync(role);
+            Assert.Equal(HttpStatusCode.Forbidden,denied.StatusCode);
+        }
+        using var post=Request(HttpMethod.Post,path,fixture.Token(roleClaim:true));
+        post.Content=JsonContent.Create(new {sessionId=Guid.NewGuid()});
+        using var rejected=await client.SendAsync(post);
+        Assert.Equal(HttpStatusCode.Forbidden,rejected.StatusCode);
+    }
+
     private sealed class TestSessionClaimWriteGrant : ICenterSessionClaimWriteAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal user,string center,

@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import { CenterWorkResourceNeeds } from './CenterWorkResourceNeeds';
+import { CenterWorkSessionLinks } from './CenterWorkSessionLinks';
 
 type LocalPlan={draftId:string;revision:number;programId:string;nationalVersion:number;
  localTitle:string;localActivities:unknown[]};
@@ -170,6 +171,8 @@ export function CenterLocalPlanWorkspace({centerId,token}:{
       {n.resourceLabel} — نسخه {n.revision} / تأمین نامشخص
      </li>)}</ul>}
     {c.nextBeforeNeedId!==null&&<p>نیازهای بیشتری ثبت شده‌اند؛ فهرست کامل در ابزار کارت کار قابل مشاهده است.</p>}
+    <CenterWorkSessionLinks key={centerId+':'+token+':'+c.workCardId}
+     centerId={centerId} workCardId={c.workCardId} token={token}/>
     <button type="button" onClick={()=>setExpanded(x=>x===c.workCardId?'':c.workCardId)}>
      {expanded===c.workCardId?'بستن مدیریت نیازها':'مدیریت کامل نیازهای همین کارت'}</button>
     {expanded===c.workCardId&&<CenterWorkResourceNeeds
