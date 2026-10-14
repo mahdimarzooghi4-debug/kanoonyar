@@ -26,6 +26,7 @@
 \ir ../migrations/0024_center_form_builder_drafts.sql
 \ir ../migrations/0025_center_campaign_planning.sql
 \ir ../migrations/0026_campaign_source_report_links.sql
+\ir ../migrations/0027_campaign_report_inspection_notes.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
@@ -92,6 +93,7 @@ GRANT SELECT ON web.center_forms,web.center_form_draft_revisions TO kanoonyar_dr
 GRANT USAGE ON SCHEMA campaigns TO kanoonyar_draft_read_ci;
 GRANT SELECT ON campaigns.center_campaigns,campaigns.center_campaign_revisions TO kanoonyar_draft_read_ci;
 GRANT SELECT ON campaigns.campaign_report_links TO kanoonyar_draft_read_ci;
+GRANT SELECT ON campaigns.campaign_report_inspection_notes TO kanoonyar_draft_read_ci;
 DO $test$
 BEGIN
   IF has_table_privilege('kanoonyar_draft_read_ci',
@@ -353,3 +355,19 @@ DO $deny$ BEGIN
   'campaigns.link_unverified_source_report(text,uuid,uuid,bigint,text,uuid,text,uuid,uuid,text)','EXECUTE')
  THEN RAISE EXCEPTION 'Unsafe campaign association SQL account'; END IF;
 END;$deny$;
+
+-- Synthetic CI-only command login. No production authorization.
+CREATE ROLE kanoonyar_campaign_inspection_ci LOGIN NOSUPERUSER NOBYPASSRLS
+ NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_draft_api_ci TO kanoonyar_campaign_inspection_ci;
+GRANT USAGE ON SCHEMA campaigns,programs,centers,governance TO kanoonyar_campaign_inspection_ci;
+GRANT EXECUTE ON FUNCTION campaigns.record_campaign_report_inspection(
+ text,uuid,uuid,uuid,text,text,uuid,uuid,text) TO kanoonyar_campaign_inspection_ci;
+DO $safe$ BEGIN
+ IF has_table_privilege('kanoonyar_campaign_inspection_ci','campaigns.campaign_report_inspection_notes','INSERT')
+ OR has_table_privilege('kanoonyar_campaign_inspection_ci','governance.command_audit','INSERT')
+ OR pg_has_role('kanoonyar_campaign_inspection_ci','kanoonyar_campaign_inspection_owner','SET')
+ OR has_function_privilege('kanoonyar_draft_read_ci',
+  'campaigns.record_campaign_report_inspection(text,uuid,uuid,uuid,text,text,uuid,uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'Inspection SQL credential unsafe'; END IF;
+END;$safe$;
