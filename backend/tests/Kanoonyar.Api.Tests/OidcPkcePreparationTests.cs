@@ -88,7 +88,7 @@ public sealed class OidcPkcePreparationTests
 
         var usable=Prepare(guard);
         var results=new ConcurrentBag<bool>();
-        Parallel.For(0,64,_=>results.Add(Consume(guard,usable,out _)));
+        Parallel.For(0,64,index=>results.Add(Consume(guard,usable,out _)));
         Assert.Equal(1,results.Count(x=>x));
         Assert.Equal(63,results.Count(x=>!x));
         Assert.False(Consume(guard,usable,out _));
