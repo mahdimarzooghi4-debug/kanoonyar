@@ -38,8 +38,8 @@ async function read(cursor:Cursor|null,signal:AbortSignal):Promise<Page>{
 }
 const n=(v:number)=>new Intl.NumberFormat('fa-IR').format(v);
 export function NationalInspectionRollupWorkbench(){
- const [s,setS]=useState<State>(initial),[reload,setReload]=useState(0);
- useEffect(()=>{const c=new AbortController();setS(initial);void read(null,c.signal).then(p=>{if(!c.signal.aborted)setS({status:'ready',error:'',pages:[p],index:0});}).catch(e=>{if(!c.signal.aborted)setS({status:'error',error:e instanceof Error?e.message:'خلاصه پوشش بازرسی فعلاً در دسترس نیست.',pages:[],index:0});});return()=>c.abort();},[reload]);
+ const [s,setS]=useState<State>(initial),[reload,setReload]=useState(0),[opened,setOpened]=useState(false);
+ useEffect(()=>{if(!opened)return;const c=new AbortController();setS(initial);void read(null,c.signal).then(p=>{if(!c.signal.aborted)setS({status:'ready',error:'',pages:[p],index:0});}).catch(e=>{if(!c.signal.aborted)setS({status:'error',error:e instanceof Error?e.message:'خلاصه پوشش بازرسی فعلاً در دسترس نیست.',pages:[],index:0});});return()=>c.abort();},[reload,opened]);
  async function next(){const current=s.pages[s.index];if(!current?.nextCursor||s.status!=='ready')return;if(s.pages[s.index+1]){setS({...s,index:s.index+1});return;}
   setS({...s,status:'loading'});try{const p=await read(current.nextCursor,new AbortController().signal),first=p.rollups[0];
    if(!first||s.pages.some(pg=>pg.rollups.some(r=>r.programId===first.programId&&r.nationalVersion===first.nationalVersion)))throw Error('صفحه بعدی پوشش بازرسی تکراری یا نامعتبر است.');
@@ -49,6 +49,7 @@ export function NationalInspectionRollupWorkbench(){
  return <section aria-labelledby="inspection-rollup-title" style={{marginTop:'2.5rem',paddingTop:'1.5rem',borderTop:'1px solid #ddd'}}>
   <h2 id="inspection-rollup-title">پوشش فنی بازرسی درخواست‌های ابلاغ ملی</h2>
   <p>این داده‌ها خلاصه فنیِ درخواست‌ها و یادداشت‌های ثبت‌شده‌اند؛ تأیید انسانی، مجوز یا صدور ابلاغ را نشان نمی‌دهند.</p>
+  {!opened&&<button type="button" onClick={()=>setOpened(true)}>نمایش خلاصه پوشش فنی</button>}
   {s.status==='loading'&&<p role="status">در حال دریافت خلاصه پوشش…</p>}
   {s.status==='error'&&<div role="alert"><p>{s.error}</p><button onClick={()=>setReload(x=>x+1)}>تلاش دوباره</button></div>}
   {s.status==='ready'&&page&&(page.rollups.length===0?<p role="status">گروه برنامه/نسخه‌ای برای نمایش وجود ندارد.</p>:
