@@ -163,6 +163,13 @@ public sealed class NationalInspectionRollupPostgresTests
             await note.ExecuteNonQueryAsync();
         }
 
+        // This intentionally malformed historical row exists only in disposable CI so the
+        // diagnostic view can be tested. Skip the deferred evidence-pair trigger for this
+        // single synthetic insert; restore normal trigger mode before committing other data.
+        await using (var triggerMode = new NpgsqlCommand(
+            "SET LOCAL session_replication_role = replica", admin, transaction))
+            await triggerMode.ExecuteNonQueryAsync();
+
         await using (var invalidEvidence = new NpgsqlCommand(
             """
             INSERT INTO programs.national_issuance_review_inspection_notes
@@ -180,6 +187,10 @@ public sealed class NationalInspectionRollupPostgresTests
             invalidEvidence.Parameters.AddWithValue("request", findingRequestId);
             Assert.Equal(1, await invalidEvidence.ExecuteNonQueryAsync());
         }
+
+        await using (var restoreTriggerMode = new NpgsqlCommand(
+            "SET LOCAL session_replication_role = origin", admin, transaction))
+            await restoreTriggerMode.ExecuteNonQueryAsync();
 
         await transaction.CommitAsync();
         await using (var drift = new NpgsqlCommand(
