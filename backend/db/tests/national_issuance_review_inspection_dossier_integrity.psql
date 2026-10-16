@@ -52,8 +52,67 @@ BEGIN
 
  IF EXISTS (
    SELECT 1 FROM programs.national_issuance_review_inspection_dossier
-   WHERE current_source_digest_sha256 !~ '^[a-f0-9]{64}$'
+   WHERE current_source_digest_sha256 !~ '^[a-f0-9]{64}
+ -- The first inspection of request 1 predates the later synthetic issuance
+ -- for center-05; the later inspection reflects it. Request 2 concerns only
+ -- center-04 and remains current. Historical note digests are never rewritten.
+ IF (SELECT current_source_matches_observation
+     FROM programs.national_issuance_review_inspection_dossier
+     WHERE note_id='aa610000-0000-4000-8000-000000000001') IS DISTINCT FROM false
+ OR (SELECT current_source_matches_observation
+     FROM programs.national_issuance_review_inspection_dossier
+     WHERE note_id='aa610000-0000-4000-8000-000000000011') IS DISTINCT FROM true
+ OR (SELECT current_source_matches_observation
+     FROM programs.national_issuance_review_inspection_dossier
+     WHERE note_id='aa610000-0000-4000-8000-000000000021') IS DISTINCT FROM true
+ THEN RAISE EXCEPTION 'S68 failed to distinguish latest source drift from historical observations'; END IF;
+
+ IF EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_dossier
+   WHERE current_source_matches_observation
+     <> (current_source_digest_sha256=observed_digest_sha256)
+ ) THEN RAISE EXCEPTION 'S68 current-source match flag disagrees with recomputed digest'; END IF;
+END;$catalog$;
+
+\connect - kanoonyar_s61_inspection_denied_ci
+DO $deny$
+BEGIN
+ BEGIN
+   PERFORM 1 FROM programs.national_issuance_review_inspection_dossier;
+   RAISE EXCEPTION 'Restricted account read the S62 technical dossier';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END;$deny$;
+\connect - postgres
+
  ) THEN RAISE EXCEPTION 'S68 current source digest is malformed'; END IF;
+
+ -- S69 returns aggregate counts only, and leaves them null if the immutable
+ -- observation cannot be safely compared to the current source.
+ IF EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_dossier
+   WHERE publication_state_changed IS NULL
+      OR center_registry_change_count IS NULL
+      OR exact_issuance_change_count IS NULL
+ ) THEN RAISE EXCEPTION 'S69 drift summary is incomplete for valid observations'; END IF;
+
+ IF EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_dossier
+   WHERE publication_state_changed IS DISTINCT FROM false
+      OR center_registry_change_count<>0
+ ) THEN RAISE EXCEPTION 'S69 reported unexpected publication or registry drift'; END IF;
+
+ -- Only the first note predates the later synthetic exact issuance for
+ -- center-05. The later and independent notes are current at their own source.
+ IF (SELECT exact_issuance_change_count
+     FROM programs.national_issuance_review_inspection_dossier
+     WHERE note_id='aa610000-0000-4000-8000-000000000001') IS DISTINCT FROM 1
+ OR (SELECT exact_issuance_change_count
+     FROM programs.national_issuance_review_inspection_dossier
+     WHERE note_id='aa610000-0000-4000-8000-000000000011') IS DISTINCT FROM 0
+ OR (SELECT exact_issuance_change_count
+     FROM programs.national_issuance_review_inspection_dossier
+     WHERE note_id='aa610000-0000-4000-8000-000000000021') IS DISTINCT FROM 0
+ THEN RAISE EXCEPTION 'S69 exact-issuance drift counts do not match synthetic history'; END IF;
 
  -- The first inspection of request 1 predates the later synthetic issuance
  -- for center-05; the later inspection reflects it. Request 2 concerns only
