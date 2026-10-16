@@ -573,3 +573,112 @@ BEGIN
      AND request_outbox_integrity_valid=false
  ) THEN RAISE EXCEPTION 'S74 failed to isolate outbox integrity after deferred event validation'; END IF;
 END;$s74_event_component_corruption$;
+
+
+-- S75 checks semantic source-envelope validity beyond JSON types.
+-- These malformed requests are test-only and have valid digests plus
+-- correctly paired audit/outbox rows, isolating envelope semantics alone.
+BEGIN;
+WITH fixtures(request_id,center_ids,centers) AS (
+ VALUES
+  ('aa600000-0000-4000-8000-000000000081'::uuid,
+   ARRAY['']::text[],
+   jsonb_build_array(jsonb_build_object(
+     'centerId','','registryExists',false,'registryActive',false,
+     'exactIssuanceExists',false))),
+  ('aa600000-0000-4000-8000-000000000091'::uuid,
+   ARRAY['s75-duplicate-center','s75-duplicate-center']::text[],
+   jsonb_build_array(
+     jsonb_build_object('centerId','s75-duplicate-center',
+       'registryExists',false,'registryActive',false,'exactIssuanceExists',false),
+     jsonb_build_object('centerId','s75-duplicate-center',
+       'registryExists',false,'registryActive',false,'exactIssuanceExists',false))),
+  ('aa600000-0000-4000-8000-000000000101'::uuid,
+   ARRAY['s75-unregistered-active-center']::text[],
+   jsonb_build_array(jsonb_build_object(
+     'centerId','s75-unregistered-active-center',
+     'registryExists',false,'registryActive',true,'exactIssuanceExists',false)))
+), snapshots AS (
+ SELECT request_id,center_ids,
+   jsonb_build_object('formatVersion','S60_SOURCE_SNAPSHOT_V1',
+     'programId','s60-original-program','nationalVersion',2,
+     'exactPublicationExists',true,'centers',centers) AS snapshot
+ FROM fixtures
+)
+INSERT INTO programs.national_issuance_review_intents(
+ request_id,program_id,national_version,explicit_center_ids,
+ original_source_snapshot,source_digest_sha256,stated_review_reason,
+ unverified_requester_subject
+)
+SELECT request_id,'s60-original-program',2,center_ids,snapshot,
+ encode(sha256(convert_to(snapshot::text,'UTF8')),'hex'),
+ 'S75 synthetic semantic-envelope fixture','UNVERIFIED-s75-fixture-actor'
+FROM snapshots;
+
+INSERT INTO governance.command_audit(
+ audit_id,occurred_at,actor_subject_id,center_id,action_code,
+ target_type,target_id,correlation_id,metadata
+)
+SELECT CASE i.request_id
+    WHEN 'aa600000-0000-4000-8000-000000000081'::uuid
+      THEN 'aa600000-0000-4000-8000-000000000082'::uuid
+    WHEN 'aa600000-0000-4000-8000-000000000091'::uuid
+      THEN 'aa600000-0000-4000-8000-000000000092'::uuid
+    ELSE 'aa600000-0000-4000-8000-000000000102'::uuid END,
+ transaction_timestamp(),'UNVERIFIED-s75-fixture-actor',NULL,
+ 'NATIONAL_ISSUANCE_REVIEW_INTENT_CAPTURED',
+ 'national_issuance_review_intent',i.request_id::text,
+ 's75-'||i.request_id::text,
+ jsonb_build_object('source_digest_sha256',i.source_digest_sha256,
+   'unverified_actor',true,'requester_authorized',false,
+   'human_review_recorded',false,'issuance_authorized',false,
+   'issuance_executed',false)
+FROM programs.national_issuance_review_intents i
+WHERE i.request_id=ANY(ARRAY[
+ 'aa600000-0000-4000-8000-000000000081'::uuid,
+ 'aa600000-0000-4000-8000-000000000091'::uuid,
+ 'aa600000-0000-4000-8000-000000000101'::uuid]);
+
+INSERT INTO governance.outbox_events(
+ event_id,audit_id,event_type,aggregate_type,aggregate_id,occurred_at,payload
+)
+SELECT CASE a.target_id
+    WHEN 'aa600000-0000-4000-8000-000000000081'
+      THEN 'aa600000-0000-4000-8000-000000000182'::uuid
+    WHEN 'aa600000-0000-4000-8000-000000000091'
+      THEN 'aa600000-0000-4000-8000-000000000192'::uuid
+    ELSE 'aa600000-0000-4000-8000-000000000202'::uuid END,
+ a.audit_id,'NationalIssuanceReviewIntentCaptured',
+ 'national_issuance_review_intent',a.target_id,transaction_timestamp(),
+ jsonb_build_object('request_id',a.target_id,'recorded_only',true,
+   'requester_authorized',false,'human_review_recorded',false,
+   'issuance_authorized',false,'issuance_executed',false)
+FROM governance.command_audit a
+WHERE a.target_type='national_issuance_review_intent'
+ AND a.target_id=ANY(ARRAY[
+ 'aa600000-0000-4000-8000-000000000081',
+ 'aa600000-0000-4000-8000-000000000091',
+ 'aa600000-0000-4000-8000-000000000101']);
+COMMIT;
+
+DO $s75_semantic_envelope$
+DECLARE request_id uuid;
+BEGIN
+ FOREACH request_id IN ARRAY ARRAY[
+   'aa600000-0000-4000-8000-000000000081'::uuid,
+   'aa600000-0000-4000-8000-000000000091'::uuid,
+   'aa600000-0000-4000-8000-000000000101'::uuid
+ ] LOOP
+   IF NOT EXISTS (
+     SELECT 1 FROM programs.national_issuance_review_inspection_summary
+     WHERE programs.national_issuance_review_inspection_summary.request_id=request_id
+       AND request_source_integrity_valid=false
+       AND request_snapshot_digest_valid=true
+       AND request_source_envelope_valid=false
+       AND request_center_selection_valid=true
+       AND request_authority_flags_clear=true
+       AND request_audit_integrity_valid=true
+       AND request_outbox_integrity_valid=true
+   ) THEN RAISE EXCEPTION 'S75 failed semantic envelope isolation for synthetic request %',request_id; END IF;
+ END LOOP;
+END;$s75_semantic_envelope$;
