@@ -761,3 +761,103 @@ BEGIN
      'aa600000-0000-4000-8000-000000000021'::uuid])
  ) THEN RAISE EXCEPTION 'S76 emitted an unstable or valid-request finding'; END IF;
 END;$s76_integrity_findings$;
+
+-- S77 verifies JSON scalar types independently from textual ->> equality.
+-- Each fixture has a matching digest, center selection, audit and outbox;
+-- only one source envelope scalar type is wrong in each record.
+BEGIN;
+WITH fixtures(request_id,program_id,center_ids,program_value,version_value,center_id) AS (
+ VALUES
+  ('aa600000-0000-4000-8000-000000000121'::uuid,'123',
+   ARRAY['s77-center-program-type']::text[],to_jsonb(123),to_jsonb(2),
+   's77-center-program-type'),
+  ('aa600000-0000-4000-8000-000000000131'::uuid,'s60-original-program',
+   ARRAY['s77-center-version-type']::text[],to_jsonb('s60-original-program'::text),
+   to_jsonb('2'::text),'s77-center-version-type')
+), snapshots AS (
+ SELECT request_id,program_id,center_ids,
+   jsonb_build_object('formatVersion','S60_SOURCE_SNAPSHOT_V1',
+     'programId',program_value,'nationalVersion',version_value,
+     'exactPublicationExists',true,
+     'centers',jsonb_build_array(jsonb_build_object(
+       'centerId',center_id,'registryExists',true,
+       'registryActive',true,'exactIssuanceExists',false))) AS snapshot
+ FROM fixtures
+)
+INSERT INTO programs.national_issuance_review_intents(
+ request_id,program_id,national_version,explicit_center_ids,
+ original_source_snapshot,source_digest_sha256,stated_review_reason,
+ unverified_requester_subject
+)
+SELECT request_id,program_id,2,center_ids,snapshot,
+ encode(sha256(convert_to(snapshot::text,'UTF8')),'hex'),
+ 'S77 synthetic scalar-type fixture','UNVERIFIED-s77-fixture-actor'
+FROM snapshots;
+
+INSERT INTO governance.command_audit(
+ audit_id,occurred_at,actor_subject_id,center_id,action_code,
+ target_type,target_id,correlation_id,metadata
+)
+SELECT CASE i.request_id
+    WHEN 'aa600000-0000-4000-8000-000000000121'::uuid
+      THEN 'aa600000-0000-4000-8000-000000000122'::uuid
+    ELSE 'aa600000-0000-4000-8000-000000000132'::uuid END,
+ transaction_timestamp(),'UNVERIFIED-s77-fixture-actor',NULL,
+ 'NATIONAL_ISSUANCE_REVIEW_INTENT_CAPTURED',
+ 'national_issuance_review_intent',i.request_id::text,
+ 's77-'||i.request_id::text,
+ jsonb_build_object('source_digest_sha256',i.source_digest_sha256,
+   'unverified_actor',true,'requester_authorized',false,
+   'human_review_recorded',false,'issuance_authorized',false,
+   'issuance_executed',false)
+FROM programs.national_issuance_review_intents i
+WHERE i.request_id=ANY(ARRAY[
+ 'aa600000-0000-4000-8000-000000000121'::uuid,
+ 'aa600000-0000-4000-8000-000000000131'::uuid]);
+
+INSERT INTO governance.outbox_events(
+ event_id,audit_id,event_type,aggregate_type,aggregate_id,occurred_at,payload
+)
+SELECT CASE a.target_id
+    WHEN 'aa600000-0000-4000-8000-000000000121'
+      THEN 'aa600000-0000-4000-8000-000000000222'::uuid
+    ELSE 'aa600000-0000-4000-8000-000000000232'::uuid END,
+ a.audit_id,'NationalIssuanceReviewIntentCaptured',
+ 'national_issuance_review_intent',a.target_id,transaction_timestamp(),
+ jsonb_build_object('request_id',a.target_id,'recorded_only',true,
+   'requester_authorized',false,'human_review_recorded',false,
+   'issuance_authorized',false,'issuance_executed',false)
+FROM governance.command_audit a
+WHERE a.target_type='national_issuance_review_intent'
+ AND a.target_id=ANY(ARRAY[
+   'aa600000-0000-4000-8000-000000000121',
+   'aa600000-0000-4000-8000-000000000131']);
+COMMIT;
+
+DO $s77_scalar_types$
+DECLARE v_request_id uuid;
+BEGIN
+ FOREACH v_request_id IN ARRAY ARRAY[
+   'aa600000-0000-4000-8000-000000000121'::uuid,
+   'aa600000-0000-4000-8000-000000000131'::uuid
+ ] LOOP
+   IF NOT EXISTS (
+     SELECT 1 FROM programs.national_issuance_review_inspection_summary
+     WHERE programs.national_issuance_review_inspection_summary.request_id=v_request_id
+       AND request_source_integrity_valid=false
+       AND request_snapshot_digest_valid=true
+       AND request_source_envelope_valid=false
+       AND request_center_selection_valid=true
+       AND request_authority_flags_clear=true
+       AND request_audit_integrity_valid=true
+       AND request_outbox_integrity_valid=true
+   ) THEN RAISE EXCEPTION 'S77 failed scalar-type isolation for synthetic request %',v_request_id; END IF;
+ END LOOP;
+
+ IF (SELECT count(*) FROM programs.national_issuance_review_integrity_findings
+      WHERE finding_code='SOURCE_ENVELOPE_INVALID')<>7
+ THEN RAISE EXCEPTION 'S77 scalar-type failures did not map to source-envelope finding'; END IF;
+
+ IF (SELECT count(*) FROM programs.national_issuance_review_integrity_findings)<>11
+ THEN RAISE EXCEPTION 'S77 expected eleven isolated integrity findings'; END IF;
+END;$s77_scalar_types$;
