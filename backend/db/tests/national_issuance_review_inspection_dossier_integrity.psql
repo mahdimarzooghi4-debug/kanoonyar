@@ -17,7 +17,7 @@ BEGIN
    WHERE c.oid='programs.national_issuance_review_inspection_summary'::regclass
      AND c.relkind='v'
      AND 'security_invoker=true'=ANY(COALESCE(c.reloptions,ARRAY[]::text[]))
- ) THEN RAISE EXCEPTION 'S71 summary is not a SECURITY INVOKER view'; END IF;
+ ) THEN RAISE EXCEPTION 'S73 summary is not a SECURITY INVOKER view'; END IF;
 
  IF EXISTS (
    SELECT 1 FROM pg_attribute
@@ -26,7 +26,7 @@ BEGIN
      AND attname=ANY(ARRAY[
        'technical_note','unverified_inspector_subject',
        'explicit_center_ids','observed_source_snapshot',
-       'original_source_snapshot'])
+       'original_source_snapshot','unverified_requester_subject'])
  ) THEN RAISE EXCEPTION 'S62 dossier exposes private source or free-text fields'; END IF;
 
  IF has_table_privilege('kanoonyar_s61_inspection_denied_ci',
@@ -68,7 +68,7 @@ BEGIN
      AND attname=ANY(ARRAY[
        'note_id','technical_note','unverified_inspector_subject',
        'explicit_center_ids','observed_source_snapshot',
-       'original_source_snapshot'])
+       'original_source_snapshot','unverified_requester_subject'])
  ) THEN RAISE EXCEPTION 'S71 summary exposes private evidence fields'; END IF;
 
  IF EXISTS (
@@ -132,7 +132,7 @@ BEGIN
 
  -- One row per original request. Tied latest timestamps are represented
  -- explicitly; the synthetic source has one distinct latest note per request.
- IF (SELECT count(*) FROM programs.national_issuance_review_inspection_summary)<>2
+ IF (SELECT count(*) FROM programs.national_issuance_review_inspection_summary)<>3
  OR (SELECT inspection_note_count
      FROM programs.national_issuance_review_inspection_summary
      WHERE request_id='aa600000-0000-4000-8000-000000000001')<>2
@@ -141,7 +141,8 @@ BEGIN
      WHERE request_id='aa600000-0000-4000-8000-000000000011')<>1
  OR EXISTS (
    SELECT 1 FROM programs.national_issuance_review_inspection_summary
-   WHERE latest_observation_candidate_count<>1
+   WHERE inspection_note_count>0
+     AND (latest_observation_candidate_count<>1
       OR latest_observation_ambiguous
       OR latest_technical_observation_at IS NULL
       OR latest_source_observation_comparable IS DISTINCT FROM true
@@ -153,7 +154,37 @@ BEGIN
       OR human_review_recorded
       OR issuance_authorized
       OR issuance_executed
- ) THEN RAISE EXCEPTION 'S71 summary failed request-count or latest-observation checks'; END IF;
+     )) THEN RAISE EXCEPTION 'S71 summary failed request-count or latest-observation checks'; END IF;
+
+ -- S73 verifies request-source integrity for every request, including the
+ -- valid request that has no inspection notes yet.
+ IF EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_summary
+   WHERE request_source_integrity_valid IS DISTINCT FROM true
+ ) THEN RAISE EXCEPTION 'S73 original request source integrity failed'; END IF;
+
+ IF NOT EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_summary
+   WHERE request_id='aa600000-0000-4000-8000-000000000021'
+     AND inspection_note_count=0
+     AND latest_technical_observation_at IS NULL
+     AND latest_observation_candidate_count=0
+     AND latest_observation_ambiguous=false
+     AND latest_source_observation_comparable IS NULL
+     AND current_source_matches_latest_observation IS NULL
+     AND latest_publication_state_changed IS NULL
+     AND latest_center_registry_change_count IS NULL
+     AND latest_exact_issuance_change_count IS NULL
+     AND latest_evidence_integrity_valid IS NULL
+     AND integrity_consistent_note_count=0
+     AND integrity_inconsistent_note_count=0
+     AND source_incomparable_note_count=0
+     AND current_source_drift_note_count=0
+     AND request_source_integrity_valid=true
+     AND human_review_recorded=false
+     AND issuance_authorized=false
+     AND issuance_executed=false
+ ) THEN RAISE EXCEPTION 'S73 zero-note request summary is not neutral and complete'; END IF;
 
  -- Full-history counts distinguish the single currently drifted observation
  -- from later matches, while all three original fixtures remain consistent.
