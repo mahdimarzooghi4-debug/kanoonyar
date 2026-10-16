@@ -861,3 +861,100 @@ BEGIN
  IF (SELECT count(*) FROM programs.national_issuance_review_integrity_findings)<>11
  THEN RAISE EXCEPTION 'S77 expected eleven isolated integrity findings'; END IF;
 END;$s77_scalar_types$;
+
+
+-- S78 verifies observed snapshots preserve JSON scalar types independently.
+-- Reuse each S77 request's exact snapshot and digest so only programId's
+-- numeric type or nationalVersion's string type makes the observation incomparable.
+BEGIN;
+WITH fixtures(note_id,request_id,audit_id,event_id) AS (
+ VALUES
+  ('aa780000-0000-4000-8000-000000000001'::uuid,
+   'aa600000-0000-4000-8000-000000000121'::uuid,
+   'aa780000-0000-4000-8000-000000000011'::uuid,
+   'aa780000-0000-4000-8000-000000000021'::uuid),
+  ('aa780000-0000-4000-8000-000000000002'::uuid,
+   'aa600000-0000-4000-8000-000000000131'::uuid,
+   'aa780000-0000-4000-8000-000000000012'::uuid,
+   'aa780000-0000-4000-8000-000000000022'::uuid)
+)
+INSERT INTO programs.national_issuance_review_inspection_notes(
+ note_id,request_id,pinned_request_digest_sha256,observed_source_snapshot,
+ observed_digest_sha256,source_changed_since_request,
+ unverified_inspector_subject,technical_note
+)
+SELECT f.note_id,i.request_id,i.source_digest_sha256,
+ i.original_source_snapshot,i.source_digest_sha256,false,
+ 'UNVERIFIED-s78-fixture-inspector',
+ 'Synthetic observation scalar-type integrity fixture'
+FROM fixtures f
+JOIN programs.national_issuance_review_intents i ON i.request_id=f.request_id;
+
+WITH fixtures(note_id,request_id,audit_id,event_id) AS (
+ VALUES
+  ('aa780000-0000-4000-8000-000000000001'::uuid,
+   'aa600000-0000-4000-8000-000000000121'::uuid,
+   'aa780000-0000-4000-8000-000000000011'::uuid,
+   'aa780000-0000-4000-8000-000000000021'::uuid),
+  ('aa780000-0000-4000-8000-000000000002'::uuid,
+   'aa600000-0000-4000-8000-000000000131'::uuid,
+   'aa780000-0000-4000-8000-000000000012'::uuid,
+   'aa780000-0000-4000-8000-000000000022'::uuid)
+)
+INSERT INTO governance.command_audit(
+ audit_id,occurred_at,actor_subject_id,center_id,action_code,target_type,
+ target_id,correlation_id,metadata
+)
+SELECT f.audit_id,transaction_timestamp(),'UNVERIFIED-s78-fixture-inspector',NULL,
+ 'NATIONAL_ISSUANCE_REVIEW_INSPECTION_NOTE_CAPTURED',
+ 'national_issuance_review_inspection_note',f.note_id::text,
+ 's78-'||f.note_id::text,
+ jsonb_build_object('request_id',f.request_id,'source_changed',false,
+   'unverified_actor',true,'human_review_recorded',false,
+   'issuance_authorized',false,'issuance_executed',false)
+FROM fixtures f;
+
+WITH fixtures(note_id,request_id,audit_id,event_id) AS (
+ VALUES
+  ('aa780000-0000-4000-8000-000000000001'::uuid,
+   'aa600000-0000-4000-8000-000000000121'::uuid,
+   'aa780000-0000-4000-8000-000000000011'::uuid,
+   'aa780000-0000-4000-8000-000000000021'::uuid),
+  ('aa780000-0000-4000-8000-000000000002'::uuid,
+   'aa600000-0000-4000-8000-000000000131'::uuid,
+   'aa780000-0000-4000-8000-000000000012'::uuid,
+   'aa780000-0000-4000-8000-000000000022'::uuid)
+)
+INSERT INTO governance.outbox_events(
+ event_id,audit_id,event_type,aggregate_type,aggregate_id,occurred_at,payload
+)
+SELECT f.event_id,f.audit_id,'NationalIssuanceReviewInspectionNoteCaptured',
+ 'national_issuance_review_inspection_note',f.note_id::text,
+ transaction_timestamp(),
+ jsonb_build_object('note_id',f.note_id,'request_id',f.request_id,
+   'source_changed',false,'technical_only',true,
+   'human_review_recorded',false,'issuance_authorized',false,
+   'issuance_executed',false)
+FROM fixtures f;
+COMMIT;
+
+DO $s78_observation_scalar_types$
+DECLARE v_note_id uuid;
+BEGIN
+ FOREACH v_note_id IN ARRAY ARRAY[
+   'aa780000-0000-4000-8000-000000000001'::uuid,
+   'aa780000-0000-4000-8000-000000000002'::uuid
+ ] LOOP
+   IF NOT EXISTS (
+     SELECT 1 FROM programs.national_issuance_review_inspection_dossier d
+     WHERE d.note_id=v_note_id
+       AND d.original_request_integrity_valid=true
+       AND d.observation_integrity_valid=true
+       AND d.audit_and_outbox_integrity_valid=true
+       AND d.source_observation_comparable=false
+       AND d.human_review_recorded=false
+       AND d.issuance_authorized=false
+       AND d.issuance_executed=false
+   ) THEN RAISE EXCEPTION 'S78 failed observed-scalar isolation for synthetic note %',v_note_id; END IF;
+ END LOOP;
+END;$s78_observation_scalar_types$;
