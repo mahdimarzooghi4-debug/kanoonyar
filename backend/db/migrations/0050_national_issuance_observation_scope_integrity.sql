@@ -65,10 +65,10 @@ SELECT
    AS current_source_digest_sha256,
  encode(sha256(convert_to(current_source.snapshot::text,'UTF8')),'hex')
    = n.observed_digest_sha256 AS current_source_matches_observation,
- observation_check.observation_comparable AS source_observation_comparable,
  drift_breakdown.publication_state_changed,
  drift_breakdown.center_registry_change_count,
- drift_breakdown.exact_issuance_change_count
+ drift_breakdown.exact_issuance_change_count,
+ observation_check.observation_comparable AS source_observation_comparable
 FROM programs.national_issuance_review_inspection_notes n
 JOIN programs.national_issuance_review_intents i
   ON i.request_id = n.request_id
