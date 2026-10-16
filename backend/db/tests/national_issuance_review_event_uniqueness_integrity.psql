@@ -1,6 +1,6 @@
 -- S63: duplicate append-only event envelopes fail closed while unrelated
 -- event types remain outside these narrowly scoped unique constraints.
-\\set ON_ERROR_STOP on
+\set ON_ERROR_STOP on
 
 DO $indexes$
 BEGIN
@@ -81,5 +81,5 @@ BEGIN
  OR (SELECT count(*) FROM governance.outbox_events)<>outbox_before
  THEN RAISE EXCEPTION 'Rejected duplicate left partial event rows'; END IF;
 END;$dedupe$;
-\\ir national_issuance_review_event_atomicity_integrity.psql
-\\ir national_issuance_review_event_immutability_integrity.psql
+\ir national_issuance_review_event_atomicity_integrity.psql
+\ir national_issuance_review_event_immutability_integrity.psql
