@@ -44,6 +44,16 @@ public static class NationalInspectionRollupEndpoint
         long CurrentSourceMatchNoteCount,
         long CurrentSourceDriftNoteCount,
         long SourceFreshnessUnclassifiedNoteCount,
+        long SourceSnapshotDigestInvalidRequestCount,
+        long SourceEnvelopeInvalidRequestCount,
+        long CenterSelectionMismatchRequestCount,
+        long AuthorityFlagsNotClearRequestCount,
+        long AuditEvidenceInvalidRequestCount,
+        long OutboxEvidenceInvalidRequestCount,
+        long OriginalRequestIntegrityInvalidNoteCount,
+        long ObservationIntegrityInvalidNoteCount,
+        long InspectionAuditEvidenceInvalidNoteCount,
+        long SourceObservationNotComparableNoteCount,
         DateTime? LatestTechnicalObservationAt,
         bool HumanReviewRecorded,
         bool IssuanceAuthorized,
@@ -104,9 +114,14 @@ public static class NationalInspectionRollupEndpoint
                   integrity_consistent_note_count,integrity_inconsistent_note_count,
                   source_comparison_unavailable_note_count,current_source_match_note_count,
                   current_source_drift_note_count,source_freshness_unclassified_note_count,
+                  source_snapshot_digest_invalid_request_count,source_envelope_invalid_request_count,
+                  center_selection_mismatch_request_count,authority_flags_not_clear_request_count,
+                  audit_evidence_invalid_request_count,outbox_evidence_invalid_request_count,
+                  original_request_integrity_invalid_note_count,observation_integrity_invalid_note_count,
+                  inspection_audit_evidence_invalid_note_count,source_observation_not_comparable_note_count,
                   latest_technical_observation_at,human_review_recorded,
                   issuance_authorized,issuance_executed
-                FROM programs.national_issuance_review_national_inspection_rollup
+                FROM programs.national_issuance_review_national_inspection_rollup_v2
                 WHERE @before_program_id::text IS NULL
                   OR (program_id,national_version)<(@before_program_id::text,@before_version::integer)
                 ORDER BY program_id DESC,national_version DESC
@@ -128,8 +143,13 @@ public static class NationalInspectionRollupEndpoint
                         reader.GetInt64(3), reader.GetInt64(4), reader.GetInt64(5),
                         reader.GetInt64(6), reader.GetInt64(7), reader.GetInt64(8),
                         reader.GetInt64(9), reader.GetInt64(10), reader.GetInt64(11),
-                        reader.GetInt64(12), reader.IsDBNull(13) ? null : reader.GetDateTime(13),
-                        reader.GetBoolean(14), reader.GetBoolean(15), reader.GetBoolean(16)));
+                        reader.GetInt64(12),
+                        reader.GetInt64(13), reader.GetInt64(14), reader.GetInt64(15),
+                        reader.GetInt64(16), reader.GetInt64(17), reader.GetInt64(18),
+                        reader.GetInt64(19), reader.GetInt64(20), reader.GetInt64(21),
+                        reader.GetInt64(22),
+                        reader.IsDBNull(23) ? null : reader.GetDateTime(23),
+                        reader.GetBoolean(24), reader.GetBoolean(25), reader.GetBoolean(26)));
                 }
             }
 
