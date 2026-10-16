@@ -118,7 +118,7 @@ test('history pages preserve every claim and send the exact keyset cursor',async
   const cursors:{beforeAt:string|null,beforeId:string|null}[]=[];
   let pageIndex=0;
   await routeOccurrenceHistory(page);
-  await page.route('**/api/v1/centers/*/class-sessions/*/occurrence-claims/*/attendance-claims',route=>{
+  await page.route('**/api/v1/centers/*/class-sessions/*/occurrence-claims/*/attendance-claims**',route=>{
     const url=new URL(route.request().url());
     const beforeAt=url.searchParams.get('beforeAt');
     const beforeId=url.searchParams.get('beforeId');
@@ -156,7 +156,7 @@ test('history pages preserve every claim and send the exact keyset cursor',async
 test('history rejects a continuation cursor that does not match the final row',async({page})=>{
   const claims=historyClaims().slice(0,20);
   await routeOccurrenceHistory(page);
-  await page.route('**/api/v1/centers/*/class-sessions/*/occurrence-claims/*/attendance-claims',route=>
+  await page.route('**/api/v1/centers/*/class-sessions/*/occurrence-claims/*/attendance-claims**',route=>
     route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
       sessionId:session,occurrenceReportId:historyOccurrenceId,
       attendanceClaims:claims,
@@ -175,7 +175,7 @@ test('history rejects duplicate claim IDs before rendering a malformed page',asy
   const claims=historyClaims().slice(0,20);
   claims[1]={...claims[1],claimId:claims[0].claimId};
   await routeOccurrenceHistory(page);
-  await page.route('**/api/v1/centers/*/class-sessions/*/occurrence-claims/*/attendance-claims',route=>
+  await page.route('**/api/v1/centers/*/class-sessions/*/occurrence-claims/*/attendance-claims**',route=>
     route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
       sessionId:session,occurrenceReportId:historyOccurrenceId,
       attendanceClaims:claims,nextBeforeAt:null,nextBeforeId:null
@@ -194,10 +194,10 @@ test('history rejects non-descending occurrence pages before rendering',async({p
     return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
       sessionId:session,
       occurrenceReports:[
-        {occurrenceReportId:'50000000-0000-4000-8000-000000000002',
+        {occurrenceReportId:'50000000-0000-4000-8000-000000000001',
          reportedNote:'ردیف دوم',evidenceRef:null,claimedStartedAt:null,claimedEndedAt:null,
          recordedAt:'2026-10-16T18:00:00.000000Z',verificationStatus:'UNVERIFIED'},
-        {occurrenceReportId:'50000000-0000-4000-8000-000000000001',
+        {occurrenceReportId:'50000000-0000-4000-8000-000000000002',
          reportedNote:'ردیف اول',evidenceRef:null,claimedStartedAt:null,claimedEndedAt:null,
          recordedAt:'2026-10-16T18:00:00.000000Z',verificationStatus:'UNVERIFIED'}
       ],
@@ -214,7 +214,7 @@ test('history rejects out-of-order attendance rows with unique IDs',async({page}
   const claims=historyClaims().slice(0,20);
   [claims[0],claims[1]]=[claims[1],claims[0]];
   await routeOccurrenceHistory(page);
-  await page.route('**/api/v1/centers/*/class-sessions/*/occurrence-claims/*/attendance-claims',route=>
+  await page.route('**/api/v1/centers/*/class-sessions/*/occurrence-claims/*/attendance-claims**',route=>
     route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
       sessionId:session,occurrenceReportId:historyOccurrenceId,
       attendanceClaims:claims,nextBeforeAt:null,nextBeforeId:null
