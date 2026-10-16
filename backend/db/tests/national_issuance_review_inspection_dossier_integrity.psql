@@ -373,7 +373,7 @@ BEGIN
  SELECT f.request_id,'s60-original-program',2,f.center_ids,source.snapshot,
    CASE WHEN f.request_id='aa600000-0000-4000-8000-000000000031'
      THEN repeat('0',64)
-     ELSE encode(sha256(convert_to(f.snapshot::text,'UTF8')),'hex') END,
+     ELSE encode(sha256(convert_to(source.snapshot::text,'UTF8')),'hex') END,
    'S74 synthetic component fixture','UNVERIFIED-s74-fixture-actor'
  FROM (VALUES
    ('aa600000-0000-4000-8000-000000000031'::uuid,
@@ -459,7 +459,8 @@ BEGIN
      'aa600000-0000-4000-8000-000000000031',
      'aa600000-0000-4000-8000-000000000041',
      'aa600000-0000-4000-8000-000000000051',
-     'aa600000-0000-4000-8000-000000000061']);
+     'aa600000-0000-4000-8000-000000000061',
+     'aa600000-0000-4000-8000-000000000071']);
 
  IF NOT EXISTS (
    SELECT 1 FROM programs.national_issuance_review_inspection_summary
