@@ -21,7 +21,7 @@ All checks are read-only and aggregate-only. No private snapshot, center identif
 
 ## Test contract
 
-Disposable PostgreSQL fixtures with valid digests and valid audit/outbox pairs isolate three semantic envelope defects: a blank identifier, duplicate identifiers, and an active-but-unregistered center. The tests require the digest, ordered selection, authority flags, audit, and outbox components to remain valid while the envelope and composite checks fail.
+Disposable PostgreSQL fixtures with valid digests and valid audit/outbox pairs isolate four semantic envelope defects: a blank identifier, duplicate identifiers, an active-but-unregistered center, and an issuance recorded without a registry entry. The tests require the digest, ordered selection, authority flags, audit, and outbox components to remain valid while the envelope and composite checks fail.
 
 Existing 80-center, history, privacy, and restricted-role tests remain in the integration chain.
 
