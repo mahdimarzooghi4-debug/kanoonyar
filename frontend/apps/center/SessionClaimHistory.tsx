@@ -34,6 +34,45 @@ function validAttendance(value:unknown):value is Attendance{
     utc(a.recordedAt)&&a.verificationStatus==='UNVERIFIED';
 }
 
+type HistoryRecord=Occurrence|Attendance;
+function historyId(record:HistoryRecord,kind:'occurrence'|'attendance'):
+    string {
+  return kind==='occurrence'?(record as Occurrence).occurrenceReportId:
+    (record as Attendance).claimId;
+}
+function timestampKey(value:string):string|null {
+  const match=/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,7}))?Z$/.exec(value);
+  if(!match||Number.isNaN(Date.parse(value)))return null;
+  return match[1]+'.'+(match[2]??'').padEnd(7,'0')+'Z';
+}
+function strictlyDescending(records:HistoryRecord[],kind:'occurrence'|'attendance'):
+    boolean {
+  const ids=new Set<string>();
+  for(let i=0;i<records.length;i++){
+    const id=historyId(records[i],kind).toLowerCase();
+    if(ids.has(id))return false;
+    ids.add(id);
+    if(i===0)continue;
+    const previous=records[i-1];
+    const previousAt=timestampKey(previous.recordedAt);
+    const currentAt=timestampKey(records[i].recordedAt);
+    if(!previousAt||!currentAt)return false;
+    const previousId=historyId(previous,kind).toLowerCase();
+    if(!(previousAt>currentAt||
+      (previousAt===currentAt&&previousId>id)))return false;
+  }
+  return true;
+}
+function isOlderThanCursor(record:HistoryRecord,cursor:Cursor,
+    kind:'occurrence'|'attendance'):boolean {
+  const recordAt=timestampKey(record.recordedAt);
+  const cursorAt=timestampKey(cursor.at);
+  if(!recordAt||!cursorAt)return false;
+  const id=historyId(record,kind).toLowerCase();
+  const cursorId=cursor.id.toLowerCase();
+  return recordAt<cursorAt||(recordAt===cursorAt&&id<cursorId);
+}
+
 /** No totals: an absent claim never implies absence or zero. */
 export function SessionClaimHistory({centerId,sessionId,token}:{
   centerId:string;sessionId:string;token:string;
@@ -90,14 +129,17 @@ export function SessionClaimHistory({centerId,sessionId,token}:{
          !data.every(kind==='occurrence'?validOccurrence:validAttendance))
         throw new Error('Invalid records');
       const records=data as (Occurrence|Attendance)[];
+      if(!strictlyDescending(records,kind))throw new Error('Invalid page ordering');
       const nextAt=body.nextBeforeAt,nextId=body.nextBeforeId;
       const hasMore=nextAt!==null||nextId!==null;
-      if(hasMore&&(!utc(nextAt)||typeof nextId!=='string'||!uuid.test(nextId)||
-        records.length!==20))throw new Error('Invalid cursor');
-      if(cursor&&records.some(r=>
-         r.recordedAt>cursor.at||(r.recordedAt===cursor.at&&
-           (kind==='occurrence'?(r as Occurrence).occurrenceReportId:
-                              (r as Attendance).claimId)>=cursor.id)))
+      if(hasMore){
+        const last=records[records.length-1];
+        if(!utc(nextAt)||typeof nextId!=='string'||!uuid.test(nextId)||
+          records.length!==20||!last||nextAt!==last.recordedAt||
+          nextId.toLowerCase()!==historyId(last,kind).toLowerCase())
+          throw new Error('Invalid cursor');
+      }
+      if(cursor&&records.some(r=>!isOlderThanCursor(r,cursor,kind)))
         throw new Error('Stale page');
       const next:Cursor|null=hasMore?{at:nextAt as string,id:nextId as string}:null;
       if(kind==='occurrence'){
