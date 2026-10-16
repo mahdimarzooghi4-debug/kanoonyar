@@ -44,6 +44,27 @@ test('workbench filters national groups by stable technical finding codes',async
  await expect(page.getByRole('button',{name:'فقط گروه‌های دارای کد فنی'})).toHaveAttribute('aria-pressed','true');
  expect(filtered).toBe(true);
 });
+test('workbench filters by one selected finding code across pages',async({page})=>{
+ let selectedCode='';
+ await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>{
+  const u=new URL(r.request().url());
+  selectedCode=u.searchParams.get('findingCode')||'';
+  if(selectedCode==='INSPECTION_AUDIT_EVIDENCE_INVALID'){
+   expect(u.searchParams.get('findingsOnly')).toBe('true');
+   return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[{...row('audit-finding'),inspectionAuditEvidenceInvalidNoteCount:1}],nextCursor:null})});
+  }
+  if(u.searchParams.get('findingsOnly')==='true')
+   return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[{...row('audit-finding'),inspectionAuditEvidenceInvalidNoteCount:1},{...row('source-finding'),sourceEnvelopeInvalidRequestCount:1}],nextCursor:null})});
+  return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('clean-program')],nextCursor:null})});
+ });
+ await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();
+ await page.getByRole('button',{name:'فقط گروه‌های دارای کد فنی'}).click();
+ await expect(page.getByRole('rowheader',{name:'source-finding / ۱'})).toBeVisible();
+ await page.getByLabel('کد فنی مشخص').selectOption('INSPECTION_AUDIT_EVIDENCE_INVALID');
+ await expect(page.getByRole('rowheader',{name:'audit-finding / ۱'})).toBeVisible();
+ await expect(page.getByRole('rowheader',{name:'source-finding / ۱'})).toHaveCount(0);
+ expect(selectedCode).toBe('INSPECTION_AUDIT_EVIDENCE_INVALID');
+});
 test('workbench rejects a response that claims issuance authority',async({page})=>{
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[{...row('national-1'),issuanceAuthorized:true}],nextCursor:null})}));
  await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await expect(page.locator('section[aria-labelledby="inspection-rollup-title"] [role="alert"]')).toContainText('با قرارداد فنی سازگار نیست');await expect(page.getByRole('table')).toHaveCount(0);

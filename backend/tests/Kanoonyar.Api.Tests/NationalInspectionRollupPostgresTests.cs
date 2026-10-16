@@ -201,7 +201,7 @@ public sealed class NationalInspectionRollupPostgresTests
     }
 
     private static async Task<JsonElement> Page(IConfiguration configuration, string? beforeProgramId = null,
-        int? beforeVersion = null, bool findingsOnly = false)
+        int? beforeVersion = null, bool findingsOnly = false, string? findingCode = null)
     {
         var context = new DefaultHttpContext();
         var query = new List<KeyValuePair<string,string?>>();
@@ -212,6 +212,7 @@ public sealed class NationalInspectionRollupPostgresTests
                 beforeVersion.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         }
         if (findingsOnly) query.Add(new("findingsOnly", "true"));
+        if (findingCode is not null) query.Add(new("findingCode", findingCode));
         if (query.Count > 0) context.Request.QueryString = QueryString.Create(query);
         var result = await NationalInspectionRollupEndpoint.List(context, Actor(), configuration,
             new TestOnlyAllowAuthorization(), CancellationToken.None);
@@ -321,7 +322,8 @@ public sealed class NationalInspectionRollupPostgresTests
             {
                 filteredPages++;
                 Assert.True(filteredPages <= 10, "Filtered pagination repeated or failed to advance");
-                var response = await Page(configuration, filterBeforeId, filterBeforeVersion, findingsOnly: true);
+                var response = await Page(configuration, filterBeforeId, filterBeforeVersion, findingsOnly: true,
+                    findingCode: "INSPECTION_AUDIT_EVIDENCE_INVALID");
                 var rows = response.GetProperty("rollups").EnumerateArray().ToArray();
                 Assert.InRange(rows.Length, 1, 20);
                 foreach (var row in rows)
