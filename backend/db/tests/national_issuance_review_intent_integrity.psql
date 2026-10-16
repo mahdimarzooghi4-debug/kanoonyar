@@ -15,6 +15,7 @@
 \ir ../migrations/0048_national_issuance_inspection_current_source_drift.sql
 \ir ../migrations/0049_national_issuance_inspection_drift_breakdown.sql
 \ir ../migrations/0050_national_issuance_observation_scope_integrity.sql
+\ir ../migrations/0051_national_issuance_inspection_summary.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,
  registered_by_subject,registered_at)
