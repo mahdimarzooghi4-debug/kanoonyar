@@ -1,0 +1,120 @@
+\set ON_ERROR_STOP on
+-- S83 verifies the program/version national technical coverage rollup against source rows.
+DO $s83_national_rollup$
+DECLARE
+ v_rollup record;
+ v_request_count bigint;
+ v_without_inspection bigint;
+ v_with_inspection bigint;
+ v_note_count bigint;
+ v_integrity_consistent bigint;
+ v_incomparable bigint;
+ v_current_match bigint;
+ v_current_drift bigint;
+ v_unclassified bigint;
+ v_latest timestamptz;
+BEGIN
+ IF NOT EXISTS (
+   SELECT 1 FROM pg_class c
+   WHERE c.oid='programs.national_issuance_review_national_inspection_rollup'::regclass
+     AND c.relkind='v'
+     AND 'security_invoker=true'=ANY(COALESCE(c.reloptions,ARRAY[]::text[]))
+ ) THEN RAISE EXCEPTION 'S83 national rollup is not SECURITY INVOKER'; END IF;
+
+ IF (SELECT array_agg(attname::text ORDER BY attnum) FROM pg_attribute
+     WHERE attrelid='programs.national_issuance_review_national_inspection_rollup'::regclass
+       AND attnum>0 AND NOT attisdropped)<>ARRAY[
+       'rollup_contract_version','program_id','national_version',
+       'review_request_count','requests_without_inspection_count',
+       'requests_with_inspection_count','inspection_note_count',
+       'integrity_consistent_note_count','integrity_inconsistent_note_count',
+       'source_comparison_unavailable_note_count','current_source_match_note_count',
+       'current_source_drift_note_count','source_freshness_unclassified_note_count',
+       'latest_technical_observation_at','human_review_recorded',
+       'issuance_authorized','issuance_executed']
+ OR EXISTS (
+   SELECT 1 FROM pg_attribute
+   WHERE attrelid='programs.national_issuance_review_national_inspection_rollup'::regclass
+     AND attnum>0 AND NOT attisdropped
+     AND attname=ANY(ARRAY[
+       'center_id','explicit_center_ids','request_id','note_id',
+       'original_source_snapshot','observed_source_snapshot',
+       'technical_note','unverified_inspector_subject',
+       'unverified_requester_subject'])
+ ) THEN RAISE EXCEPTION 'S83 rollup shape exposes private evidence or changed contract'; END IF;
+
+ IF has_table_privilege('public',
+      'programs.national_issuance_review_national_inspection_rollup','SELECT')
+ OR has_table_privilege('kanoonyar_s61_inspection_denied_ci',
+      'programs.national_issuance_review_national_inspection_rollup','SELECT')
+ OR has_table_privilege('kanoonyar_s60_unprivileged_ci',
+      'programs.national_issuance_review_national_inspection_rollup','SELECT')
+ THEN RAISE EXCEPTION 'S83 rollup opened restricted read access'; END IF;
+
+ IF (SELECT count(*) FROM programs.national_issuance_review_national_inspection_rollup)
+ <> (SELECT count(DISTINCT (program_id,national_version))
+     FROM programs.national_issuance_review_intents)
+ THEN RAISE EXCEPTION 'S83 rollup omitted or duplicated program/version groups'; END IF;
+
+ SELECT * INTO v_rollup
+ FROM programs.national_issuance_review_national_inspection_rollup
+ WHERE program_id='s60-original-program' AND national_version=2;
+ IF NOT FOUND OR v_rollup.rollup_contract_version<>'S83_NATIONAL_INSPECTION_ROLLUP_V1'
+ THEN RAISE EXCEPTION 'S83 synthetic national program/version rollup missing'; END IF;
+
+ SELECT count(*),
+        count(*) FILTER (WHERE NOT EXISTS (
+          SELECT 1 FROM programs.national_issuance_review_inspection_notes n
+          WHERE n.request_id=i.request_id)),
+        count(*) FILTER (WHERE EXISTS (
+          SELECT 1 FROM programs.national_issuance_review_inspection_notes n
+          WHERE n.request_id=i.request_id))
+ INTO v_request_count,v_without_inspection,v_with_inspection
+ FROM programs.national_issuance_review_intents i
+ WHERE i.program_id='s60-original-program' AND i.national_version=2;
+
+ SELECT count(*),
+        count(*) FILTER (WHERE d.original_request_integrity_valid IS TRUE
+          AND d.observation_integrity_valid IS TRUE
+          AND d.audit_and_outbox_integrity_valid IS TRUE
+          AND d.source_observation_comparable IS TRUE),
+        count(*) FILTER (WHERE d.source_observation_comparable IS DISTINCT FROM true),
+        count(*) FILTER (WHERE d.source_observation_comparable IS TRUE
+          AND d.current_source_matches_observation IS TRUE),
+        count(*) FILTER (WHERE d.source_observation_comparable IS TRUE
+          AND d.current_source_matches_observation IS FALSE),
+        count(*) FILTER (WHERE d.source_observation_comparable IS TRUE
+          AND d.current_source_matches_observation IS NULL),
+        max(n.recorded_at)
+ INTO v_note_count,v_integrity_consistent,v_incomparable,v_current_match,
+      v_current_drift,v_unclassified,v_latest
+ FROM programs.national_issuance_review_inspection_notes n
+ JOIN programs.national_issuance_review_intents i ON i.request_id=n.request_id
+ JOIN programs.national_issuance_review_inspection_dossier d ON d.note_id=n.note_id
+ WHERE i.program_id='s60-original-program' AND i.national_version=2;
+
+ IF v_rollup.review_request_count<>v_request_count
+ OR v_rollup.requests_without_inspection_count<>v_without_inspection
+ OR v_rollup.requests_with_inspection_count<>v_with_inspection
+ OR v_rollup.inspection_note_count<>v_note_count
+ OR v_rollup.integrity_consistent_note_count<>v_integrity_consistent
+ OR v_rollup.integrity_inconsistent_note_count<>(v_note_count-v_integrity_consistent)
+ OR v_rollup.source_comparison_unavailable_note_count<>v_incomparable
+ OR v_rollup.current_source_match_note_count<>v_current_match
+ OR v_rollup.current_source_drift_note_count<>v_current_drift
+ OR v_rollup.source_freshness_unclassified_note_count<>v_unclassified
+ OR v_rollup.latest_technical_observation_at IS DISTINCT FROM v_latest
+ THEN RAISE EXCEPTION 'S83 rollup diverges from original PostgreSQL evidence'; END IF;
+
+ IF v_rollup.source_comparison_unavailable_note_count
+   +v_rollup.current_source_match_note_count
+   +v_rollup.current_source_drift_note_count
+   +v_rollup.source_freshness_unclassified_note_count
+   <>v_rollup.inspection_note_count
+ THEN RAISE EXCEPTION 'S83 freshness categories do not account for every note'; END IF;
+
+ IF EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_national_inspection_rollup
+   WHERE human_review_recorded OR issuance_authorized OR issuance_executed
+ ) THEN RAISE EXCEPTION 'S83 technical rollup implied a decision or issuance'; END IF;
+END;$s83_national_rollup$;
