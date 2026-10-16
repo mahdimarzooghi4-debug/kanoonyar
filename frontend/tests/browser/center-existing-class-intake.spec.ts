@@ -104,7 +104,7 @@ test('existing class -> original capacity -> REQUESTED queue -> independent huma
  await expect(review.getByText('هیچ موضوعی ثبت نشده؛ این به معنی تأیید هیچ شرطی نیست.')).toBeVisible();
  await review.getByRole('combobox',{name:'موضوع بررسی انسانی'}).selectOption('CONSENT_AUTHORITY');
  await review.getByRole('button',{name:'ثبت نیاز به بررسی انسانی'}).click();
- expect(reviews).toHaveLength(1);
+ await expect.poll(()=>reviews.length).toBe(1);
  expect(reviews[0].reviewTopic).toBe('CONSENT_AUTHORITY');
  await expect(review.getByText('هیچ تأیید یا پذیرشی انجام نشد',{exact:false})).toBeVisible();
  await p.getByRole('combobox',{name:'انتخاب کانون برای پیش‌نویس‌ها'}).selectOption('c2');
