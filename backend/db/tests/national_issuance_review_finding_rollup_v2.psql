@@ -1,0 +1,98 @@
+\set ON_ERROR_STOP on
+-- S90 validates the aggregate-only finding-code contract against the two source finding views.
+DO $s90_national_inspection_findings$
+DECLARE
+ v_columns text[];
+BEGIN
+ IF NOT EXISTS (
+   SELECT 1 FROM pg_class c
+   WHERE c.oid='programs.national_issuance_review_national_inspection_rollup_v2'::regclass
+     AND c.relkind='v'
+     AND 'security_invoker=true'=ANY(COALESCE(c.reloptions,ARRAY[]::text[]))
+ ) THEN RAISE EXCEPTION 'S90 rollup is not SECURITY INVOKER'; END IF;
+
+ SELECT array_agg(attname::text ORDER BY attnum) INTO v_columns
+ FROM pg_attribute
+ WHERE attrelid='programs.national_issuance_review_national_inspection_rollup_v2'::regclass
+   AND attnum>0 AND NOT attisdropped;
+ IF v_columns<>ARRAY[
+   'rollup_contract_version','program_id','national_version',
+   'review_request_count','requests_without_inspection_count',
+   'requests_with_inspection_count','inspection_note_count',
+   'integrity_consistent_note_count','integrity_inconsistent_note_count',
+   'source_comparison_unavailable_note_count','current_source_match_note_count',
+   'current_source_drift_note_count','source_freshness_unclassified_note_count',
+   'source_snapshot_digest_invalid_request_count','source_envelope_invalid_request_count',
+   'center_selection_mismatch_request_count','authority_flags_not_clear_request_count',
+   'audit_evidence_invalid_request_count','outbox_evidence_invalid_request_count',
+   'original_request_integrity_invalid_note_count','observation_integrity_invalid_note_count',
+   'inspection_audit_evidence_invalid_note_count','source_observation_not_comparable_note_count',
+   'latest_technical_observation_at','human_review_recorded','issuance_authorized',
+   'issuance_executed']
+ OR EXISTS (
+   SELECT 1 FROM pg_attribute
+   WHERE attrelid='programs.national_issuance_review_national_inspection_rollup_v2'::regclass
+     AND attnum>0 AND NOT attisdropped
+     AND attname=ANY(ARRAY[
+       'center_id','explicit_center_ids','request_id','note_id',
+       'original_source_snapshot','observed_source_snapshot','technical_note',
+       'unverified_inspector_subject','unverified_requester_subject'])
+ ) THEN RAISE EXCEPTION 'S90 rollup shape exposes private evidence or changed contract'; END IF;
+
+ IF has_table_privilege('public',
+      'programs.national_issuance_review_national_inspection_rollup_v2','SELECT')
+ OR has_table_privilege('kanoonyar_s60_unprivileged_ci',
+      'programs.national_issuance_review_national_inspection_rollup_v2','SELECT')
+ THEN RAISE EXCEPTION 'S90 rollup opened restricted read access'; END IF;
+
+ IF EXISTS (
+   SELECT 1
+   FROM programs.national_issuance_review_national_inspection_rollup_v2 r
+   LEFT JOIN LATERAL (
+     SELECT
+       count(*) FILTER (WHERE finding_code='SOURCE_SNAPSHOT_DIGEST_INVALID')::bigint AS c1,
+       count(*) FILTER (WHERE finding_code='SOURCE_ENVELOPE_INVALID')::bigint AS c2,
+       count(*) FILTER (WHERE finding_code='CENTER_SELECTION_MISMATCH')::bigint AS c3,
+       count(*) FILTER (WHERE finding_code='AUTHORITY_FLAGS_NOT_CLEAR')::bigint AS c4,
+       count(*) FILTER (WHERE finding_code='AUDIT_EVIDENCE_INVALID')::bigint AS c5,
+       count(*) FILTER (WHERE finding_code='OUTBOX_EVIDENCE_INVALID')::bigint AS c6
+     FROM programs.national_issuance_review_integrity_findings f
+     WHERE f.program_id=r.program_id AND f.national_version=r.national_version
+   ) q ON true
+   LEFT JOIN LATERAL (
+     SELECT
+       count(*) FILTER (WHERE finding_code='ORIGINAL_REQUEST_INTEGRITY_INVALID')::bigint AS c1,
+       count(*) FILTER (WHERE finding_code='OBSERVATION_INTEGRITY_INVALID')::bigint AS c2,
+       count(*) FILTER (WHERE finding_code='INSPECTION_AUDIT_EVIDENCE_INVALID')::bigint AS c3,
+       count(*) FILTER (WHERE finding_code='SOURCE_OBSERVATION_NOT_COMPARABLE')::bigint AS c4
+     FROM programs.national_issuance_review_inspection_findings f
+     WHERE f.program_id=r.program_id AND f.national_version=r.national_version
+   ) n ON true
+   WHERE r.rollup_contract_version<>'S90_NATIONAL_INSPECTION_ROLLUP_V2'
+      OR r.source_snapshot_digest_invalid_request_count IS DISTINCT FROM q.c1
+      OR r.source_envelope_invalid_request_count IS DISTINCT FROM q.c2
+      OR r.center_selection_mismatch_request_count IS DISTINCT FROM q.c3
+      OR r.authority_flags_not_clear_request_count IS DISTINCT FROM q.c4
+      OR r.audit_evidence_invalid_request_count IS DISTINCT FROM q.c5
+      OR r.outbox_evidence_invalid_request_count IS DISTINCT FROM q.c6
+      OR r.original_request_integrity_invalid_note_count IS DISTINCT FROM n.c1
+      OR r.observation_integrity_invalid_note_count IS DISTINCT FROM n.c2
+      OR r.inspection_audit_evidence_invalid_note_count IS DISTINCT FROM n.c3
+      OR r.source_observation_not_comparable_note_count IS DISTINCT FROM n.c4
+      OR r.source_snapshot_digest_invalid_request_count>r.review_request_count
+      OR r.source_envelope_invalid_request_count>r.review_request_count
+      OR r.center_selection_mismatch_request_count>r.review_request_count
+      OR r.authority_flags_not_clear_request_count>r.review_request_count
+      OR r.audit_evidence_invalid_request_count>r.review_request_count
+      OR r.outbox_evidence_invalid_request_count>r.review_request_count
+      OR r.original_request_integrity_invalid_note_count>r.inspection_note_count
+      OR r.observation_integrity_invalid_note_count>r.inspection_note_count
+      OR r.inspection_audit_evidence_invalid_note_count>r.inspection_note_count
+      OR r.source_observation_not_comparable_note_count>r.inspection_note_count
+ ) THEN RAISE EXCEPTION 'S90 component counts diverge from stable finding sources'; END IF;
+
+ IF EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_national_inspection_rollup_v2
+   WHERE human_review_recorded OR issuance_authorized OR issuance_executed
+ ) THEN RAISE EXCEPTION 'S90 technical rollup implied a decision or issuance'; END IF;
+END;$s90_national_inspection_findings$;
