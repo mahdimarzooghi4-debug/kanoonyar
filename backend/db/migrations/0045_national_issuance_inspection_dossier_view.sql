@@ -18,10 +18,19 @@ SELECT
    n.pinned_request_digest_sha256 = i.source_digest_sha256
    AND i.source_digest_sha256 =
      encode(sha256(convert_to(i.original_source_snapshot::text,'UTF8')),'hex')
+   AND NOT i.requester_authorized
+   AND NOT i.human_review_recorded
+   AND NOT i.issuance_authorized
+   AND NOT i.issuance_executed
+   AND NOT n.human_review_recorded
+   AND NOT n.issuance_authorized
+   AND NOT n.issuance_executed
  ) AS original_request_integrity_valid,
  (
    n.observed_digest_sha256 =
      encode(sha256(convert_to(n.observed_source_snapshot::text,'UTF8')),'hex')
+   AND n.source_changed_since_request =
+     (n.observed_digest_sha256 <> n.pinned_request_digest_sha256)
  ) AS observation_integrity_valid,
  EXISTS (
    SELECT 1
