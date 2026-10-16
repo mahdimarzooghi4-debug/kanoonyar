@@ -1,6 +1,6 @@
 -- S63: duplicate append-only event envelopes fail closed while unrelated
 -- event types remain outside these narrowly scoped unique constraints.
-\set ON_ERROR_STOP on
+\\set ON_ERROR_STOP on
 
 DO $indexes$
 BEGIN
@@ -46,7 +46,7 @@ BEGIN
  EXCEPTION WHEN unique_violation THEN NULL; END;
 
  -- Duplicate event/aggregate envelopes fail even if they use another
- -- event UUID. The audit UUID also cannot back a second review outbox row.
+ -- event UUID. The audit UUID also cannot back a second outbox event.
  BEGIN
    INSERT INTO governance.outbox_events
     (event_id,audit_id,event_type,aggregate_type,aggregate_id,occurred_at,payload)
@@ -81,4 +81,5 @@ BEGIN
  OR (SELECT count(*) FROM governance.outbox_events)<>outbox_before
  THEN RAISE EXCEPTION 'Rejected duplicate left partial event rows'; END IF;
 END;$dedupe$;
-\ir national_issuance_review_event_atomicity_integrity.psql
+\\ir national_issuance_review_event_atomicity_integrity.psql
+\\ir national_issuance_review_event_immutability_integrity.psql
