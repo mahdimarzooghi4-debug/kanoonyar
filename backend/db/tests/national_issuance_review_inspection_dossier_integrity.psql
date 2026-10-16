@@ -597,7 +597,12 @@ WITH fixtures(request_id,center_ids,centers) AS (
    ARRAY['s75-unregistered-active-center']::text[],
    jsonb_build_array(jsonb_build_object(
      'centerId','s75-unregistered-active-center',
-     'registryExists',false,'registryActive',true,'exactIssuanceExists',false)))
+     'registryExists',false,'registryActive',true,'exactIssuanceExists',false))),
+  ('aa600000-0000-4000-8000-000000000111'::uuid,
+   ARRAY['s75-unregistered-issued-center']::text[],
+   jsonb_build_array(jsonb_build_object(
+     'centerId','s75-unregistered-issued-center',
+     'registryExists',false,'registryActive',false,'exactIssuanceExists',true)))
 ), snapshots AS (
  SELECT request_id,center_ids,
    jsonb_build_object('formatVersion','S60_SOURCE_SNAPSHOT_V1',
@@ -624,7 +629,9 @@ SELECT CASE i.request_id
       THEN 'aa600000-0000-4000-8000-000000000082'::uuid
     WHEN 'aa600000-0000-4000-8000-000000000091'::uuid
       THEN 'aa600000-0000-4000-8000-000000000092'::uuid
-    ELSE 'aa600000-0000-4000-8000-000000000102'::uuid END,
+    WHEN 'aa600000-0000-4000-8000-000000000101'::uuid
+      THEN 'aa600000-0000-4000-8000-000000000102'::uuid
+    ELSE 'aa600000-0000-4000-8000-000000000112'::uuid END,
  transaction_timestamp(),'UNVERIFIED-s75-fixture-actor',NULL,
  'NATIONAL_ISSUANCE_REVIEW_INTENT_CAPTURED',
  'national_issuance_review_intent',i.request_id::text,
@@ -637,7 +644,8 @@ FROM programs.national_issuance_review_intents i
 WHERE i.request_id=ANY(ARRAY[
  'aa600000-0000-4000-8000-000000000081'::uuid,
  'aa600000-0000-4000-8000-000000000091'::uuid,
- 'aa600000-0000-4000-8000-000000000101'::uuid]);
+ 'aa600000-0000-4000-8000-000000000101'::uuid,
+ 'aa600000-0000-4000-8000-000000000111'::uuid]);
 
 INSERT INTO governance.outbox_events(
  event_id,audit_id,event_type,aggregate_type,aggregate_id,occurred_at,payload
@@ -647,7 +655,9 @@ SELECT CASE a.target_id
       THEN 'aa600000-0000-4000-8000-000000000182'::uuid
     WHEN 'aa600000-0000-4000-8000-000000000091'
       THEN 'aa600000-0000-4000-8000-000000000192'::uuid
-    ELSE 'aa600000-0000-4000-8000-000000000202'::uuid END,
+    WHEN 'aa600000-0000-4000-8000-000000000101'
+      THEN 'aa600000-0000-4000-8000-000000000202'::uuid
+    ELSE 'aa600000-0000-4000-8000-000000000212'::uuid END,
  a.audit_id,'NationalIssuanceReviewIntentCaptured',
  'national_issuance_review_intent',a.target_id,transaction_timestamp(),
  jsonb_build_object('request_id',a.target_id,'recorded_only',true,
@@ -658,20 +668,22 @@ WHERE a.target_type='national_issuance_review_intent'
  AND a.target_id=ANY(ARRAY[
  'aa600000-0000-4000-8000-000000000081',
  'aa600000-0000-4000-8000-000000000091',
- 'aa600000-0000-4000-8000-000000000101']);
+ 'aa600000-0000-4000-8000-000000000101',
+ 'aa600000-0000-4000-8000-000000000111']);
 COMMIT;
 
 DO $s75_semantic_envelope$
-DECLARE request_id uuid;
+DECLARE v_request_id uuid;
 BEGIN
- FOREACH request_id IN ARRAY ARRAY[
+ FOREACH v_request_id IN ARRAY ARRAY[
    'aa600000-0000-4000-8000-000000000081'::uuid,
    'aa600000-0000-4000-8000-000000000091'::uuid,
-   'aa600000-0000-4000-8000-000000000101'::uuid
+   'aa600000-0000-4000-8000-000000000101'::uuid,
+   'aa600000-0000-4000-8000-000000000111'::uuid
  ] LOOP
    IF NOT EXISTS (
      SELECT 1 FROM programs.national_issuance_review_inspection_summary
-     WHERE programs.national_issuance_review_inspection_summary.request_id=request_id
+     WHERE programs.national_issuance_review_inspection_summary.request_id=v_request_id
        AND request_source_integrity_valid=false
        AND request_snapshot_digest_valid=true
        AND request_source_envelope_valid=false
@@ -679,6 +691,6 @@ BEGIN
        AND request_authority_flags_clear=true
        AND request_audit_integrity_valid=true
        AND request_outbox_integrity_valid=true
-   ) THEN RAISE EXCEPTION 'S75 failed semantic envelope isolation for synthetic request %',request_id; END IF;
+   ) THEN RAISE EXCEPTION 'S75 failed semantic envelope isolation for synthetic request %',v_request_id; END IF;
  END LOOP;
 END;$s75_semantic_envelope$;
