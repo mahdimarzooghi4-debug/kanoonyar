@@ -137,6 +137,32 @@ BEGIN
 END;$negative$;
 COMMIT;
 
+-- Deliberately collide with an existing audit UUID AFTER the note insert.
+-- PostgreSQL must roll back the entire function (including the new note)
+-- instead of leaving a partial technical inspection.
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+DO $rollback$
+DECLARE before_count bigint; after_count bigint;
+BEGIN
+ SELECT count(*) INTO before_count FROM programs.national_issuance_review_inspection_notes;
+ BEGIN
+  PERFORM programs.capture_national_issuance_review_inspection_note(
+   'aa610000-0000-4000-8000-000000000031',
+   'aa600000-0000-4000-8000-000000000001',
+   'UNVERIFIED-s61','audit collision fixture',
+   'aa610000-0000-4000-8000-000000000002',
+   gen_random_uuid(),'s61-conflict');
+  RAISE EXCEPTION 'Audit collision incorrectly accepted';
+ EXCEPTION WHEN unique_violation THEN NULL;
+ END;
+ SELECT count(*) INTO after_count FROM programs.national_issuance_review_inspection_notes;
+ IF after_count<>before_count OR EXISTS(
+  SELECT 1 FROM programs.national_issuance_review_inspection_notes
+  WHERE note_id='aa610000-0000-4000-8000-000000000031'
+ ) THEN RAISE EXCEPTION 'Audit collision left a partial S61 note'; END IF;
+END;$rollback$;
+COMMIT;
+
 \connect - kanoonyar_s61_inspection_denied_ci
 DO $deny$
 BEGIN
