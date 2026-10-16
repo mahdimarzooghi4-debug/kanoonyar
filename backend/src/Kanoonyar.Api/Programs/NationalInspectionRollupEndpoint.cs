@@ -1,0 +1,181 @@
+using System.Data;
+using System.Globalization;
+using System.Security.Claims;
+using Kanoonyar.Api.Security;
+using Microsoft.AspNetCore.Http;
+using Npgsql;
+using NpgsqlTypes;
+
+namespace Kanoonyar.Api.Programs;
+
+/// <summary>
+/// Paginated read path for aggregate national inspection evidence.
+/// Access remains unavailable until a separately approved HQ read policy exists.
+/// </summary>
+public interface INationalInspectionRollupReadAuthorization
+{
+    ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, CancellationToken cancellationToken);
+}
+
+/// <summary>No approved HQ review-read policy exists; deny every runtime request.</summary>
+public sealed class UnapprovedNationalInspectionRollupReadAuthorization
+    : INationalInspectionRollupReadAuthorization
+{
+    public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(false);
+}
+
+public static class NationalInspectionRollupEndpoint
+{
+    private const int PageSize = 20;
+
+    private sealed record Cursor(string ProgramId, int NationalVersion);
+    private sealed record Row(
+        string RollupContractVersion,
+        string ProgramId,
+        int NationalVersion,
+        long ReviewRequestCount,
+        long RequestsWithoutInspectionCount,
+        long RequestsWithInspectionCount,
+        long InspectionNoteCount,
+        long IntegrityConsistentNoteCount,
+        long IntegrityInconsistentNoteCount,
+        long SourceComparisonUnavailableNoteCount,
+        long CurrentSourceMatchNoteCount,
+        long CurrentSourceDriftNoteCount,
+        long SourceFreshnessUnclassifiedNoteCount,
+        DateTime? LatestTechnicalObservationAt,
+        bool HumanReviewRecorded,
+        bool IssuanceAuthorized,
+        bool IssuanceExecuted);
+
+    public static async Task<IResult> List(
+        HttpContext context,
+        ClaimsPrincipal actor,
+        IConfiguration configuration,
+        INationalInspectionRollupReadAuthorization authorization,
+        CancellationToken cancellationToken)
+    {
+        if (actor.Identity?.IsAuthenticated != true)
+            return Results.Problem(statusCode: 401, title: "Authentication required");
+        if (string.IsNullOrWhiteSpace(actor.FindFirst("sub")?.Value))
+            return Results.Problem(statusCode: 403, title: "Verified subject required");
+
+        var cursorResult = ParseCursor(context.Request.Query, out var cursor);
+        if (cursorResult is not null) return cursorResult;
+
+        bool permitted;
+        try
+        {
+            permitted = await authorization.IsAuthorizedAsync(actor, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            permitted = false;
+        }
+        if (!permitted)
+            return Results.Problem(statusCode: 403, title: "Independent national inspection read grant required");
+
+        var connectionString = configuration["NATIONAL_INSPECTION_ROLLUP_READ_DATABASE_URL"];
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "National inspection rollup unavailable");
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(
+                IsolationLevel.RepeatableRead, cancellationToken);
+            await using (var readOnly = new NpgsqlCommand("SET TRANSACTION READ ONLY", connection, transaction))
+                await readOnly.ExecuteNonQueryAsync(cancellationToken);
+
+            if (!await RestrictedDraftDatabaseRole.VerifyReadOnlyAsync(
+                    connection, transaction, cancellationToken))
+                return Results.Problem(statusCode: 503, title: "Unsafe national inspection read role");
+
+            const string sql = """
+                SELECT rollup_contract_version,program_id,national_version,
+                  review_request_count,requests_without_inspection_count,
+                  requests_with_inspection_count,inspection_note_count,
+                  integrity_consistent_note_count,integrity_inconsistent_note_count,
+                  source_comparison_unavailable_note_count,current_source_match_note_count,
+                  current_source_drift_note_count,source_freshness_unclassified_note_count,
+                  latest_technical_observation_at,human_review_recorded,
+                  issuance_authorized,issuance_executed
+                FROM programs.national_issuance_review_national_inspection_rollup
+                WHERE @before_program_id::text IS NULL
+                  OR (program_id,national_version)<(@before_program_id::text,@before_version::integer)
+                ORDER BY program_id DESC,national_version DESC
+                LIMIT 21
+                """;
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.Parameters.Add("before_program_id", NpgsqlDbType.Text).Value =
+                cursor is null ? DBNull.Value : cursor.ProgramId;
+            command.Parameters.Add("before_version", NpgsqlDbType.Integer).Value =
+                cursor is null ? DBNull.Value : cursor.NationalVersion;
+
+            var rows = new List<Row>(PageSize + 1);
+            await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+            {
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    rows.Add(new Row(
+                        reader.GetString(0), reader.GetString(1), reader.GetInt32(2),
+                        reader.GetInt64(3), reader.GetInt64(4), reader.GetInt64(5),
+                        reader.GetInt64(6), reader.GetInt64(7), reader.GetInt64(8),
+                        reader.GetInt64(9), reader.GetInt64(10), reader.GetInt64(11),
+                        reader.GetInt64(12), reader.IsDBNull(13) ? null : reader.GetDateTime(13),
+                        reader.GetBoolean(14), reader.GetBoolean(15), reader.GetBoolean(16)));
+                }
+            }
+
+            var hasMore = rows.Count > PageSize;
+            var page = hasMore ? rows.Take(PageSize).ToArray() : rows.ToArray();
+            var last = hasMore ? page[^1] : null;
+            await transaction.CommitAsync(cancellationToken);
+
+            return Results.Ok(new
+            {
+                rollups = page,
+                nextCursor = last is null
+                    ? null
+                    : new { beforeProgramId = last.ProgramId, beforeNationalVersion = last.NationalVersion }
+            });
+        }
+        catch (NpgsqlException)
+        {
+            return Results.Problem(statusCode: 503, title: "National inspection rollup unavailable");
+        }
+        catch (TimeoutException)
+        {
+            return Results.Problem(statusCode: 503, title: "National inspection rollup unavailable");
+        }
+    }
+
+    private static IResult? ParseCursor(IQueryCollection query, out Cursor? cursor)
+    {
+        cursor = null;
+        var hasProgram = query.ContainsKey("beforeProgramId");
+        var hasVersion = query.ContainsKey("beforeNationalVersion");
+        if (hasProgram != hasVersion) return Results.BadRequest();
+        if (!hasProgram) return query.Count == 0 ? null : Results.BadRequest();
+        if (query.Count != 2 || query["beforeProgramId"].Count != 1 ||
+            query["beforeNationalVersion"].Count != 1)
+            return Results.BadRequest();
+
+        var programId = query["beforeProgramId"].ToString();
+        var rawVersion = query["beforeNationalVersion"].ToString();
+        if (string.IsNullOrWhiteSpace(programId) || programId != programId.Trim() ||
+            programId.Length > 256 || programId.Any(char.IsControl) ||
+            !int.TryParse(rawVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var version) ||
+            version <= 0 || rawVersion != version.ToString(CultureInfo.InvariantCulture))
+            return Results.BadRequest();
+
+        cursor = new Cursor(programId, version);
+        return null;
+    }
+}
