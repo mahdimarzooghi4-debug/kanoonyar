@@ -49,6 +49,42 @@ BEGIN
  OR (SELECT count(*) FROM programs.national_issuance_review_inspection_dossier
      WHERE NOT source_changed_since_request)<>1
  THEN RAISE EXCEPTION 'S62 dossier lost changed/unchanged historical observations'; END IF;
+
+ IF EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_dossier
+   WHERE current_source_digest_sha256 !~ '^[a-f0-9]{64}
+
+\connect - kanoonyar_s61_inspection_denied_ci
+DO $deny$
+BEGIN
+ BEGIN
+   PERFORM 1 FROM programs.national_issuance_review_inspection_dossier;
+   RAISE EXCEPTION 'Restricted account read the S62 technical dossier';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END;$deny$;
+\connect - postgres
+
+ ) THEN RAISE EXCEPTION 'S68 current source digest is malformed'; END IF;
+
+ -- The first inspection of request 1 predates the later synthetic issuance
+ -- for center-05; the later inspection reflects it. Request 2 concerns only
+ -- center-04 and remains current. Historical note digests are never rewritten.
+ IF (SELECT current_source_matches_observation
+     FROM programs.national_issuance_review_inspection_dossier
+     WHERE note_id='aa610000-0000-4000-8000-000000000001') IS DISTINCT FROM false
+ OR (SELECT current_source_matches_observation
+     FROM programs.national_issuance_review_inspection_dossier
+     WHERE note_id='aa610000-0000-4000-8000-000000000011') IS DISTINCT FROM true
+ OR (SELECT current_source_matches_observation
+     FROM programs.national_issuance_review_inspection_dossier
+     WHERE note_id='aa610000-0000-4000-8000-000000000021') IS DISTINCT FROM true
+ THEN RAISE EXCEPTION 'S68 failed to distinguish latest source drift from historical observations'; END IF;
+
+ IF EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_dossier
+   WHERE current_source_matches_observation
+     <> (current_source_digest_sha256=observed_digest_sha256)
+ ) THEN RAISE EXCEPTION 'S68 current-source match flag disagrees with recomputed digest'; END IF;
 END;$catalog$;
 
 \connect - kanoonyar_s61_inspection_denied_ci
