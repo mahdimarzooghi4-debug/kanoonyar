@@ -257,3 +257,4 @@ BEGIN
 END;$final$;
 
 \ir national_issuance_review_inspection_dossier_integrity.psql
+\ir national_issuance_review_event_uniqueness_integrity.psql
