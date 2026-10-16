@@ -155,6 +155,24 @@ BEGIN
       OR issuance_executed
  ) THEN RAISE EXCEPTION 'S71 summary failed request-count or latest-observation checks'; END IF;
 
+ -- Full-history counts distinguish the single currently drifted observation
+ -- from later matches, while all three original fixtures remain consistent.
+ IF EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_summary
+   WHERE request_id='aa600000-0000-4000-8000-000000000001'
+     AND (integrity_consistent_note_count<>2
+       OR integrity_inconsistent_note_count<>0
+       OR source_incomparable_note_count<>0
+       OR current_source_drift_note_count<>1)
+ ) OR EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_summary
+   WHERE request_id='aa600000-0000-4000-8000-000000000011'
+     AND (integrity_consistent_note_count<>1
+       OR integrity_inconsistent_note_count<>0
+       OR source_incomparable_note_count<>0
+       OR current_source_drift_note_count<>0)
+ ) THEN RAISE EXCEPTION 'S72 full-history metrics do not match source observations'; END IF;
+
  -- Test-only direct insertion simulates a well-formed, correctly hashed note
  -- whose observation omits most of the immutable request's selected centers.
  -- The read projection must expose no drift summary for this mismatched scope.
@@ -282,6 +300,31 @@ BEGIN
      AND center_registry_change_count IS NULL
      AND exact_issuance_change_count IS NULL
  ) THEN RAISE EXCEPTION 'S70 accepted an observation with reordered center scope'; END IF;
+
+ -- Both test-only invalid notes share this transaction timestamp. The
+ -- summary marks that latest set ambiguous and suppresses its detail.
+ IF NOT EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_summary
+   WHERE request_id='aa600000-0000-4000-8000-000000000001'
+     AND inspection_note_count=4
+     AND latest_observation_candidate_count=2
+     AND latest_observation_ambiguous
+     AND latest_source_observation_comparable IS NULL
+     AND current_source_matches_latest_observation IS NULL
+     AND latest_publication_state_changed IS NULL
+     AND latest_center_registry_change_count IS NULL
+     AND latest_exact_issuance_change_count IS NULL
+     AND latest_evidence_integrity_valid IS NULL
+ ) THEN RAISE EXCEPTION 'S72 did not suppress tied latest-observation details'; END IF;
+
+ IF NOT EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_summary
+   WHERE request_id='aa600000-0000-4000-8000-000000000001'
+     AND integrity_consistent_note_count=2
+     AND integrity_inconsistent_note_count=2
+     AND source_incomparable_note_count=2
+     AND current_source_drift_note_count=1
+ ) THEN RAISE EXCEPTION 'S72 failed to aggregate full history after invalid fixtures'; END IF;
 
 END;$catalog$;
 
