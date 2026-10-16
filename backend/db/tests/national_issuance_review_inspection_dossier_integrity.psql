@@ -1,0 +1,62 @@
+-- S62: verify the virtual technical dossier is complete, non-authorizing,
+-- privacy-minimized, and inaccessible to restricted operational SQL users.
+\set ON_ERROR_STOP on
+
+DO $catalog$
+DECLARE dossier_count bigint;
+BEGIN
+ IF NOT EXISTS (
+   SELECT 1 FROM pg_class c
+   WHERE c.oid='programs.national_issuance_review_inspection_dossier'::regclass
+     AND c.relkind='v'
+     AND 'security_invoker=true'=ANY(COALESCE(c.reloptions,ARRAY[]::text[]))
+ ) THEN RAISE EXCEPTION 'S62 dossier is not a SECURITY INVOKER view'; END IF;
+
+ IF EXISTS (
+   SELECT 1 FROM pg_attribute
+   WHERE attrelid='programs.national_issuance_review_inspection_dossier'::regclass
+     AND attnum>0 AND NOT attisdropped
+     AND attname=ANY(ARRAY[
+       'technical_note','unverified_inspector_subject',
+       'explicit_center_ids','observed_source_snapshot',
+       'original_source_snapshot'])
+ ) THEN RAISE EXCEPTION 'S62 dossier exposes private source or free-text fields'; END IF;
+
+ IF has_table_privilege('kanoonyar_s61_inspection_denied_ci',
+    'programs.national_issuance_review_inspection_dossier','SELECT')
+ OR has_table_privilege('kanoonyar_s60_unprivileged_ci',
+    'programs.national_issuance_review_inspection_dossier','SELECT')
+ THEN RAISE EXCEPTION 'Restricted operational SQL account can read technical dossier'; END IF;
+
+ SELECT count(*) INTO dossier_count
+ FROM programs.national_issuance_review_inspection_dossier;
+ IF dossier_count<>3 THEN
+   RAISE EXCEPTION 'S62 dossier omitted or duplicated inspection notes: %',dossier_count;
+ END IF;
+
+ IF EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_dossier
+   WHERE NOT original_request_integrity_valid
+      OR NOT observation_integrity_valid
+      OR NOT audit_and_outbox_integrity_valid
+      OR human_review_recorded
+      OR issuance_authorized
+      OR issuance_executed
+ ) THEN RAISE EXCEPTION 'S62 dossier failed integrity or acquired authority'; END IF;
+
+ IF (SELECT count(*) FROM programs.national_issuance_review_inspection_dossier
+     WHERE source_changed_since_request)<>2
+ OR (SELECT count(*) FROM programs.national_issuance_review_inspection_dossier
+     WHERE NOT source_changed_since_request)<>1
+ THEN RAISE EXCEPTION 'S62 dossier lost changed/unchanged historical observations'; END IF;
+END;$catalog$;
+
+\connect - kanoonyar_s61_inspection_denied_ci
+DO $deny$
+BEGIN
+ BEGIN
+   PERFORM 1 FROM programs.national_issuance_review_inspection_dossier;
+   RAISE EXCEPTION 'Restricted account read the S62 technical dossier';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END;$deny$;
+\connect - postgres

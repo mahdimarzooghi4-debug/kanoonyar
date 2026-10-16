@@ -40,6 +40,7 @@
 \ir ../migrations/0042_permission_change_review_intents.sql
 \ir ../migrations/0043_national_issuance_review_intent_ledger.sql
 \ir ../migrations/0044_national_issuance_review_inspection_notes.sql
+\ir ../migrations/0045_national_issuance_inspection_dossier_view.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),

@@ -255,3 +255,5 @@ BEGIN
  WHERE event_type='NationalIssuanceReviewInspectionNoteCaptured';
  IF n<>3 THEN RAISE EXCEPTION 'S61 outbox count %',n; END IF;
 END;$final$;
+
+\ir national_issuance_review_inspection_dossier_integrity.psql
