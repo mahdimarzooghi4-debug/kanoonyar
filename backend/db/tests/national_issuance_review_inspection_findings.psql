@@ -1,0 +1,77 @@
+\set ON_ERROR_STOP on
+-- S80 verifies stable inspection finding codes without exposing source details.
+DO $s80_finding_contract$
+DECLARE
+ v_column_count integer;
+ v_columns text[];
+BEGIN
+ IF NOT EXISTS (
+   SELECT 1 FROM pg_class c
+   WHERE c.oid='programs.national_issuance_review_inspection_findings'::regclass
+     AND c.relkind='v'
+     AND 'security_invoker=true'=ANY(COALESCE(c.reloptions,ARRAY[]::text[]))
+ ) THEN RAISE EXCEPTION 'S80 inspection findings view is not SECURITY INVOKER'; END IF;
+
+ SELECT count(*),array_agg(attname::text ORDER BY attnum)
+ INTO v_column_count,v_columns
+ FROM pg_attribute
+ WHERE attrelid='programs.national_issuance_review_inspection_findings'::regclass
+   AND attnum>0 AND NOT attisdropped;
+ IF v_column_count<>6 OR v_columns<>ARRAY[
+   'finding_contract_version','request_id','note_id','program_id',
+   'national_version','finding_code'
+ ] OR EXISTS (
+   SELECT 1 FROM pg_attribute
+   WHERE attrelid='programs.national_issuance_review_inspection_findings'::regclass
+     AND attnum>0 AND NOT attisdropped
+     AND attname=ANY(ARRAY[
+       'center_id','explicit_center_ids','original_source_snapshot',
+       'observed_source_snapshot','technical_note',
+       'unverified_inspector_subject','unverified_requester_subject'])
+ ) THEN RAISE EXCEPTION 'S80 findings view exposes private fields or unstable shape'; END IF;
+
+ IF has_table_privilege('public',
+      'programs.national_issuance_review_inspection_findings','SELECT')
+ OR has_table_privilege('kanoonyar_s61_inspection_denied_ci',
+      'programs.national_issuance_review_inspection_findings','SELECT')
+ OR has_table_privilege('kanoonyar_s60_unprivileged_ci',
+      'programs.national_issuance_review_inspection_findings','SELECT')
+ THEN RAISE EXCEPTION 'S80 inspection findings granted restricted read access'; END IF;
+
+ IF EXISTS (
+   WITH expected(note_id,finding_code) AS (VALUES
+     ('aa790000-0000-4000-8000-000000000001'::uuid,'SOURCE_OBSERVATION_NOT_COMPARABLE'),
+     ('aa790000-0000-4000-8000-000000000002'::uuid,'SOURCE_OBSERVATION_NOT_COMPARABLE'),
+     ('aa790000-0000-4000-8000-000000000003'::uuid,'SOURCE_OBSERVATION_NOT_COMPARABLE'),
+     ('aa790000-0000-4000-8000-000000000004'::uuid,'SOURCE_OBSERVATION_NOT_COMPARABLE')
+   )
+   SELECT 1 FROM (
+     (SELECT note_id,finding_code FROM expected
+      EXCEPT
+      SELECT note_id,finding_code
+      FROM programs.national_issuance_review_inspection_findings
+      WHERE note_id=ANY(ARRAY[
+        'aa790000-0000-4000-8000-000000000001'::uuid,
+        'aa790000-0000-4000-8000-000000000002'::uuid,
+        'aa790000-0000-4000-8000-000000000003'::uuid,
+        'aa790000-0000-4000-8000-000000000004'::uuid]))
+   ) missing
+ ) OR EXISTS (
+   SELECT 1 FROM (
+     SELECT note_id,finding_code
+     FROM programs.national_issuance_review_inspection_findings
+     WHERE note_id=ANY(ARRAY[
+       'aa790000-0000-4000-8000-000000000001'::uuid,
+       'aa790000-0000-4000-8000-000000000002'::uuid,
+       'aa790000-0000-4000-8000-000000000003'::uuid,
+       'aa790000-0000-4000-8000-000000000004'::uuid])
+     EXCEPT
+     SELECT note_id,'SOURCE_OBSERVATION_NOT_COMPARABLE'
+     FROM unnest(ARRAY[
+       'aa790000-0000-4000-8000-000000000001'::uuid,
+       'aa790000-0000-4000-8000-000000000002'::uuid,
+       'aa790000-0000-4000-8000-000000000003'::uuid,
+       'aa790000-0000-4000-8000-000000000004'::uuid]) note_id
+   ) unexpected
+ ) THEN RAISE EXCEPTION 'S80 semantic fixtures did not map only to the stable non-comparable finding'; END IF;
+END;$s80_finding_contract$;
