@@ -1,4 +1,4 @@
--- S75: validate semantic identity and consistency inside source envelopes.
+-- S77: require typed scalar identity in source envelopes.
 BEGIN;
 
 CREATE OR REPLACE VIEW programs.national_issuance_review_inspection_summary
