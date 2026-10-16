@@ -68,12 +68,17 @@ public sealed class NationalInspectionRollupEndpointTests
     [InlineData("?findingsOnly=yes")]
     [InlineData("?findingsOnly=true&findingsOnly=false")]
     [InlineData("?beforeProgramId=alpha&beforeNationalVersion=1&findingsOnly=TRUE")]
+    [InlineData("?findingCode=UNKNOWN")]
+    [InlineData("?findingCode=INSPECTION_AUDIT_EVIDENCE_INVALID&findingCode=OUTBOX_EVIDENCE_INVALID")]
+    [InlineData("?findingsOnly=false&findingCode=INSPECTION_AUDIT_EVIDENCE_INVALID")]
     public async Task Invalid_or_ambiguous_cursor_or_filter_is_rejected_without_storage_access(string query) =>
         Assert.Equal(400, Status(await Call(query, authorization: new FixedAuthorization(true))));
 
     [Theory]
     [InlineData("?findingsOnly=true")]
     [InlineData("?findingsOnly=false&beforeProgramId=alpha&beforeNationalVersion=1")]
+    [InlineData("?findingsOnly=true&findingCode=INSPECTION_AUDIT_EVIDENCE_INVALID")]
+    [InlineData("?findingCode=SOURCE_SNAPSHOT_DIGEST_INVALID&beforeProgramId=alpha&beforeNationalVersion=1")]
     public async Task Valid_filter_and_cursor_combinations_reach_default_deny(string query) =>
         Assert.Equal(403, Status(await Call(query)));
 
