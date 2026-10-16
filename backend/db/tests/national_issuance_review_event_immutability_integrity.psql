@@ -1,0 +1,159 @@
+-- S65: prove national review source/audit/outbox history cannot be rewritten.
+\set ON_ERROR_STOP on
+
+DO $immutability$
+DECLARE
+ request_before jsonb;
+ note_before jsonb;
+ intent_audit_before jsonb;
+ intent_outbox_before jsonb;
+ inspection_audit_before jsonb;
+ inspection_outbox_before jsonb;
+ request_count bigint;
+ note_count bigint;
+ audit_count bigint;
+ outbox_count bigint;
+ issuance_count bigint;
+BEGIN
+ SELECT to_jsonb(i) INTO request_before
+ FROM programs.national_issuance_review_intents i
+ WHERE request_id='aa600000-0000-4000-8000-000000000001';
+ SELECT to_jsonb(n) INTO note_before
+ FROM programs.national_issuance_review_inspection_notes n
+ WHERE note_id='aa610000-0000-4000-8000-000000000001';
+ SELECT to_jsonb(a) INTO intent_audit_before
+ FROM governance.command_audit a
+ WHERE audit_id='aa600000-0000-4000-8000-000000000002';
+ SELECT to_jsonb(o) INTO intent_outbox_before
+ FROM governance.outbox_events o
+ WHERE event_id='aa600000-0000-4000-8000-000000000003';
+ SELECT to_jsonb(a) INTO inspection_audit_before
+ FROM governance.command_audit a
+ WHERE audit_id='aa610000-0000-4000-8000-000000000002';
+ SELECT to_jsonb(o) INTO inspection_outbox_before
+ FROM governance.outbox_events o
+ WHERE event_id='aa610000-0000-4000-8000-000000000003';
+
+ IF request_before IS NULL OR note_before IS NULL
+ OR intent_audit_before IS NULL OR intent_outbox_before IS NULL
+ OR inspection_audit_before IS NULL OR inspection_outbox_before IS NULL
+ THEN RAISE EXCEPTION 'S65 expected complete S60/S61 evidence fixtures'; END IF;
+
+ SELECT count(*) INTO request_count
+ FROM programs.national_issuance_review_intents;
+ SELECT count(*) INTO note_count
+ FROM programs.national_issuance_review_inspection_notes;
+ SELECT count(*) INTO audit_count
+ FROM governance.command_audit
+ WHERE action_code IN ('NATIONAL_ISSUANCE_REVIEW_INTENT_CAPTURED',
+  'NATIONAL_ISSUANCE_REVIEW_INSPECTION_NOTE_CAPTURED');
+ SELECT count(*) INTO outbox_count
+ FROM governance.outbox_events
+ WHERE event_type IN ('NationalIssuanceReviewIntentCaptured',
+  'NationalIssuanceReviewInspectionNoteCaptured');
+ SELECT count(*) INTO issuance_count FROM programs.national_program_issuances;
+
+ -- Both immutable request and inspection note reject UPDATE and DELETE.
+ BEGIN
+  UPDATE programs.national_issuance_review_intents
+   SET stated_review_reason='rewritten by S65 fixture'
+   WHERE request_id='aa600000-0000-4000-8000-000000000001';
+  RAISE EXCEPTION 'S65 request UPDATE unexpectedly succeeded';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+  DELETE FROM programs.national_issuance_review_intents
+   WHERE request_id='aa600000-0000-4000-8000-000000000001';
+  RAISE EXCEPTION 'S65 request DELETE unexpectedly succeeded';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+  UPDATE programs.national_issuance_review_inspection_notes
+   SET technical_note='rewritten by S65 fixture'
+   WHERE note_id='aa610000-0000-4000-8000-000000000001';
+  RAISE EXCEPTION 'S65 inspection UPDATE unexpectedly succeeded';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+  DELETE FROM programs.national_issuance_review_inspection_notes
+   WHERE note_id='aa610000-0000-4000-8000-000000000001';
+  RAISE EXCEPTION 'S65 inspection DELETE unexpectedly succeeded';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+
+ -- Audit and outbox append-only triggers preserve the pair on both event families.
+ BEGIN
+  UPDATE governance.command_audit SET metadata=metadata || '{"s65_tampered":true}'::jsonb
+   WHERE audit_id='aa600000-0000-4000-8000-000000000002';
+  RAISE EXCEPTION 'S65 intent audit UPDATE unexpectedly succeeded';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+  DELETE FROM governance.command_audit
+   WHERE audit_id='aa600000-0000-4000-8000-000000000002';
+  RAISE EXCEPTION 'S65 intent audit DELETE unexpectedly succeeded';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+  UPDATE governance.outbox_events SET payload=payload || '{"s65_tampered":true}'::jsonb
+   WHERE event_id='aa600000-0000-4000-8000-000000000003';
+  RAISE EXCEPTION 'S65 intent outbox UPDATE unexpectedly succeeded';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+  DELETE FROM governance.outbox_events
+   WHERE event_id='aa600000-0000-4000-8000-000000000003';
+  RAISE EXCEPTION 'S65 intent outbox DELETE unexpectedly succeeded';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+  UPDATE governance.command_audit SET metadata=metadata || '{"s65_tampered":true}'::jsonb
+   WHERE audit_id='aa610000-0000-4000-8000-000000000002';
+  RAISE EXCEPTION 'S65 inspection audit UPDATE unexpectedly succeeded';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+  DELETE FROM governance.command_audit
+   WHERE audit_id='aa610000-0000-4000-8000-000000000002';
+  RAISE EXCEPTION 'S65 inspection audit DELETE unexpectedly succeeded';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+  UPDATE governance.outbox_events SET payload=payload || '{"s65_tampered":true}'::jsonb
+   WHERE event_id='aa610000-0000-4000-8000-000000000003';
+  RAISE EXCEPTION 'S65 inspection outbox UPDATE unexpectedly succeeded';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+  DELETE FROM governance.outbox_events
+   WHERE event_id='aa610000-0000-4000-8000-000000000003';
+  RAISE EXCEPTION 'S65 inspection outbox DELETE unexpectedly succeeded';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+
+ IF (SELECT to_jsonb(i) FROM programs.national_issuance_review_intents i
+     WHERE request_id='aa600000-0000-4000-8000-000000000001')
+       IS DISTINCT FROM request_before
+ OR (SELECT to_jsonb(n) FROM programs.national_issuance_review_inspection_notes n
+     WHERE note_id='aa610000-0000-4000-8000-000000000001')
+       IS DISTINCT FROM note_before
+ OR (SELECT to_jsonb(a) FROM governance.command_audit a
+     WHERE audit_id='aa600000-0000-4000-8000-000000000002')
+       IS DISTINCT FROM intent_audit_before
+ OR (SELECT to_jsonb(o) FROM governance.outbox_events o
+     WHERE event_id='aa600000-0000-4000-8000-000000000003')
+       IS DISTINCT FROM intent_outbox_before
+ OR (SELECT to_jsonb(a) FROM governance.command_audit a
+     WHERE audit_id='aa610000-0000-4000-8000-000000000002')
+       IS DISTINCT FROM inspection_audit_before
+ OR (SELECT to_jsonb(o) FROM governance.outbox_events o
+     WHERE event_id='aa610000-0000-4000-8000-000000000003')
+       IS DISTINCT FROM inspection_outbox_before
+ THEN RAISE EXCEPTION 'S65 append-only attempt rewrote historical evidence'; END IF;
+
+ IF (SELECT count(*) FROM programs.national_issuance_review_intents)<>request_count
+ OR (SELECT count(*) FROM programs.national_issuance_review_inspection_notes)<>note_count
+ OR (SELECT count(*) FROM governance.command_audit
+     WHERE action_code IN ('NATIONAL_ISSUANCE_REVIEW_INTENT_CAPTURED',
+      'NATIONAL_ISSUANCE_REVIEW_INSPECTION_NOTE_CAPTURED'))<>audit_count
+ OR (SELECT count(*) FROM governance.outbox_events
+     WHERE event_type IN ('NationalIssuanceReviewIntentCaptured',
+      'NationalIssuanceReviewInspectionNoteCaptured'))<>outbox_count
+ OR (SELECT count(*) FROM programs.national_program_issuances)<>issuance_count
+ THEN RAISE EXCEPTION 'S65 rejected mutation changed cardinality or issuance'; END IF;
+
+ IF EXISTS(SELECT 1 FROM programs.national_issuance_review_intents
+      WHERE requester_authorized OR human_review_recorded
+       OR issuance_authorized OR issuance_executed)
+ OR EXISTS(SELECT 1 FROM programs.national_issuance_review_inspection_notes
+      WHERE human_review_recorded OR issuance_authorized OR issuance_executed)
+ THEN RAISE EXCEPTION 'S65 history acquired approval or issuance state'; END IF;
+END;$immutability$;
