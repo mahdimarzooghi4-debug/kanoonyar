@@ -11,6 +11,10 @@ using Xunit;
 namespace Kanoonyar.Api.Tests;
 
 /// <summary>End-to-end S84 reader exercise against disposable synthetic PostgreSQL only.</summary>
+[CollectionDefinition("National inspection rollup PostgreSQL", DisableParallelization = true)]
+public sealed class NationalInspectionRollupPostgresCollection { }
+
+[Collection("National inspection rollup PostgreSQL")]
 public sealed class NationalInspectionRollupPostgresTests
 {
     private const string ReaderRole = "kanoonyar_s84_rollup_reader_ci";
