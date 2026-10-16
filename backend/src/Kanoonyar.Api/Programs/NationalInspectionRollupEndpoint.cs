@@ -71,7 +71,7 @@ public static class NationalInspectionRollupEndpoint
         if (string.IsNullOrWhiteSpace(actor.FindFirst("sub")?.Value))
             return Results.Problem(statusCode: 403, title: "Verified subject required");
 
-        var cursorResult = ParseCursor(context.Request.Query, out var cursor);
+        var cursorResult = ParseCursor(context.Request.Query, out var cursor, out var findingsOnly);
         if (cursorResult is not null) return cursorResult;
 
         bool permitted;
@@ -122,8 +122,19 @@ public static class NationalInspectionRollupEndpoint
                   latest_technical_observation_at,human_review_recorded,
                   issuance_authorized,issuance_executed
                 FROM programs.national_issuance_review_national_inspection_rollup_v2
-                WHERE @before_program_id::text IS NULL
-                  OR (program_id,national_version)<(@before_program_id::text,@before_version::integer)
+                WHERE (@before_program_id::text IS NULL
+                       OR (program_id,national_version)<(@before_program_id::text,@before_version::integer))
+                  AND (@findings_only = false
+                    OR source_snapshot_digest_invalid_request_count > 0
+                    OR source_envelope_invalid_request_count > 0
+                    OR center_selection_mismatch_request_count > 0
+                    OR authority_flags_not_clear_request_count > 0
+                    OR audit_evidence_invalid_request_count > 0
+                    OR outbox_evidence_invalid_request_count > 0
+                    OR original_request_integrity_invalid_note_count > 0
+                    OR observation_integrity_invalid_note_count > 0
+                    OR inspection_audit_evidence_invalid_note_count > 0
+                    OR source_observation_not_comparable_note_count > 0)
                 ORDER BY program_id DESC,national_version DESC
                 LIMIT 21
                 """;
@@ -132,6 +143,7 @@ public static class NationalInspectionRollupEndpoint
                 cursor is null ? DBNull.Value : cursor.ProgramId;
             command.Parameters.Add("before_version", NpgsqlDbType.Integer).Value =
                 cursor is null ? DBNull.Value : cursor.NationalVersion;
+            command.Parameters.Add("findings_only", NpgsqlDbType.Boolean).Value = findingsOnly;
 
             var rows = new List<Row>(PageSize + 1);
             await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
@@ -176,14 +188,27 @@ public static class NationalInspectionRollupEndpoint
         }
     }
 
-    private static IResult? ParseCursor(IQueryCollection query, out Cursor? cursor)
+    private static IResult? ParseCursor(
+        IQueryCollection query, out Cursor? cursor, out bool findingsOnly)
     {
         cursor = null;
+        findingsOnly = false;
+        var hasFindingsOnly = query.ContainsKey("findingsOnly");
+        if (hasFindingsOnly)
+        {
+            if (query["findingsOnly"].Count != 1) return Results.BadRequest();
+            var rawFindingsOnly = query["findingsOnly"].ToString();
+            if (rawFindingsOnly is not ("true" or "false")) return Results.BadRequest();
+            findingsOnly = rawFindingsOnly == "true";
+        }
+
         var hasProgram = query.ContainsKey("beforeProgramId");
         var hasVersion = query.ContainsKey("beforeNationalVersion");
         if (hasProgram != hasVersion) return Results.BadRequest();
-        if (!hasProgram) return query.Count == 0 ? null : Results.BadRequest();
-        if (query.Count != 2 || query["beforeProgramId"].Count != 1 ||
+        var expectedParameters = (hasFindingsOnly ? 1 : 0) + (hasProgram ? 2 : 0);
+        if (query.Count != expectedParameters) return Results.BadRequest();
+        if (!hasProgram) return null;
+        if (query["beforeProgramId"].Count != 1 ||
             query["beforeNationalVersion"].Count != 1)
             return Results.BadRequest();
 
