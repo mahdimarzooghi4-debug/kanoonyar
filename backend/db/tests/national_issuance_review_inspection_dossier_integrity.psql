@@ -102,6 +102,57 @@ BEGIN
    WHERE current_source_matches_observation
      <> (current_source_digest_sha256=observed_digest_sha256)
  ) THEN RAISE EXCEPTION 'S68 current-source match flag disagrees with recomputed digest'; END IF;
+ -- The comparison gate also binds the historical center list and order
+ -- to the immutable request before returning any source-drift details.
+ IF EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_dossier
+   WHERE source_observation_comparable IS DISTINCT FROM true
+ ) THEN RAISE EXCEPTION 'S70 rejected a valid historical observation scope'; END IF;
+
+ -- Test-only direct insertion simulates a well-formed, correctly hashed note
+ -- whose observation omits most of the immutable request's selected centers.
+ -- The read projection must expose no drift summary for this mismatched scope.
+ WITH observation AS (
+   SELECT i.request_id, i.source_digest_sha256,
+     jsonb_build_object(
+       'formatVersion','S60_SOURCE_SNAPSHOT_V1',
+       'programId',i.program_id,
+       'nationalVersion',i.national_version,
+       'exactPublicationExists',true,
+       'centers',jsonb_build_array(jsonb_build_object(
+         'centerId','s60-center-79',
+         'registryExists',true,
+         'registryActive',true,
+         'exactIssuanceExists',false))
+     ) AS snapshot
+   FROM programs.national_issuance_review_intents i
+   WHERE i.request_id='aa600000-0000-4000-8000-000000000001'
+ ), digested AS (
+   SELECT observation.*,
+     encode(sha256(convert_to(snapshot::text,'UTF8')),'hex') AS digest
+   FROM observation
+ )
+ INSERT INTO programs.national_issuance_review_inspection_notes(
+   note_id,request_id,pinned_request_digest_sha256,
+   observed_source_snapshot,observed_digest_sha256,
+   source_changed_since_request,unverified_inspector_subject,technical_note
+ )
+ SELECT 'aa610000-0000-4000-8000-000000000003',
+   request_id,source_digest_sha256,snapshot,digest,
+   digest<>source_digest_sha256,
+   's70-test-only-unverified-inspector',
+   'Synthetic mismatched-scope fixture; not an inspection result'
+ FROM digested;
+
+ IF NOT EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_dossier
+   WHERE note_id='aa610000-0000-4000-8000-000000000003'
+     AND source_observation_comparable IS FALSE
+     AND publication_state_changed IS NULL
+     AND center_registry_change_count IS NULL
+     AND exact_issuance_change_count IS NULL
+ ) THEN RAISE EXCEPTION 'S70 exposed drift for an observation outside request scope'; END IF;
+
 END;$catalog$;
 
 \connect - kanoonyar_s61_inspection_denied_ci
