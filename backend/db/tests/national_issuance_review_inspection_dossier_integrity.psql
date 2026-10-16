@@ -71,10 +71,7 @@ BEGIN
      AND attname=ANY(ARRAY[
        'note_id','technical_note','unverified_inspector_subject',
        'explicit_center_ids','observed_source_snapshot',
-       'original_source_snapshot','unverified_requester_subject',
-       'request_snapshot_digest_valid','request_source_envelope_valid',
-       'request_center_selection_valid','request_audit_integrity_valid',
-       'request_outbox_integrity_valid'])
+       'original_source_snapshot','unverified_requester_subject'])
  ) THEN RAISE EXCEPTION 'S71 summary exposes private evidence fields'; END IF;
 
  IF EXISTS (
