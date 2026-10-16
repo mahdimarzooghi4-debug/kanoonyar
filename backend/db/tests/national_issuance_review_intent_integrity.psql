@@ -23,6 +23,7 @@
 \ir ../migrations/0056_national_issuance_integrity_finding_codes.sql
 \ir ../migrations/0057_national_issuance_source_envelope_scalar_types.sql
 \ir ../migrations/0058_national_issuance_observation_scalar_types.sql
+\ir ../migrations/0059_national_issuance_observation_semantic_integrity.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,
  registered_by_subject,registered_at)
