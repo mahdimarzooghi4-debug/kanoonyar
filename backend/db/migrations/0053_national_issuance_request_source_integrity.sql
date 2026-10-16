@@ -44,6 +44,10 @@ WITH request_integrity AS (
      AND (SELECT count(*) FROM governance.command_audit a
        WHERE a.action_code='NATIONAL_ISSUANCE_REVIEW_INTENT_CAPTURED'
          AND a.target_type='national_issuance_review_intent'
+         AND a.target_id=i.request_id::text)=1
+     AND (SELECT count(*) FROM governance.command_audit a
+       WHERE a.action_code='NATIONAL_ISSUANCE_REVIEW_INTENT_CAPTURED'
+         AND a.target_type='national_issuance_review_intent'
          AND a.target_id=i.request_id::text
          AND a.metadata->>'source_digest_sha256'=i.source_digest_sha256
          AND a.metadata->>'unverified_actor'='true'
@@ -52,6 +56,10 @@ WITH request_integrity AS (
          AND a.metadata->>'issuance_authorized'='false'
          AND a.metadata->>'issuance_executed'='false'
      )=1
+     AND (SELECT count(*) FROM governance.outbox_events o
+       WHERE o.event_type='NationalIssuanceReviewIntentCaptured'
+         AND o.aggregate_type='national_issuance_review_intent'
+         AND o.aggregate_id=i.request_id::text)=1
      AND (SELECT count(*) FROM governance.outbox_events o
        JOIN governance.command_audit a ON a.audit_id=o.audit_id
        WHERE a.action_code='NATIONAL_ISSUANCE_REVIEW_INTENT_CAPTURED'
