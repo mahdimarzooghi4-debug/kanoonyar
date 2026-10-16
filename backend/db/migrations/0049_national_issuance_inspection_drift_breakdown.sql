@@ -132,20 +132,20 @@ CROSS JOIN LATERAL (
      FROM jsonb_array_elements(n.observed_source_snapshot->'centers')
        WITH ORDINALITY observed(value,ordinal)
      FULL JOIN jsonb_array_elements(current_source.snapshot->'centers')
-       WITH ORDINALITY current(value,ordinal) USING (ordinal)
-     WHERE observed.value->>'centerId' IS DISTINCT FROM current.value->>'centerId'
-        OR observed.value->'registryExists' IS DISTINCT FROM current.value->'registryExists'
-        OR observed.value->'registryActive' IS DISTINCT FROM current.value->'registryActive'
+       WITH ORDINALITY fresh(value,ordinal) USING (ordinal)
+     WHERE observed.value->>'centerId' IS DISTINCT FROM fresh.value->>'centerId'
+        OR observed.value->'registryExists' IS DISTINCT FROM fresh.value->'registryExists'
+        OR observed.value->'registryActive' IS DISTINCT FROM fresh.value->'registryActive'
    ) ELSE NULL END AS center_registry_change_count,
    CASE WHEN observation_check.observation_comparable THEN (
      SELECT count(*)
      FROM jsonb_array_elements(n.observed_source_snapshot->'centers')
        WITH ORDINALITY observed(value,ordinal)
      FULL JOIN jsonb_array_elements(current_source.snapshot->'centers')
-       WITH ORDINALITY current(value,ordinal) USING (ordinal)
-     WHERE observed.value->>'centerId' IS DISTINCT FROM current.value->>'centerId'
+       WITH ORDINALITY fresh(value,ordinal) USING (ordinal)
+     WHERE observed.value->>'centerId' IS DISTINCT FROM fresh.value->>'centerId'
         OR observed.value->'exactIssuanceExists'
-           IS DISTINCT FROM current.value->'exactIssuanceExists'
+           IS DISTINCT FROM fresh.value->'exactIssuanceExists'
    ) ELSE NULL END AS exact_issuance_change_count
 ) drift_breakdown;
 
