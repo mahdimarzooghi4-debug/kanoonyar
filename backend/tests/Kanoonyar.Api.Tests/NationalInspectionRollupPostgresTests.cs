@@ -48,7 +48,7 @@ public sealed class NationalInspectionRollupPostgresTests
               END IF;
             END;$role$;
             GRANT CONNECT ON DATABASE {{dbIdentifier}} TO {{ReaderRole}};
-            GRANT USAGE ON SCHEMA programs,centers,governance TO {{ReaderRole}};
+            GRANT USAGE ON SCHEMA programs,centers,governance,learning,events TO {{ReaderRole}};
             GRANT SELECT ON ALL TABLES IN SCHEMA programs,centers,governance TO {{ReaderRole}};
             DO $policies$ DECLARE r record;
             BEGIN
