@@ -23,11 +23,9 @@ BEGIN
    v_target_id := NEW.note_id::text;
  ELSIF TG_TABLE_SCHEMA='governance'
        AND TG_TABLE_NAME='command_audit' THEN
-   IF NEW.action_code='NATIONAL_ISSUANCE_REVIEW_INTENT_CAPTURED'
-      AND NEW.target_type='national_issuance_review_intent' THEN
+   IF NEW.action_code='NATIONAL_ISSUANCE_REVIEW_INTENT_CAPTURED' THEN
      v_family := 'intent';
-   ELSIF NEW.action_code='NATIONAL_ISSUANCE_REVIEW_INSPECTION_NOTE_CAPTURED'
-      AND NEW.target_type='national_issuance_review_inspection_note' THEN
+   ELSIF NEW.action_code='NATIONAL_ISSUANCE_REVIEW_INSPECTION_NOTE_CAPTURED' THEN
      v_family := 'inspection';
    ELSE
      RETURN NULL;
@@ -35,11 +33,9 @@ BEGIN
    v_target_id := NEW.target_id;
  ELSIF TG_TABLE_SCHEMA='governance'
        AND TG_TABLE_NAME='outbox_events' THEN
-   IF NEW.event_type='NationalIssuanceReviewIntentCaptured'
-      AND NEW.aggregate_type='national_issuance_review_intent' THEN
+   IF NEW.event_type='NationalIssuanceReviewIntentCaptured' THEN
      v_family := 'intent';
-   ELSIF NEW.event_type='NationalIssuanceReviewInspectionNoteCaptured'
-      AND NEW.aggregate_type='national_issuance_review_inspection_note' THEN
+   ELSIF NEW.event_type='NationalIssuanceReviewInspectionNoteCaptured' THEN
      v_family := 'inspection';
    ELSE
      RETURN NULL;
