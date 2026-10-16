@@ -154,7 +154,7 @@ BEGIN
       OR human_review_recorded
       OR issuance_authorized
       OR issuance_executed
-     ) THEN RAISE EXCEPTION 'S71 summary failed request-count or latest-observation checks'; END IF;
+     )) THEN RAISE EXCEPTION 'S71 summary failed request-count or latest-observation checks'; END IF;
 
  -- S73 verifies request-source integrity for every request, including the
  -- valid request that has no inspection notes yet.
