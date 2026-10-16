@@ -53,6 +53,7 @@ jobs:
           PGDATABASE: kanoonyar_ci
         run: |
           psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/national_program_integrity.psql
+
           createdb kanoonyar_rls_ci
           PGDATABASE=kanoonyar_rls_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/center_rls_isolation.psql
           createdb kanoonyar_atomic_ci
@@ -97,6 +98,7 @@ jobs:
           PGDATABASE=kanoonyar_permission_review_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/permission_change_review_intent_integrity.psql
           createdb kanoonyar_issuance_review_intent_ci
           PGDATABASE=kanoonyar_issuance_review_intent_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/national_issuance_review_intent_integrity.psql
+          PGDATABASE=kanoonyar_issuance_review_intent_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/national_issuance_review_finding_rollup_v2.psql
           createdb kanoonyar_draft_api_ci
           PGDATABASE=kanoonyar_draft_api_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/local_plan_api_integration_setup.psql
       - name: Real restricted PostgreSQL to API-handler integration
@@ -128,7 +130,7 @@ jobs:
           CENTER_DRAFT_INTEGRATION_ADMIN_URL: Host=127.0.0.1;Port=5432;Database=kanoonyar_draft_api_ci;Username=postgres;Pooling=false
         run: |
           dotnet restore backend/Kanoonyar.slnx -p:NuGetAudit=true -p:NuGetAuditLevel=high -p:TreatWarningsAsErrors=true
-          dotnet test backend/tests/Kanoonyar.Api.Tests/Kanoonyar.Api.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~LocalDraftPostgresIntegrationTests|FullyQualifiedName~SignedOidcHttpIntegrationTests|FullyQualifiedName~NationalProgramPaginationPostgresTests|FullyQualifiedName~NationalIssuanceBatchPreflightTests|FullyQualifiedName~CenterSourcedActivityReportPostgresTests|FullyQualifiedName~CenterClassIntakePostgresTests|FullyQualifiedName~CenterRegistrationReviewPostgresTests|FullyQualifiedName~CenterSiteDraftPostgresTests|FullyQualifiedName~CenterWorkSessionLinkPostgresTests|FullyQualifiedName~CenterLocalPlanWorkspacePostgresTests|FullyQualifiedName~CenterWorkResourceNeedPostgresTests|FullyQualifiedName~CenterPrivatePageTemplatePostgresTests|FullyQualifiedName~CenterAssembledSitePreviewPostgresTests|FullyQualifiedName~CenterRecipientNotesPostgresTests|FullyQualifiedName~CenterSessionPreparationPostgresTests|FullyQualifiedName~CenterCollaborationPostgresTests|FullyQualifiedName~CenterWorkCardPostgresTests|FullyQualifiedName~CenterSiteNavigationPostgresTests|FullyQualifiedName~CenterSiteDesignPostgresTests|FullyQualifiedName~CenterFormDraftPostgresTests|FullyQualifiedName~CenterPrivateCalendarPostgresTests|FullyQualifiedName~CenterEventSourceDossierPostgresTests|FullyQualifiedName~CenterEventPlanPostgresTests|FullyQualifiedName~CenterCampaignPostgresTests|FullyQualifiedName~CenterCampaignReportLinkPostgresTests|FullyQualifiedName~CenterCampaignInspectionPostgresTests|FullyQualifiedName~CenterCampaignFollowupPostgresTests|FullyQualifiedName~CenterCampaignReviewWorkspacePostgresTests|FullyQualifiedName~CenterCampaignEvidenceRegisterPostgresTests"
+          dotnet test backend/tests/Kanoonyar.Api.Tests/Kanoonyar.Api.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~LocalDraftPostgresIntegrationTests|FullyQualifiedName~SignedOidcHttpIntegrationTests|FullyQualifiedName~NationalProgramPaginationPostgresTests|FullyQualifiedName~NationalIssuanceBatchPreflightTests|FullyQualifiedName~CenterSourcedActivityReportPostgresTests|FullyQualifiedName~CenterClassIntakePostgresTests|FullyQualifiedName~CenterRegistrationReviewPostgresTests|FullyQualifiedName~CenterSiteDraftPostgresTests|FullyQualifiedName~CenterWorkSessionLinkPostgresTests|FullyQualifiedName~CenterLocalPlanWorkspacePostgresTests|FullyQualifiedName~CenterWorkResourceNeedPostgresTests|FullyQualifiedName~CenterPrivatePageTemplatePostgresTests|FullyQualifiedName~CenterAssembledSitePreviewPostgresTests|FullyQualifiedName~CenterRecipientNotesPostgresTests|FullyQualifiedName~CenterSessionPreparationPostgresTests|FullyQualifiedName~CenterCollaborationPostgresTests|FullyQualifiedName~CenterWorkCardPostgresTests|FullyQualifiedName~CenterSiteNavigationPostgresTests|FullyQualifiedName~CenterSiteDesignPostgresTests|FullyQualifiedName~CenterFormDraftPostgresTests|FullyQualifiedName~CenterPrivateCalendarPostgresTests|FullyQualifiedName~CenterEventSourceDossierPostgresTests|FullyQualifiedName~CenterEventPlanPostgresTests|FullyQualifiedName~CenterCampaignPostgresTests|FullyQualifiedName~CenterCampaignReportLinkPostgresTests|FullyQualifiedName~CenterCampaignInspectionPostgresTests|FullyQualifiedName~CenterCampaignFollowupPostgresTests|FullyQualifiedName~CenterCampaignReviewWorkspacePostgresTests|FullyQualifiedName~CenterCampaignEvidenceRegisterPostgresTests|FullyQualifiedName~NationalInspectionRollupPostgresTests"
   frontend:
     runs-on: ubuntu-latest
     permissions:
