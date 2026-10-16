@@ -43,7 +43,24 @@
 \ir ../migrations/0045_national_issuance_inspection_dossier_view.sql
 \ir ../migrations/0046_national_issuance_review_event_uniqueness.sql
 \ir ../migrations/0047_national_issuance_review_event_atomicity.sql
+\ir ../migrations/0048_national_issuance_inspection_current_source_drift.sql
+\ir ../migrations/0049_national_issuance_inspection_drift_breakdown.sql
+\ir ../migrations/0050_national_issuance_observation_scope_integrity.sql
+\ir ../migrations/0051_national_issuance_inspection_summary.sql
+\ir ../migrations/0052_national_issuance_inspection_history_metrics.sql
+\ir ../migrations/0053_national_issuance_request_source_integrity.sql
+\ir ../migrations/0054_national_issuance_request_integrity_breakdown.sql
+\ir ../migrations/0055_national_issuance_source_envelope_semantic_integrity.sql
+\ir ../migrations/0056_national_issuance_integrity_finding_codes.sql
+\ir ../migrations/0057_national_issuance_source_envelope_scalar_types.sql
+\ir ../migrations/0058_national_issuance_observation_scalar_types.sql
+\ir ../migrations/0059_national_issuance_observation_semantic_integrity.sql
+\ir ../migrations/0060_national_issuance_inspection_finding_codes.sql
+\ir ../migrations/0061_national_issuance_observation_diagnostic_reasons.sql
+\ir ../migrations/0062_national_issuance_source_freshness_diagnostics.sql
+\ir ../migrations/0063_national_issuance_national_inspection_rollup.sql
 \ir ../migrations/0064_session_attendance_history_page_index.sql
+\ir ../migrations/0065_national_issuance_national_inspection_finding_rollup_v2.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,registered_by_subject,registered_at)
 VALUES ('center-a','Center A',true,'fixture',now()),
