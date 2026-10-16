@@ -4,7 +4,7 @@ const row=(programId:string,version=1)=>({rollupContractVersion:'S83_NATIONAL_IN
 test('forbidden inspection read shows no rollup data',async({page})=>{
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup',r=>r.fulfill({status:403,contentType:'application/problem+json',body:'{}'}));
  await page.goto('/');await expect(page.getByRole('heading',{name:'پوشش فنی بازرسی درخواست‌های ابلاغ ملی'})).toBeVisible();await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();
- await expect(page.getByRole('alert')).toContainText('دسترسی خواندن پوشش بازرسی');await expect(page.getByRole('table')).toHaveCount(0);
+ await expect(page.locator('section[aria-labelledby="inspection-rollup-title"] [role="alert"]')).toContainText('دسترسی خواندن پوشش بازرسی');await expect(page.getByRole('table')).toHaveCount(0);
 });
 test('workbench follows exact cursor and shows aggregate evidence',async({page})=>{
  let second=false;
@@ -18,5 +18,5 @@ test('workbench follows exact cursor and shows aggregate evidence',async({page})
 });
 test('workbench rejects a response that claims issuance authority',async({page})=>{
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[{...row('national-1'),issuanceAuthorized:true}],nextCursor:null})}));
- await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await expect(page.getByRole('alert')).toContainText('با قرارداد فنی سازگار نیست');await expect(page.getByRole('table')).toHaveCount(0);
+ await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await expect(page.locator('section[aria-labelledby="inspection-rollup-title"] [role="alert"]')).toContainText('با قرارداد فنی سازگار نیست');await expect(page.getByRole('table')).toHaveCount(0);
 });
