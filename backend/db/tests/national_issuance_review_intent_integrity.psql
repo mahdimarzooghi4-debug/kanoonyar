@@ -11,6 +11,7 @@
 \ir ../migrations/0044_national_issuance_review_inspection_notes.sql
 \ir ../migrations/0045_national_issuance_inspection_dossier_view.sql
 \ir ../migrations/0046_national_issuance_review_event_uniqueness.sql
+\ir ../migrations/0047_national_issuance_review_event_atomicity.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,
  registered_by_subject,registered_at)

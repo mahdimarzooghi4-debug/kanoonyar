@@ -1,0 +1,141 @@
+-- S64: deferred commit integrity rejects incomplete roots and orphan events.
+\set ON_ERROR_STOP on
+
+BEGIN;
+-- Constraint-trigger names are not constraint names in SET CONSTRAINTS.
+-- This isolated rollback-only fixture has no unrelated deferred work pending.
+SET CONSTRAINTS ALL IMMEDIATE;
+
+DO $reject_incomplete$
+DECLARE
+ audit_before bigint;
+ outbox_before bigint;
+ request_before bigint;
+ note_before bigint;
+BEGIN
+ SELECT count(*) INTO audit_before FROM governance.command_audit;
+ SELECT count(*) INTO outbox_before FROM governance.outbox_events;
+ SELECT count(*) INTO request_before FROM programs.national_issuance_review_intents;
+ SELECT count(*) INTO note_before FROM programs.national_issuance_review_inspection_notes;
+
+ -- A source intent without its matching audit/outbox pair cannot commit.
+ BEGIN
+   INSERT INTO programs.national_issuance_review_intents
+    (request_id,program_id,national_version,explicit_center_ids,
+     original_source_snapshot,source_digest_sha256,stated_review_reason,
+     unverified_requester_subject)
+   VALUES
+    ('aa640000-0000-4000-8000-000000000001','s60-original-program',2,
+     ARRAY['s60-center-00'],'{}'::jsonb,repeat('0',64),
+     'S64 negative fixture','UNVERIFIED-s64');
+   RAISE EXCEPTION 'S64 accepted a source intent without an event pair';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+
+ -- The same commit-time rule covers inspection notes linked to a real
+ -- original request, even when all row-level checks otherwise pass.
+ BEGIN
+   INSERT INTO programs.national_issuance_review_inspection_notes
+    (note_id,request_id,pinned_request_digest_sha256,
+     observed_source_snapshot,observed_digest_sha256,
+     source_changed_since_request,unverified_inspector_subject,technical_note)
+   SELECT 'aa640000-0000-4000-8000-000000000002',request_id,
+     source_digest_sha256,'{}'::jsonb,
+     encode(sha256(convert_to('{}','UTF8')),'hex'),
+     false,'UNVERIFIED-s64','S64 negative fixture'
+   FROM programs.national_issuance_review_intents
+   WHERE request_id='aa600000-0000-4000-8000-000000000001';
+   RAISE EXCEPTION 'S64 accepted an inspection note without an event pair';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+
+ -- A national inspection audit without its immutable source and paired
+ -- outbox must fail even if its audit UUID and text are otherwise valid.
+ BEGIN
+   INSERT INTO governance.command_audit
+    (audit_id,occurred_at,actor_subject_id,center_id,action_code,
+     target_type,target_id,correlation_id,metadata)
+   VALUES
+    ('aa640000-0000-4000-8000-000000000003',now(),'UNVERIFIED-s64',NULL,
+     'NATIONAL_ISSUANCE_REVIEW_INSPECTION_NOTE_CAPTURED',
+     'national_issuance_review_inspection_note','s64-orphan-audit',
+     's64-orphan-audit',
+     jsonb_build_object('request_id','aa600000-0000-4000-8000-000000000001',
+       'source_changed',false,'unverified_actor',true,
+       'human_review_recorded',false,'issuance_authorized',false,
+       'issuance_executed',false));
+   RAISE EXCEPTION 'S64 accepted an orphan national review audit';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+
+ -- Known national-review action codes cannot bypass the guard by
+ -- supplying a malformed target type.
+ BEGIN
+   INSERT INTO governance.command_audit
+    (audit_id,occurred_at,actor_subject_id,center_id,action_code,
+     target_type,target_id,correlation_id,metadata)
+   VALUES
+    ('aa640000-0000-4000-8000-000000000006',now(),'UNVERIFIED-s64',NULL,
+     'NATIONAL_ISSUANCE_REVIEW_INSPECTION_NOTE_CAPTURED',
+     'wrong-target-type','s64-wrong-audit-type','s64-wrong-audit-type',
+     jsonb_build_object('request_id','aa600000-0000-4000-8000-000000000001',
+       'source_changed',false,'unverified_actor',true,
+       'human_review_recorded',false,'issuance_authorized',false,
+       'issuance_executed',false));
+   RAISE EXCEPTION 'S64 accepted a national audit with the wrong target type';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+
+ -- An outbox row using a valid unrelated audit still cannot claim the
+ -- national review event family without a matching immutable inspection note.
+ BEGIN
+   INSERT INTO governance.command_audit
+    (audit_id,occurred_at,actor_subject_id,center_id,action_code,
+     target_type,target_id,correlation_id,metadata)
+   VALUES
+    ('aa640000-0000-4000-8000-000000000004',now(),'s64-fixture',NULL,
+     'S64_UNRELATED_FIXTURE_ACTION','s64-fixture','s64-fixture',
+     's64-fixture','{}'::jsonb);
+   INSERT INTO governance.outbox_events
+    (event_id,audit_id,event_type,aggregate_type,aggregate_id,occurred_at,payload)
+   VALUES
+    ('aa640000-0000-4000-8000-000000000005',
+     'aa640000-0000-4000-8000-000000000004',
+     'NationalIssuanceReviewInspectionNoteCaptured',
+     'national_issuance_review_inspection_note','s64-orphan-outbox',now(),
+     jsonb_build_object('note_id','s64-orphan-outbox',
+       'request_id','aa600000-0000-4000-8000-000000000001',
+       'source_changed',false,'technical_only',true,
+       'human_review_recorded',false,'issuance_authorized',false,
+       'issuance_executed',false));
+   RAISE EXCEPTION 'S64 accepted an orphan national review outbox event';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+
+ -- Known national-review event types cannot bypass the guard by
+ -- using a malformed aggregate type.
+ BEGIN
+   INSERT INTO governance.command_audit
+    (audit_id,occurred_at,actor_subject_id,center_id,action_code,
+     target_type,target_id,correlation_id,metadata)
+   VALUES
+    ('aa640000-0000-4000-8000-000000000007',now(),'s64-fixture',NULL,
+     'S64_UNRELATED_FIXTURE_ACTION','s64-fixture','s64-fixture',
+     's64-fixture','{}'::jsonb);
+   INSERT INTO governance.outbox_events
+    (event_id,audit_id,event_type,aggregate_type,aggregate_id,occurred_at,payload)
+   VALUES
+    ('aa640000-0000-4000-8000-000000000008',
+     'aa640000-0000-4000-8000-000000000007',
+     'NationalIssuanceReviewInspectionNoteCaptured',
+     'wrong-aggregate-type','s64-wrong-outbox-type',now(),
+     jsonb_build_object('note_id','s64-wrong-outbox-type',
+       'request_id','aa600000-0000-4000-8000-000000000001',
+       'source_changed',false,'technical_only',true,
+       'human_review_recorded',false,'issuance_authorized',false,
+       'issuance_executed',false));
+   RAISE EXCEPTION 'S64 accepted a national outbox with the wrong aggregate type';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+
+ IF (SELECT count(*) FROM governance.command_audit)<>audit_before
+ OR (SELECT count(*) FROM governance.outbox_events)<>outbox_before
+ OR (SELECT count(*) FROM programs.national_issuance_review_intents)<>request_before
+ OR (SELECT count(*) FROM programs.national_issuance_review_inspection_notes)<>note_before
+ THEN RAISE EXCEPTION 'Rejected S64 incomplete write left partial rows'; END IF;
+END;$reject_incomplete$;
+ROLLBACK;

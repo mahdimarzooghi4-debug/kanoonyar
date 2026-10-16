@@ -81,3 +81,4 @@ BEGIN
  OR (SELECT count(*) FROM governance.outbox_events)<>outbox_before
  THEN RAISE EXCEPTION 'Rejected duplicate left partial event rows'; END IF;
 END;$dedupe$;
+\ir national_issuance_review_event_atomicity_integrity.psql
