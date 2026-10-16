@@ -694,3 +694,70 @@ BEGIN
    ) THEN RAISE EXCEPTION 'S75 failed semantic envelope isolation for synthetic request %',v_request_id; END IF;
  END LOOP;
 END;$s75_semantic_envelope$;
+
+
+-- S76 maps component booleans to stable aggregate finding codes.
+DO $s76_integrity_findings$
+DECLARE finding_count bigint;
+BEGIN
+ IF NOT EXISTS (
+   SELECT 1 FROM pg_class c
+   WHERE c.oid='programs.national_issuance_review_integrity_findings'::regclass
+     AND c.relkind='v'
+     AND 'security_invoker=true'=ANY(COALESCE(c.reloptions,ARRAY[]::text[]))
+ ) THEN RAISE EXCEPTION 'S76 findings view is not SECURITY INVOKER'; END IF;
+
+ IF EXISTS (
+   SELECT 1 FROM pg_attribute
+   WHERE attrelid='programs.national_issuance_review_integrity_findings'::regclass
+     AND attnum>0 AND NOT attisdropped
+     AND attname=ANY(ARRAY[
+       'explicit_center_ids','original_source_snapshot','center_id',
+       'technical_note','unverified_requester_subject',
+       'unverified_inspector_subject','observed_source_snapshot',
+       'stated_review_reason'])
+ ) OR (
+   SELECT count(*) FROM pg_attribute
+   WHERE attrelid='programs.national_issuance_review_integrity_findings'::regclass
+     AND attnum>0 AND NOT attisdropped
+ )<>5 THEN RAISE EXCEPTION 'S76 findings view exposes private fields or an unstable shape'; END IF;
+
+ IF has_table_privilege('public',
+      'programs.national_issuance_review_integrity_findings','SELECT')
+ OR has_table_privilege('kanoonyar_s61_inspection_denied_ci',
+      'programs.national_issuance_review_integrity_findings','SELECT')
+ OR has_table_privilege('kanoonyar_s60_unprivileged_ci',
+      'programs.national_issuance_review_integrity_findings','SELECT')
+ THEN RAISE EXCEPTION 'S76 findings view granted restricted read access'; END IF;
+
+ SELECT count(*) INTO finding_count
+ FROM programs.national_issuance_review_integrity_findings;
+ IF finding_count<>9 THEN
+   RAISE EXCEPTION 'S76 expected nine isolated findings, observed %',finding_count;
+ END IF;
+
+ IF (SELECT count(*) FROM programs.national_issuance_review_integrity_findings
+       WHERE finding_code='SOURCE_SNAPSHOT_DIGEST_INVALID')<>1
+ OR (SELECT count(*) FROM programs.national_issuance_review_integrity_findings
+       WHERE finding_code='SOURCE_ENVELOPE_INVALID')<>5
+ OR (SELECT count(*) FROM programs.national_issuance_review_integrity_findings
+       WHERE finding_code='CENTER_SELECTION_MISMATCH')<>1
+ OR (SELECT count(*) FROM programs.national_issuance_review_integrity_findings
+       WHERE finding_code='AUDIT_EVIDENCE_INVALID')<>1
+ OR (SELECT count(*) FROM programs.national_issuance_review_integrity_findings
+       WHERE finding_code='OUTBOX_EVIDENCE_INVALID')<>1
+ OR (SELECT count(*) FROM programs.national_issuance_review_integrity_findings
+       WHERE finding_code='AUTHORITY_FLAGS_NOT_CLEAR')<>0
+ THEN RAISE EXCEPTION 'S76 finding-code mapping does not match component diagnostics'; END IF;
+
+ IF EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_integrity_findings
+   WHERE finding_contract_version<>'S76_INTEGRITY_FINDING_V1'
+ ) OR EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_integrity_findings
+   WHERE request_id=ANY(ARRAY[
+     'aa600000-0000-4000-8000-000000000001'::uuid,
+     'aa600000-0000-4000-8000-000000000011'::uuid,
+     'aa600000-0000-4000-8000-000000000021'::uuid])
+ ) THEN RAISE EXCEPTION 'S76 emitted an unstable or valid-request finding'; END IF;
+END;$s76_integrity_findings$;
