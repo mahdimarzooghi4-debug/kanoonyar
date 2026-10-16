@@ -18,7 +18,7 @@ test('workbench follows exact cursor and shows aggregate evidence',async({page})
 });
 test('workbench rejects duplicates anywhere in a later page',async({page})=>{
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>{
-  const u=new URL(r.request().url());if(u.searchParams.has('beforeProgramId'))return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('national-2'),row('national-19')],nextCursor:null})});
+  const u=new URL(r.request().url());if(u.searchParams.has('beforeProgramId'))return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('national-0'),row('national-19')],nextCursor:null})});
   return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:Array.from({length:20},(_,i)=>row(i===19?'national-1':'national-'+String(20-i).padStart(2,'0'))),nextCursor:{beforeProgramId:'national-1',beforeNationalVersion:1}})});
  });
  await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await expect(page.getByRole('rowheader',{name:'national-20 / ۱'})).toBeVisible();
