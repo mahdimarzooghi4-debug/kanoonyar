@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PublishedTextChanges } from './PublishedTextChanges';
 
 export type PublicProgram = {
   programId: string;
@@ -151,6 +152,7 @@ export function PublicNationalPrograms() {
     g.versions.some(v => v.title.toLocaleLowerCase('fa').includes(normalized)));
   const selected = groups.find(g => g.id === opened);
   const prior = selected?.versions.find(v => v.version === previous) ?? null;
+  const current = selected?.versions[0] ?? null;
 
   return <section dir="rtl" aria-label="کاوش برنامه‌های ملی منتشرشده"
     style={{ maxWidth: 960, margin: '1rem auto', padding: 16, fontFamily: 'Tahoma,Arial,sans-serif' }}>
@@ -194,7 +196,17 @@ export function PublicNationalPrograms() {
             {selected.versions.slice(1).map(p =>
               <option key={p.version} value={p.version}>نسخه {p.version}</option>)}
           </select>
-          {prior && <NationalVersion version={prior} suffix="مقایسه با نسخه پیشین" />}
+          {prior && <>
+            <NationalVersion version={prior} suffix="مقایسه با نسخه پیشین" />
+            {current && <>
+              <PublishedTextChanges label="اهداف ملی" previousVersion={prior.version}
+                currentVersion={current.version} previous={prior.nationalObjectives}
+                current={current.nationalObjectives} />
+              <PublishedTextChanges label="الزامات اجباری" previousVersion={prior.version}
+                currentVersion={current.version} previous={prior.mandatoryRequirements}
+                current={current.mandatoryRequirements} />
+            </>}
+          </>}
           <p>مقایسه فقط میان نسخه‌های منتشرشده همین برنامه است؛ نسخه پیش‌نویس یا اصلاحات
             اجراشده در کانون از این صفحه قابل استنتاج نیست.</p>
         </>}

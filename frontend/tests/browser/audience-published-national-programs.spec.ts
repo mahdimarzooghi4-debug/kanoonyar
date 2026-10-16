@@ -38,6 +38,13 @@ test('audience reads only published national records, searches, opens requiremen
   await expect(detail).toContainText('هدف تاریخی نسخه اول');
   await expect(detail).toContainText('الزام تاریخی نسخه اول');
   await expect(detail).toContainText('هدف واقعی نسخه دوم');
+  const objectives = detail.getByRole('region', {name:'اهداف ملی'});
+  const requirements = detail.getByRole('region', {name:'الزامات اجباری'});
+  await expect(objectives).toContainText('عبارت موجود در نسخه پیشین و غایب از نسخه جاری: هدف تاریخی نسخه اول');
+  await expect(objectives).toContainText('عبارت افزوده‌شده در نسخه جاری: هدف واقعی نسخه دوم');
+  await expect(requirements).toContainText('عبارت موجود در نسخه پیشین و غایب از نسخه جاری: الزام تاریخی نسخه اول');
+  await expect(requirements).toContainText('عبارت افزوده‌شده در نسخه جاری: الزام نسخه دوم');
+  await expect(detail).toContainText('معنای حقوقی، اولویت اجرا یا اثر عملی را تعیین نمی‌کند');
 
   await page.getByRole('searchbox', {name:'جست‌وجوی نام یا شناسه برنامه منتشرشده'}).fill('national-b');
   await expect(page.getByText('1 برنامه از 2 برنامه منتشرشده')).toBeVisible();
@@ -119,4 +126,31 @@ test('outdated fetch after refetch cannot reinstate superseded publications', as
   await page.waitForTimeout(450);
   await expect(page.getByText('برنامه رشد فرهنگی')).toHaveCount(0);
   await expect(page.getByText('برنامه محلی مرتبط')).toBeVisible();
+});
+
+
+test('published text comparison preserves duplicate source entries and exact text only', async ({page}) => {
+  const rows = [
+    {programId:'duplicate-case',version:1,title:'مقایسه دقیق',
+      nationalObjectives:['هدف ثابت','هدف حذف','هدف تکراری','هدف تکراری'],
+      mandatoryRequirements:['الزام ثابت']},
+    {programId:'duplicate-case',version:2,title:'مقایسه دقیق',
+      nationalObjectives:['هدف ثابت','هدف اضافه','هدف تکراری'],
+      mandatoryRequirements:['الزام ثابت']},
+  ];
+  await page.route('**/api/v1/programs/published', route=>route.fulfill({
+    status:200,contentType:'application/json',body:JSON.stringify({programs:rows}),
+  }));
+  await page.goto('/');
+  await page.getByRole('button',{name:'مشاهده نسخه‌ها و الزامات برنامه'}).click();
+  const detail=page.getByRole('region',{name:'جزئیات برنامه ملی انتخاب‌شده'});
+  await detail.getByRole('combobox',{name:'نسخه منتشرشده پیشین برای مقایسه'}).selectOption('1');
+  const objectives=detail.getByRole('region',{name:'اهداف ملی'});
+  const entries=objectives.locator('li');
+  await expect(entries).toHaveCount(5);
+  await expect(entries.filter({hasText:'عبارت بدون تغییر: هدف ثابت'})).toHaveCount(1);
+  await expect(entries.filter({hasText:'عبارت بدون تغییر: هدف تکراری'})).toHaveCount(1);
+  await expect(entries.filter({hasText:'عبارت موجود در نسخه پیشین و غایب از نسخه جاری: هدف تکراری'})).toHaveCount(1);
+  await expect(entries.filter({hasText:'عبارت افزوده‌شده در نسخه جاری: هدف اضافه'})).toHaveCount(1);
+  await expect(entries.filter({hasText:'عبارت موجود در نسخه پیشین و غایب از نسخه جاری: هدف حذف'})).toHaveCount(1);
 });
