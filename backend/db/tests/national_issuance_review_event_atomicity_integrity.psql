@@ -2,12 +2,9 @@
 \set ON_ERROR_STOP on
 
 BEGIN;
-SET CONSTRAINTS
- national_issuance_intent_event_pair_complete,
- national_issuance_inspection_event_pair_complete,
- national_issuance_audit_event_pair_complete,
- national_issuance_outbox_event_pair_complete
-IMMEDIATE;
+-- Constraint-trigger names are not constraint names in SET CONSTRAINTS.
+-- This isolated rollback-only fixture has no unrelated deferred work pending.
+SET CONSTRAINTS ALL IMMEDIATE;
 
 DO $reject_incomplete$
 DECLARE
