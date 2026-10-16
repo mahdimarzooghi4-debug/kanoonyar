@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PublishedTextChanges } from './PublishedTextChanges';
+import { publishedComparisonHref } from './PublishedComparisonReference';
 
 export type PublicProgram = {
   programId: string;
@@ -205,6 +206,9 @@ export function PublicNationalPrograms() {
               <PublishedTextChanges label="الزامات اجباری" previousVersion={prior.version}
                 currentVersion={current.version} previous={prior.mandatoryRequirements}
                 current={current.mandatoryRequirements} />
+              <p><a href={publishedComparisonHref(selected.id, prior.version, current.version)}>
+                پیوند قابل اشتراک مقایسه نسخه {prior.version} و {current.version}
+              </a></p>
             </>}
           </>}
           <p>مقایسه فقط میان نسخه‌های منتشرشده همین برنامه است؛ نسخه پیش‌نویس یا اصلاحات
