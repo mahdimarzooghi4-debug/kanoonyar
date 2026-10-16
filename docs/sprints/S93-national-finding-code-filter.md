@@ -8,7 +8,7 @@ The headquarters read-only inspection workbench needs a direct way to find natio
 - Keep the default response unchanged when the filter is omitted or false. Reject malformed, repeated, or unknown query parameters.
 - Add a workbench toggle that restarts pagination when changed and sends the filter on every page request.
 - Explain that the filter locates diagnostic codes only; it does not rank severity, imply review, or make decisions.
-- Add restricted PostgreSQL-to-API coverage with a synthetic inspection record missing its matching audit/outbox evidence, producing a known stable finding code. Verify clean source-drift-only groups are excluded, the known code group is included, and filtered page continuation works.
+- Add restricted PostgreSQL-to-API coverage with 21 synthetic inspection records missing their matching audit/outbox evidence, producing a known stable finding code across two filtered pages. Verify clean source-drift-only groups are excluded, the known code groups are included, and filtered pagination advances.
 - Add browser coverage for toggling the filter and retaining the safe technical-only context.
 
 ## Acceptance
