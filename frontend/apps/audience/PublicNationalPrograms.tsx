@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PublishedTextChanges } from './PublishedTextChanges';
-import { publishedComparisonHref } from './PublishedComparisonReference';
+import { publishedComparisonHref } from './publishedComparisonReference';
 
 export type PublicProgram = {
   programId: string;
