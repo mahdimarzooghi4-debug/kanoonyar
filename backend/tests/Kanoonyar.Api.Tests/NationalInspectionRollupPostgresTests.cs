@@ -114,7 +114,7 @@ public sealed class NationalInspectionRollupPostgresTests
             await using var capture = new NpgsqlCommand(
                 """
                 SELECT programs.capture_national_issuance_review_intent(
-                  @request,@program,1,ARRAY['s60-center-00']::text[],
+                  @request,@program,1,ARRAY['center-a']::text[],
                   'UNVERIFIED-s84-ci-fixture','Synthetic API pagination only',
                   @audit,@event,@correlation)
                 """, admin, transaction);
@@ -183,7 +183,7 @@ public sealed class NationalInspectionRollupPostgresTests
                 Assert.InRange(rows.Length, 1, 20);
                 foreach (var row in rows)
                 {
-                    Assert.Equal("S83_NATIONAL_INSPECTION_ROLLUP_V1",
+                    Assert.Equal("S90_NATIONAL_INSPECTION_ROLLUP_V2",
                         row.GetProperty("rollupContractVersion").GetString());
                     Assert.False(row.GetProperty("humanReviewRecorded").GetBoolean());
                     Assert.False(row.GetProperty("issuanceAuthorized").GetBoolean());
@@ -213,6 +213,17 @@ public sealed class NationalInspectionRollupPostgresTests
             Assert.Equal(22, fixtures.Length);
             Assert.Equal(22, fixtures.Select(x => x.GetProperty("programId").GetString())
                 .Distinct(StringComparer.Ordinal).Count());
+            foreach (var row in fixtures)
+            {
+                foreach (var componentCount in new[]
+                {
+                    "sourceSnapshotDigestInvalidRequestCount","sourceEnvelopeInvalidRequestCount",
+                    "centerSelectionMismatchRequestCount","authorityFlagsNotClearRequestCount",
+                    "auditEvidenceInvalidRequestCount","outboxEvidenceInvalidRequestCount",
+                    "originalRequestIntegrityInvalidNoteCount","observationIntegrityInvalidNoteCount",
+                    "inspectionAuditEvidenceInvalidNoteCount","sourceObservationNotComparableNoteCount"
+                }) Assert.Equal(0, row.GetProperty(componentCount).GetInt64());
+            }
             Assert.True(pages >= 2);
         }
         finally
