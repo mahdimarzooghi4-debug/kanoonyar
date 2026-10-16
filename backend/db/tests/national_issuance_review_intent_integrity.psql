@@ -19,6 +19,7 @@
 \ir ../migrations/0052_national_issuance_inspection_history_metrics.sql
 \ir ../migrations/0053_national_issuance_request_source_integrity.sql
 \ir ../migrations/0054_national_issuance_request_integrity_breakdown.sql
+\ir ../migrations/0055_national_issuance_source_envelope_semantic_integrity.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,
  registered_by_subject,registered_at)
