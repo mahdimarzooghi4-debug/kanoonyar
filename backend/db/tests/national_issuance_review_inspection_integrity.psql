@@ -1,0 +1,231 @@
+-- S61 runs INSIDE the S60 disposable original PostgreSQL fixture, after
+-- original 80-center requests and center-04 status change. NO real reviewers.
+\set ON_ERROR_STOP on
+
+CREATE ROLE kanoonyar_s61_inspection_denied_ci LOGIN NOINHERIT
+ NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+GRANT CONNECT ON DATABASE kanoonyar_issuance_review_intent_ci
+ TO kanoonyar_s61_inspection_denied_ci;
+GRANT USAGE ON SCHEMA programs TO kanoonyar_s61_inspection_denied_ci;
+DO $boundary$ BEGIN
+ IF has_function_privilege('public',
+  'programs.capture_national_issuance_review_inspection_note(uuid,uuid,text,text,uuid,uuid,text)',
+  'EXECUTE')
+ OR has_function_privilege('kanoonyar_s61_inspection_denied_ci',
+  'programs.capture_national_issuance_review_inspection_note(uuid,uuid,text,text,uuid,uuid,text)',
+  'EXECUTE')
+ OR has_table_privilege('kanoonyar_s61_inspection_denied_ci',
+  'programs.national_issuance_review_inspection_notes','INSERT')
+ OR has_table_privilege('kanoonyar_s61_inspection_denied_ci',
+  'programs.national_issuance_review_inspection_notes','SELECT')
+ OR NOT (SELECT relrowsecurity AND relforcerowsecurity
+    FROM pg_class WHERE oid='programs.national_issuance_review_inspection_notes'::regclass)
+ OR EXISTS(SELECT 1 FROM pg_policies
+  WHERE schemaname='programs' AND tablename='national_issuance_review_inspection_notes')
+ THEN RAISE EXCEPTION 'S61 review note was accidentally granted operational authority'; END IF;
+END;$boundary$;
+
+-- After the original S60 80-center capture, center-04 was deactivated.
+-- First note is source-CHANGED; later S60 request for that center sees
+-- the latest source, so its first note must be source-UNCHANGED.
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT programs.capture_national_issuance_review_inspection_note(
+ 'aa610000-0000-4000-8000-000000000001',
+ 'aa600000-0000-4000-8000-000000000001',
+ 'UNVERIFIED-s61-inspector','Inspect technical source change only',
+ 'aa610000-0000-4000-8000-000000000002',
+ 'aa610000-0000-4000-8000-000000000003','s61-drift');
+SELECT programs.capture_national_issuance_review_inspection_note(
+ 'aa610000-0000-4000-8000-000000000011',
+ 'aa600000-0000-4000-8000-000000000011',
+ 'UNVERIFIED-s61-inspector','Independent unchanged source inspection',
+ 'aa610000-0000-4000-8000-000000000012',
+ 'aa610000-0000-4000-8000-000000000013','s61-unchanged');
+COMMIT;
+
+DO $verify$
+DECLARE
+ before_snapshot jsonb;
+ first_snapshot jsonb;
+ first_digest text;
+ first_original text;
+ changed boolean;
+ unchanged boolean;
+ n bigint;
+BEGIN
+ SELECT original_source_snapshot,source_digest_sha256
+ INTO before_snapshot,first_original
+ FROM programs.national_issuance_review_intents
+ WHERE request_id='aa600000-0000-4000-8000-000000000001';
+ SELECT observed_source_snapshot,observed_digest_sha256,source_changed_since_request,
+  pinned_request_digest_sha256
+ INTO first_snapshot,first_digest,changed,first_original
+ FROM programs.national_issuance_review_inspection_notes
+ WHERE note_id='aa610000-0000-4000-8000-000000000001';
+ IF first_snapshot IS NULL OR first_original <> (
+  SELECT source_digest_sha256 FROM programs.national_issuance_review_intents
+  WHERE request_id='aa600000-0000-4000-8000-000000000001')
+ OR first_digest <> encode(sha256(convert_to(first_snapshot::text,'UTF8')),'hex')
+ OR changed IS NOT TRUE
+ OR jsonb_array_length(first_snapshot->'centers')<>80
+ OR first_snapshot->'centers'->75->>'centerId'<>'s60-center-04'
+ OR (before_snapshot->'centers'->75->>'registryActive')::boolean IS NOT TRUE
+ OR (first_snapshot->'centers'->75->>'registryActive')::boolean IS NOT FALSE
+ THEN RAISE EXCEPTION 'S61 changed-source note corrupted original 80-center evidence'; END IF;
+
+ SELECT source_changed_since_request INTO unchanged
+ FROM programs.national_issuance_review_inspection_notes
+ WHERE note_id='aa610000-0000-4000-8000-000000000011';
+ IF unchanged IS NOT FALSE THEN RAISE EXCEPTION 'Fresh unchanged source was falsely flagged'; END IF;
+ IF EXISTS(SELECT 1 FROM programs.national_issuance_review_inspection_notes
+  WHERE human_review_recorded OR issuance_authorized OR issuance_executed)
+ THEN RAISE EXCEPTION 'Inspection note became a human decision or actual issuance'; END IF;
+ SELECT count(*) INTO n FROM governance.command_audit
+ WHERE action_code='NATIONAL_ISSUANCE_REVIEW_INSPECTION_NOTE_CAPTURED';
+ IF n<>2 THEN RAISE EXCEPTION 'S61 audit cardinality %',n; END IF;
+ SELECT count(*) INTO n FROM governance.outbox_events
+ WHERE event_type='NationalIssuanceReviewInspectionNoteCaptured';
+ IF n<>2 THEN RAISE EXCEPTION 'S61 outbox cardinality %',n; END IF;
+ IF EXISTS(SELECT 1 FROM governance.outbox_events
+  WHERE event_type='NationalIssuanceReviewInspectionNoteCaptured'
+   AND (payload ? 'technical_note' OR payload ? 'unverified_inspector'
+    OR payload ? 'center_id' OR payload ? 'explicit_center_ids'
+    OR payload->>'issuance_authorized' <> 'false'
+    OR payload->>'issuance_executed' <> 'false'
+    OR payload->>'human_review_recorded' <> 'false'))
+ THEN RAISE EXCEPTION 'S61 outbox exposed private source data or claimed approval'; END IF;
+ SELECT count(*) INTO n FROM programs.national_program_issuances;
+ IF n<>2 THEN RAISE EXCEPTION 'Inspection unexpectedly wrote real national issuance'; END IF;
+END;$verify$;
+
+DO $invalid_isolation$
+BEGIN
+ BEGIN
+  PERFORM programs.capture_national_issuance_review_inspection_note(
+   gen_random_uuid(),'aa600000-0000-4000-8000-000000000001',
+   'fixture','unapproved',gen_random_uuid(),gen_random_uuid(),'not-pinned');
+  RAISE EXCEPTION 'Unexpected read committed inspection acceptance';
+ EXCEPTION WHEN SQLSTATE '25001' THEN NULL;
+ END;
+END;$invalid_isolation$;
+
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+DO $negative$
+BEGIN
+ BEGIN
+  PERFORM programs.capture_national_issuance_review_inspection_note(
+   'aa610000-0000-4000-8000-000000000001',
+   'aa600000-0000-4000-8000-000000000001',
+   'fixture','duplicate',gen_random_uuid(),gen_random_uuid(),'duplicate');
+  RAISE EXCEPTION 'Unexpected duplicate inspection note';
+ EXCEPTION WHEN unique_violation THEN NULL;
+ END;
+ BEGIN
+  PERFORM programs.capture_national_issuance_review_inspection_note(
+   gen_random_uuid(),gen_random_uuid(),
+   'fixture','unknown original',gen_random_uuid(),gen_random_uuid(),'unknown');
+  RAISE EXCEPTION 'Unexpected unlinked inspection note';
+ EXCEPTION WHEN foreign_key_violation THEN NULL;
+ END;
+ BEGIN
+  PERFORM programs.capture_national_issuance_review_inspection_note(
+   gen_random_uuid(),'aa600000-0000-4000-8000-000000000001',
+   'fixture','  ',gen_random_uuid(),gen_random_uuid(),'blank');
+  RAISE EXCEPTION 'Unexpected blank inspection note';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL;
+ END;
+END;$negative$;
+COMMIT;
+
+\connect - kanoonyar_s61_inspection_denied_ci
+DO $deny$
+BEGIN
+ BEGIN
+  PERFORM programs.capture_national_issuance_review_inspection_note(
+   gen_random_uuid(),'aa600000-0000-4000-8000-000000000001',
+   'spoofed-reviewer','attempt',gen_random_uuid(),gen_random_uuid(),'forgery');
+  RAISE EXCEPTION 'Restricted account executed S61 reviewer command';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+ BEGIN
+  INSERT INTO programs.national_issuance_review_inspection_notes(
+   note_id,request_id,pinned_request_digest_sha256,observed_source_snapshot,
+   observed_digest_sha256,source_changed_since_request,
+   unverified_inspector_subject,technical_note)
+  VALUES(gen_random_uuid(),'aa600000-0000-4000-8000-000000000001',
+   repeat('0',64),'{}',repeat('0',64),false,'spoofed','forged');
+  RAISE EXCEPTION 'Restricted account directly inserted an S61 note';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+ BEGIN
+  EXECUTE 'SET ROLE postgres';
+  RAISE EXCEPTION 'Restricted account escalated';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+END;$deny$;
+\connect - postgres
+
+-- Database-level immutability also prevents a superuser fixture from
+-- rewriting an old note as an approved review or actual issuance.
+DO $immutability$
+BEGIN
+ BEGIN
+  UPDATE programs.national_issuance_review_inspection_notes
+   SET human_review_recorded=true;
+  RAISE EXCEPTION 'Old technical note was updated';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ BEGIN
+  DELETE FROM programs.national_issuance_review_inspection_notes;
+  RAISE EXCEPTION 'Old technical note was deleted';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ BEGIN
+  INSERT INTO programs.national_issuance_review_inspection_notes(
+   note_id,request_id,pinned_request_digest_sha256,observed_source_snapshot,
+   observed_digest_sha256,source_changed_since_request,
+   unverified_inspector_subject,technical_note,issuance_authorized)
+  VALUES(gen_random_uuid(),'aa600000-0000-4000-8000-000000000001',
+   repeat('0',64),'{}',repeat('0',64),false,'forged','forged',true);
+  RAISE EXCEPTION 'Forged approved inspection note accepted';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+END;$immutability$;
+
+-- Independently insert a different-source historical issuance, then
+-- capture a new TECHNICAL note; original snapshots must stay frozen.
+INSERT INTO programs.national_program_issuances
+ (issuance_id,center_id,program_id,national_version,issued_by_subject,issued_at)
+VALUES('aa610000-0000-4000-8000-000000000020',
+ 's60-center-05','s60-original-program',2,'fixture-only',now());
+
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT programs.capture_national_issuance_review_inspection_note(
+ 'aa610000-0000-4000-8000-000000000021',
+ 'aa600000-0000-4000-8000-000000000001',
+ 'UNVERIFIED-s61-inspector','External issuance source drift inspection',
+ 'aa610000-0000-4000-8000-000000000022',
+ 'aa610000-0000-4000-8000-000000000023','s61-second-change');
+COMMIT;
+DO $final$
+DECLARE old_issuance boolean; new_issuance boolean; n bigint;
+BEGIN
+ SELECT (observed_source_snapshot->'centers'->74->>'exactIssuanceExists')::boolean
+ INTO old_issuance FROM programs.national_issuance_review_inspection_notes
+ WHERE note_id='aa610000-0000-4000-8000-000000000001';
+ SELECT (observed_source_snapshot->'centers'->74->>'exactIssuanceExists')::boolean
+ INTO new_issuance FROM programs.national_issuance_review_inspection_notes
+ WHERE note_id='aa610000-0000-4000-8000-000000000021';
+ IF old_issuance IS NOT FALSE OR new_issuance IS NOT TRUE
+ THEN RAISE EXCEPTION 'Changed original issuance history not preserved across notes'; END IF;
+ SELECT count(*) INTO n FROM programs.national_issuance_review_inspection_notes;
+ IF n<>3 THEN RAISE EXCEPTION 'S61 note cardinality %',n; END IF;
+ SELECT count(*) INTO n FROM programs.national_program_issuances;
+ IF n<>3 THEN RAISE EXCEPTION 'Only independent fixture issuance should exist %',n; END IF;
+ SELECT count(*) INTO n FROM governance.command_audit
+ WHERE action_code='NATIONAL_ISSUANCE_REVIEW_INSPECTION_NOTE_CAPTURED';
+ IF n<>3 THEN RAISE EXCEPTION 'S61 audit count %',n; END IF;
+ SELECT count(*) INTO n FROM governance.outbox_events
+ WHERE event_type='NationalIssuanceReviewInspectionNoteCaptured';
+ IF n<>3 THEN RAISE EXCEPTION 'S61 outbox count %',n; END IF;
+END;$final$;
