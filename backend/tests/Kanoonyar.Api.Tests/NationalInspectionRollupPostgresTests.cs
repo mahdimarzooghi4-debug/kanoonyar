@@ -124,13 +124,11 @@ public sealed class NationalInspectionRollupPostgresTests
         }
 
         Guid driftRequestId = Guid.Empty;
-        Guid findingRequestId = Guid.Empty;
         for (var i = 1; i <= 22; i++)
         {
             var programId = prefix + "-" + i.ToString("D2", System.Globalization.CultureInfo.InvariantCulture);
             var requestId = Guid.NewGuid();
             if (i == 1) driftRequestId = requestId;
-            if (i == 2) findingRequestId = requestId;
             await using var capture = new NpgsqlCommand(
                 """
                 SELECT programs.capture_national_issuance_review_intent(
@@ -146,8 +144,8 @@ public sealed class NationalInspectionRollupPostgresTests
             capture.Parameters.AddWithValue("correlation", Guid.NewGuid().ToString("N"));
             await capture.ExecuteNonQueryAsync();
         }
-        if (driftRequestId == Guid.Empty || findingRequestId == Guid.Empty)
-            throw new InvalidOperationException("S92 synthetic requests were not captured");
+        if (driftRequestId == Guid.Empty)
+            throw new InvalidOperationException("S92 synthetic request was not captured");
         await using (var note = new NpgsqlCommand(
             """
             SELECT programs.capture_national_issuance_review_inspection_note(
@@ -176,16 +174,16 @@ public sealed class NationalInspectionRollupPostgresTests
               (note_id,request_id,pinned_request_digest_sha256,observed_source_snapshot,
                observed_digest_sha256,source_changed_since_request,
                unverified_inspector_subject,technical_note)
-            SELECT @note,request_id,source_digest_sha256,original_source_snapshot,
+            SELECT gen_random_uuid(),request_id,source_digest_sha256,original_source_snapshot,
               source_digest_sha256,false,'UNVERIFIED-s93-ci-fixture',
               'Synthetic missing-audit finding fixture'
             FROM programs.national_issuance_review_intents
-            WHERE request_id=@request
+            WHERE program_id LIKE @prefix || '-%'
+              AND program_id <> @prefix || '-01'
             """, admin, transaction))
         {
-            invalidEvidence.Parameters.AddWithValue("note", Guid.NewGuid());
-            invalidEvidence.Parameters.AddWithValue("request", findingRequestId);
-            Assert.Equal(1, await invalidEvidence.ExecuteNonQueryAsync());
+            invalidEvidence.Parameters.AddWithValue("prefix", prefix);
+            Assert.Equal(21, await invalidEvidence.ExecuteNonQueryAsync());
         }
 
         await using (var restoreTriggerMode = new NpgsqlCommand(
@@ -300,7 +298,7 @@ public sealed class NationalInspectionRollupPostgresTests
             Assert.False(driftRow.GetProperty("issuanceAuthorized").GetBoolean());
             Assert.False(driftRow.GetProperty("issuanceExecuted").GetBoolean());
             foreach (var row in fixtures.Where(x =>
-                x.GetProperty("programId").GetString() != prefix + "-02"))
+                x.GetProperty("programId").GetString() == prefix + "-01"))
             {
                 foreach (var componentCount in new[]
                 {
@@ -311,9 +309,8 @@ public sealed class NationalInspectionRollupPostgresTests
                     "inspectionAuditEvidenceInvalidNoteCount","sourceObservationNotComparableNoteCount"
                 }) Assert.Equal(0, row.GetProperty(componentCount).GetInt64());
             }
-            var finding = Assert.Single(fixtures.Where(x =>
-                x.GetProperty("programId").GetString() == prefix + "-02"));
-            Assert.Equal(1, finding.GetProperty("inspectionAuditEvidenceInvalidNoteCount").GetInt64());
+            Assert.Equal(21, fixtures.Count(x =>
+                x.GetProperty("inspectionAuditEvidenceInvalidNoteCount").GetInt64() == 1));
             Assert.True(pages >= 2);
 
             var filtered = new List<JsonElement>();
@@ -354,9 +351,12 @@ public sealed class NationalInspectionRollupPostgresTests
                 filterBeforeVersion = next.GetProperty("beforeNationalVersion").GetInt32();
             } while (filterBeforeId is not null);
 
-            var filteredFinding = Assert.Single(filtered.Where(x =>
-                x.GetProperty("programId").GetString() == prefix + "-02"));
-            Assert.Equal(1, filteredFinding.GetProperty("inspectionAuditEvidenceInvalidNoteCount").GetInt64());
+            var filteredFindings = filtered.Where(x => x.GetProperty("programId").GetString()!
+                .StartsWith(prefix + "-", StringComparison.Ordinal)).ToArray();
+            Assert.Equal(21, filteredFindings.Length);
+            Assert.True(filteredPages >= 2, "Filtered pagination did not advance to a second page");
+            Assert.All(filteredFindings, row =>
+                Assert.Equal(1, row.GetProperty("inspectionAuditEvidenceInvalidNoteCount").GetInt64()));
             Assert.DoesNotContain(filtered, x =>
                 x.GetProperty("programId").GetString() == prefix + "-01");
         }
