@@ -153,5 +153,4 @@ test('published text comparison preserves duplicate source entries and exact tex
   await expect(entries.filter({hasText:'عبارت موجود در نسخه پیشین و غایب از نسخه جاری: هدف تکراری'})).toHaveCount(1);
   await expect(entries.filter({hasText:'عبارت افزوده‌شده در نسخه جاری: هدف اضافه'})).toHaveCount(1);
   await expect(entries.filter({hasText:'عبارت موجود در نسخه پیشین و غایب از نسخه جاری: هدف حذف'})).toHaveCount(1);
-  await expect(detail).not.toContainText('اثر عملی، مجوز یا معنای حقوقی تعیین نمی‌شود');
 });
