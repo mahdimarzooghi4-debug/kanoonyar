@@ -68,6 +68,23 @@ BEGIN
    RAISE EXCEPTION 'S64 accepted an orphan national review audit';
  EXCEPTION WHEN check_violation THEN NULL; END;
 
+ -- Known national-review action codes cannot bypass the guard by
+ -- supplying a malformed target type.
+ BEGIN
+   INSERT INTO governance.command_audit
+    (audit_id,occurred_at,actor_subject_id,center_id,action_code,
+     target_type,target_id,correlation_id,metadata)
+   VALUES
+    ('aa640000-0000-4000-8000-000000000006',now(),'UNVERIFIED-s64',NULL,
+     'NATIONAL_ISSUANCE_REVIEW_INSPECTION_NOTE_CAPTURED',
+     'wrong-target-type','s64-wrong-audit-type','s64-wrong-audit-type',
+     jsonb_build_object('request_id','aa600000-0000-4000-8000-000000000001',
+       'source_changed',false,'unverified_actor',true,
+       'human_review_recorded',false,'issuance_authorized',false,
+       'issuance_executed',false));
+   RAISE EXCEPTION 'S64 accepted a national audit with the wrong target type';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+
  -- An outbox row using a valid unrelated audit still cannot claim the
  -- national review event family without a matching immutable inspection note.
  BEGIN
@@ -91,6 +108,31 @@ BEGIN
        'human_review_recorded',false,'issuance_authorized',false,
        'issuance_executed',false));
    RAISE EXCEPTION 'S64 accepted an orphan national review outbox event';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+
+ -- Known national-review event types cannot bypass the guard by
+ -- using a malformed aggregate type.
+ BEGIN
+   INSERT INTO governance.command_audit
+    (audit_id,occurred_at,actor_subject_id,center_id,action_code,
+     target_type,target_id,correlation_id,metadata)
+   VALUES
+    ('aa640000-0000-4000-8000-000000000007',now(),'s64-fixture',NULL,
+     'S64_UNRELATED_FIXTURE_ACTION','s64-fixture','s64-fixture',
+     's64-fixture','{}'::jsonb);
+   INSERT INTO governance.outbox_events
+    (event_id,audit_id,event_type,aggregate_type,aggregate_id,occurred_at,payload)
+   VALUES
+    ('aa640000-0000-4000-8000-000000000008',
+     'aa640000-0000-4000-8000-000000000007',
+     'NationalIssuanceReviewInspectionNoteCaptured',
+     'wrong-aggregate-type','s64-wrong-outbox-type',now(),
+     jsonb_build_object('note_id','s64-wrong-outbox-type',
+       'request_id','aa600000-0000-4000-8000-000000000001',
+       'source_changed',false,'technical_only',true,
+       'human_review_recorded',false,'issuance_authorized',false,
+       'issuance_executed',false));
+   RAISE EXCEPTION 'S64 accepted a national outbox with the wrong aggregate type';
  EXCEPTION WHEN check_violation THEN NULL; END;
 
  IF (SELECT count(*) FROM governance.command_audit)<>audit_before
