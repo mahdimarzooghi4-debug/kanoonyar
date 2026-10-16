@@ -1,6 +1,7 @@
 \set ON_ERROR_STOP on
 \ir learning_planning_commands_integrity.psql
 \ir ../migrations/0018_session_occurrence_attendance_claims.sql
+\ir ../migrations/0064_session_attendance_history_page_index.sql
 SELECT set_config('kanoonyar.center_id','a',false);
 DO $test$
 DECLARE o uuid:='11111111-4444-4444-8444-111111111111';
@@ -111,3 +112,29 @@ DO $test$ BEGIN
   RAISE EXCEPTION 'Center-scoped read unexpectedly absent'; END IF;
 END;$test$;
 RESET ROLE;
+
+DO $page_index$
+DECLARE plan json;
+BEGIN
+ PERFORM set_config('enable_seqscan','off',true);
+ PERFORM set_config('enable_bitmapscan','off',true);
+ EXECUTE $query$
+   EXPLAIN (FORMAT JSON)
+   SELECT a.claim_id,a.participant_ref,a.reported_presence,a.recorded_at
+   FROM learning.session_attendance_claims a
+   JOIN learning.session_occurrence_reports o
+     ON o.center_id=a.center_id
+    AND o.occurrence_report_id=a.occurrence_report_id
+    AND o.session_id=a.session_id
+   WHERE a.center_id='a'
+     AND a.session_id='bbbbbbbb-1111-4111-8111-000000000002'
+     AND a.occurrence_report_id='11111111-4444-4444-8444-111111111111'
+     AND (a.recorded_at,a.claim_id)<
+       (transaction_timestamp()+interval '1 day','ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)
+   ORDER BY a.recorded_at DESC,a.claim_id DESC
+   LIMIT 21
+ $query$ INTO plan;
+ IF plan::text NOT LIKE '%session_attendance_page_idx%' THEN
+   RAISE EXCEPTION 'Attendance keyset query lacks its supporting page index: %',plan;
+ END IF;
+END;$page_index$;

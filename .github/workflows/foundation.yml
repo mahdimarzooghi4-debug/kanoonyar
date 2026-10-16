@@ -75,6 +75,8 @@ jobs:
           PGDATABASE=kanoonyar_learning_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/learning_planning_commands_integrity.psql
           createdb kanoonyar_occurrence_ci
           PGDATABASE=kanoonyar_occurrence_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/session_occurrence_attendance_integrity.psql
+          createdb kanoonyar_occurrence_ci
+          PGDATABASE=kanoonyar_occurrence_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/session_occurrence_attendance_integrity.psql
           createdb kanoonyar_source_command_ci
           PGDATABASE=kanoonyar_source_command_ci psql -X -v ON_ERROR_STOP=1 -f backend/db/tests/sourced_activity_report_command_integrity.psql
           createdb kanoonyar_capacity_ci
