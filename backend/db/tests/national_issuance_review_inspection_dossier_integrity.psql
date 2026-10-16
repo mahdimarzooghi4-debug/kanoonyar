@@ -144,6 +144,35 @@ BEGIN
    'Synthetic mismatched-scope fixture; not an inspection result'
  FROM digested;
 
+ -- A second digest-valid fixture retains every selected center but reverses
+ -- their order, proving that membership alone cannot satisfy the scope check.
+ WITH reversed_scope AS (
+   SELECT i.request_id,i.source_digest_sha256,
+     jsonb_set(i.original_source_snapshot,'{centers}',reversed.centers) AS snapshot
+   FROM programs.national_issuance_review_intents i
+   CROSS JOIN LATERAL (
+     SELECT jsonb_agg(center.value ORDER BY center.ordinal DESC) AS centers
+     FROM jsonb_array_elements(i.original_source_snapshot->'centers')
+       WITH ORDINALITY center(value,ordinal)
+   ) reversed
+   WHERE i.request_id='aa600000-0000-4000-8000-000000000001'
+ ), digested_reversed AS (
+   SELECT reversed_scope.*,
+     encode(sha256(convert_to(snapshot::text,'UTF8')),'hex') AS digest
+   FROM reversed_scope
+ )
+ INSERT INTO programs.national_issuance_review_inspection_notes(
+   note_id,request_id,pinned_request_digest_sha256,
+   observed_source_snapshot,observed_digest_sha256,
+   source_changed_since_request,unverified_inspector_subject,technical_note
+ )
+ SELECT 'aa610000-0000-4000-8000-000000000004',
+   request_id,source_digest_sha256,snapshot,digest,
+   digest<>source_digest_sha256,
+   's70-test-only-unverified-inspector',
+   'Synthetic reordered-scope fixture; not an inspection result'
+ FROM digested_reversed;
+
  IF NOT EXISTS (
    SELECT 1 FROM programs.national_issuance_review_inspection_dossier
    WHERE note_id='aa610000-0000-4000-8000-000000000003'
@@ -152,6 +181,15 @@ BEGIN
      AND center_registry_change_count IS NULL
      AND exact_issuance_change_count IS NULL
  ) THEN RAISE EXCEPTION 'S70 exposed drift for an observation outside request scope'; END IF;
+
+ IF NOT EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_dossier
+   WHERE note_id='aa610000-0000-4000-8000-000000000004'
+     AND source_observation_comparable IS FALSE
+     AND publication_state_changed IS NULL
+     AND center_registry_change_count IS NULL
+     AND exact_issuance_change_count IS NULL
+ ) THEN RAISE EXCEPTION 'S70 accepted an observation with reordered center scope'; END IF;
 
 END;$catalog$;
 
