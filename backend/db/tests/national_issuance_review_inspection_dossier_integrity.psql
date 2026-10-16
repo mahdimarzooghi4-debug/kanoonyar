@@ -370,7 +370,7 @@ BEGIN
    original_source_snapshot,source_digest_sha256,stated_review_reason,
    unverified_requester_subject
  )
- SELECT f.request_id,'s60-original-program',2,f.center_ids,f.snapshot,
+ SELECT f.request_id,'s60-original-program',2,f.center_ids,source.snapshot,
    CASE WHEN f.request_id='aa600000-0000-4000-8000-000000000031'
      THEN repeat('0',64)
      ELSE encode(sha256(convert_to(f.snapshot::text,'UTF8')),'hex') END,
@@ -383,14 +383,18 @@ BEGIN
    ('aa600000-0000-4000-8000-000000000051'::uuid,
      ARRAY['s60-center-09']::text[],'s60-center-09'::text),
    ('aa600000-0000-4000-8000-000000000061'::uuid,
-     ARRAY['s60-center-10']::text[],'s60-center-10'::text)
+     ARRAY['s60-center-10']::text[],'s60-center-10'::text),
+   ('aa600000-0000-4000-8000-000000000071'::uuid,
+     ARRAY['s60-center-11']::text[],'s60-center-11'::text)
  ) AS f(request_id,center_ids,source_center_id)
  CROSS JOIN LATERAL (
    SELECT jsonb_build_object(
      'formatVersion','S60_SOURCE_SNAPSHOT_V1',
      'programId','s60-original-program',
      'nationalVersion',2,
-     'exactPublicationExists',true,
+     'exactPublicationExists',
+       CASE WHEN f.request_id='aa600000-0000-4000-8000-000000000071'
+         THEN to_jsonb('true'::text) ELSE to_jsonb(true) END,
      'centers',jsonb_build_array(jsonb_build_object(
        'centerId',f.source_center_id,'registryExists',true,
        'registryActive',true,'exactIssuanceExists',false))
@@ -408,6 +412,8 @@ BEGIN
        THEN 'aa600000-0000-4000-8000-000000000042'::uuid
      WHEN 'aa600000-0000-4000-8000-000000000051'::uuid
        THEN 'aa600000-0000-4000-8000-000000000052'::uuid
+     WHEN 'aa600000-0000-4000-8000-000000000071'::uuid
+       THEN 'aa600000-0000-4000-8000-000000000072'::uuid
      ELSE 'aa600000-0000-4000-8000-000000000062'::uuid END,
    transaction_timestamp(),'UNVERIFIED-s74-fixture-actor',NULL,
    'NATIONAL_ISSUANCE_REVIEW_INTENT_CAPTURED',
@@ -425,7 +431,8 @@ BEGIN
    'aa600000-0000-4000-8000-000000000031'::uuid,
    'aa600000-0000-4000-8000-000000000041'::uuid,
    'aa600000-0000-4000-8000-000000000051'::uuid,
-   'aa600000-0000-4000-8000-000000000061'::uuid]);
+   'aa600000-0000-4000-8000-000000000061'::uuid,
+   'aa600000-0000-4000-8000-000000000071'::uuid]);
 
  INSERT INTO governance.outbox_events(
    event_id,audit_id,event_type,aggregate_type,aggregate_id,occurred_at,payload
@@ -437,6 +444,8 @@ BEGIN
        THEN 'aa600000-0000-4000-8000-000000000142'::uuid
      WHEN 'aa600000-0000-4000-8000-000000000051'
        THEN 'aa600000-0000-4000-8000-000000000152'::uuid
+     WHEN 'aa600000-0000-4000-8000-000000000071'
+       THEN 'aa600000-0000-4000-8000-000000000172'::uuid
      ELSE 'aa600000-0000-4000-8000-000000000162'::uuid END,
    a.audit_id,'NationalIssuanceReviewIntentCaptured',
    'national_issuance_review_intent',a.target_id,transaction_timestamp(),
@@ -487,6 +496,18 @@ BEGIN
      AND request_audit_integrity_valid=false
      AND request_outbox_integrity_valid=true
  ) THEN RAISE EXCEPTION 'S74 failed to isolate audit integrity'; END IF;
+
+ IF NOT EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_summary
+   WHERE request_id='aa600000-0000-4000-8000-000000000071'
+     AND request_source_integrity_valid=false
+     AND request_snapshot_digest_valid=true
+     AND request_source_envelope_valid=false
+     AND request_center_selection_valid=true
+     AND request_authority_flags_clear=true
+     AND request_audit_integrity_valid=true
+     AND request_outbox_integrity_valid=true
+ ) THEN RAISE EXCEPTION 'S74 failed to isolate source-envelope integrity'; END IF;
 
  IF NOT EXISTS (
    SELECT 1 FROM programs.national_issuance_review_inspection_summary
