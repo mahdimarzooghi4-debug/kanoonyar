@@ -124,11 +124,13 @@ public sealed class NationalInspectionRollupPostgresTests
         }
 
         Guid driftRequestId = Guid.Empty;
+        Guid findingRequestId = Guid.Empty;
         for (var i = 1; i <= 22; i++)
         {
             var programId = prefix + "-" + i.ToString("D2", System.Globalization.CultureInfo.InvariantCulture);
             var requestId = Guid.NewGuid();
             if (i == 1) driftRequestId = requestId;
+            if (i == 2) findingRequestId = requestId;
             await using var capture = new NpgsqlCommand(
                 """
                 SELECT programs.capture_national_issuance_review_intent(
@@ -144,7 +146,8 @@ public sealed class NationalInspectionRollupPostgresTests
             capture.Parameters.AddWithValue("correlation", Guid.NewGuid().ToString("N"));
             await capture.ExecuteNonQueryAsync();
         }
-        if (driftRequestId == Guid.Empty) throw new InvalidOperationException("S92 drift request was not captured");
+        if (driftRequestId == Guid.Empty || findingRequestId == Guid.Empty)
+            throw new InvalidOperationException("S92 synthetic requests were not captured");
         await using (var note = new NpgsqlCommand(
             """
             SELECT programs.capture_national_issuance_review_inspection_note(
@@ -160,6 +163,24 @@ public sealed class NationalInspectionRollupPostgresTests
             await note.ExecuteNonQueryAsync();
         }
 
+        await using (var invalidEvidence = new NpgsqlCommand(
+            """
+            INSERT INTO programs.national_issuance_review_inspection_notes
+              (note_id,request_id,pinned_request_digest_sha256,observed_source_snapshot,
+               observed_digest_sha256,source_changed_since_request,
+               unverified_inspector_subject,technical_note)
+            SELECT @note,request_id,source_digest_sha256,original_source_snapshot,
+              source_digest_sha256,false,'UNVERIFIED-s93-ci-fixture',
+              'Synthetic missing-audit finding fixture'
+            FROM programs.national_issuance_review_intents
+            WHERE request_id=@request
+            """, admin, transaction))
+        {
+            invalidEvidence.Parameters.AddWithValue("note", Guid.NewGuid());
+            invalidEvidence.Parameters.AddWithValue("request", findingRequestId);
+            Assert.Equal(1, await invalidEvidence.ExecuteNonQueryAsync());
+        }
+
         await transaction.CommitAsync();
         await using (var drift = new NpgsqlCommand(
             "UPDATE centers.registry SET is_active=false WHERE center_id=@center", admin))
@@ -171,16 +192,18 @@ public sealed class NationalInspectionRollupPostgresTests
     }
 
     private static async Task<JsonElement> Page(IConfiguration configuration, string? beforeProgramId = null,
-        int? beforeVersion = null)
+        int? beforeVersion = null, bool findingsOnly = false)
     {
         var context = new DefaultHttpContext();
+        var query = new List<KeyValuePair<string,string?>>();
         if (beforeProgramId is not null && beforeVersion.HasValue)
-            context.Request.QueryString = QueryString.Create(new[]
-            {
-                new KeyValuePair<string,string?>("beforeProgramId",beforeProgramId),
-                new KeyValuePair<string,string?>("beforeNationalVersion",
-                    beforeVersion.Value.ToString(System.Globalization.CultureInfo.InvariantCulture))
-            });
+        {
+            query.Add(new("beforeProgramId", beforeProgramId));
+            query.Add(new("beforeNationalVersion",
+                beforeVersion.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+        if (findingsOnly) query.Add(new("findingsOnly", "true"));
+        if (query.Count > 0) context.Request.QueryString = QueryString.Create(query);
         var result = await NationalInspectionRollupEndpoint.List(context, Actor(), configuration,
             new TestOnlyAllowAuthorization(), CancellationToken.None);
         Assert.Equal(200, (result as IStatusCodeHttpResult)?.StatusCode);
@@ -265,7 +288,8 @@ public sealed class NationalInspectionRollupPostgresTests
             Assert.False(driftRow.GetProperty("humanReviewRecorded").GetBoolean());
             Assert.False(driftRow.GetProperty("issuanceAuthorized").GetBoolean());
             Assert.False(driftRow.GetProperty("issuanceExecuted").GetBoolean());
-            foreach (var row in fixtures)
+            foreach (var row in fixtures.Where(x =>
+                x.GetProperty("programId").GetString() != prefix + "-02"))
             {
                 foreach (var componentCount in new[]
                 {
@@ -276,7 +300,54 @@ public sealed class NationalInspectionRollupPostgresTests
                     "inspectionAuditEvidenceInvalidNoteCount","sourceObservationNotComparableNoteCount"
                 }) Assert.Equal(0, row.GetProperty(componentCount).GetInt64());
             }
+            var finding = Assert.Single(fixtures.Where(x =>
+                x.GetProperty("programId").GetString() == prefix + "-02"));
+            Assert.Equal(1, finding.GetProperty("inspectionAuditEvidenceInvalidNoteCount").GetInt64());
             Assert.True(pages >= 2);
+
+            var filtered = new List<JsonElement>();
+            string? filterBeforeId = null;
+            int? filterBeforeVersion = null;
+            var filteredPages = 0;
+            do
+            {
+                filteredPages++;
+                Assert.True(filteredPages <= 10, "Filtered pagination repeated or failed to advance");
+                var response = await Page(configuration, filterBeforeId, filterBeforeVersion, findingsOnly: true);
+                var rows = response.GetProperty("rollups").EnumerateArray().ToArray();
+                Assert.InRange(rows.Length, 1, 20);
+                foreach (var row in rows)
+                {
+                    var hasCode = new[]
+                    {
+                        "sourceSnapshotDigestInvalidRequestCount","sourceEnvelopeInvalidRequestCount",
+                        "centerSelectionMismatchRequestCount","authorityFlagsNotClearRequestCount",
+                        "auditEvidenceInvalidRequestCount","outboxEvidenceInvalidRequestCount",
+                        "originalRequestIntegrityInvalidNoteCount","observationIntegrityInvalidNoteCount",
+                        "inspectionAuditEvidenceInvalidNoteCount","sourceObservationNotComparableNoteCount"
+                    }.Any(field => row.GetProperty(field).GetInt64() > 0);
+                    Assert.True(hasCode, "Findings-only API returned a clean group");
+                    Assert.False(row.GetProperty("humanReviewRecorded").GetBoolean());
+                    Assert.False(row.GetProperty("issuanceAuthorized").GetBoolean());
+                    Assert.False(row.GetProperty("issuanceExecuted").GetBoolean());
+                }
+                filtered.AddRange(rows);
+                var next = response.GetProperty("nextCursor");
+                if (next.ValueKind == JsonValueKind.Null)
+                {
+                    filterBeforeId = null;
+                    filterBeforeVersion = null;
+                    break;
+                }
+                filterBeforeId = next.GetProperty("beforeProgramId").GetString();
+                filterBeforeVersion = next.GetProperty("beforeNationalVersion").GetInt32();
+            } while (filterBeforeId is not null);
+
+            var filteredFinding = Assert.Single(filtered.Where(x =>
+                x.GetProperty("programId").GetString() == prefix + "-02"));
+            Assert.Equal(1, filteredFinding.GetProperty("inspectionAuditEvidenceInvalidNoteCount").GetInt64());
+            Assert.DoesNotContain(filtered, x =>
+                x.GetProperty("programId").GetString() == prefix + "-01");
         }
         finally
         {
