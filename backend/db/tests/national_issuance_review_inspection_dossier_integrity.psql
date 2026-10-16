@@ -52,18 +52,7 @@ BEGIN
 
  IF EXISTS (
    SELECT 1 FROM programs.national_issuance_review_inspection_dossier
-   WHERE current_source_digest_sha256 !~ '^[a-f0-9]{64}
-
-\connect - kanoonyar_s61_inspection_denied_ci
-DO $deny$
-BEGIN
- BEGIN
-   PERFORM 1 FROM programs.national_issuance_review_inspection_dossier;
-   RAISE EXCEPTION 'Restricted account read the S62 technical dossier';
- EXCEPTION WHEN insufficient_privilege THEN NULL; END;
-END;$deny$;
-\connect - postgres
-
+   WHERE current_source_digest_sha256 !~ '^[a-f0-9]{64}$'
  ) THEN RAISE EXCEPTION 'S68 current source digest is malformed'; END IF;
 
  -- The first inspection of request 1 predates the later synthetic issuance
