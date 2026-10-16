@@ -97,7 +97,8 @@ request_integrity AS (
      false
    ) AS request_source_integrity_valid
  FROM request_integrity_parts parts
-),request_totals AS (
+),
+request_totals AS (
  SELECT
    i.request_id,
    i.program_id,
