@@ -8,6 +8,7 @@
 \ir ../migrations/0006_center_scope_rls.sql
 \ir ../migrations/0013_national_program_issuance_foundation.sql
 \ir ../migrations/0043_national_issuance_review_intent_ledger.sql
+\ir ../migrations/0044_national_issuance_review_inspection_notes.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,
  registered_by_subject,registered_at)
@@ -245,3 +246,5 @@ BEGIN
  SELECT count(*) INTO n FROM programs.national_program_issuances;
  IF n<>2 THEN RAISE EXCEPTION 'Real issuance count mutated %',n; END IF;
 END;$final$;
+
+\ir national_issuance_review_inspection_integrity.psql
