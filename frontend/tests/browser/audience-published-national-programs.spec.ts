@@ -240,7 +240,9 @@ test('selected published versions produce a share link pinned to that program an
     status:200,contentType:'application/json',body:JSON.stringify({programs:published}),
   }));
   await page.goto('/');
-  await page.getByRole('button',{name:'مشاهده نسخه‌ها و الزامات برنامه'}).click();
+  const cards=page.locator('section[aria-label="فهرست برنامه‌های ملی منتشرشده"] li');
+  await cards.filter({hasText:'شناسه برنامه: national-a'})
+    .getByRole('button',{name:'مشاهده نسخه‌ها و الزامات برنامه'}).click();
   const detail=page.getByRole('region',{name:'جزئیات برنامه ملی انتخاب‌شده'});
   await detail.getByRole('combobox',{name:'نسخه منتشرشده پیشین برای مقایسه'}).selectOption('1');
   const link=detail.getByRole('link',{name:'پیوند قابل اشتراک مقایسه نسخه 1 و 2'});
