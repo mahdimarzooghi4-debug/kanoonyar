@@ -22,10 +22,10 @@ public sealed class NationalInspectionRollupPostgresTests
     private static string? AdminUrl => Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_ADMIN_URL");
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private sealed class TestOnlyAllowAuthorization : INationalInspectionRollupReadAuthorization,
-        INationalInspectionDossierReadAuthorization
+    private sealed class TestOnlyAllowAuthorization : INationalInspectionReadAuthorization
     {
-        public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, CancellationToken cancellationToken) =>
+        public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, NationalInspectionReadScope scope,
+            CancellationToken cancellationToken) =>
             ValueTask.FromResult(true);
     }
 
