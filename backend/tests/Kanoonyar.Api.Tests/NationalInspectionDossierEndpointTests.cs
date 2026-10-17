@@ -31,12 +31,8 @@ public sealed class NationalInspectionDossierEndpointTests
             ["NATIONAL_INSPECTION_DOSSIER_READ_DATABASE_URL"] = configured ? "Host=127.0.0.1;Database=unused" : null
         }).Build();
 
-    private static async Task<int?> Status(IResult result)
-    {
-        var context = new DefaultHttpContext();
-        await result.ExecuteAsync(context);
-        return context.Response.StatusCode;
-    }
+    private static Task<int?> Status(IResult result) =>
+        Task.FromResult(Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
 
     [Fact]
     public async Task Dossier_requires_subject_scope_and_exact_bounded_cursor()
