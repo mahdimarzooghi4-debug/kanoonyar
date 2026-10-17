@@ -411,7 +411,7 @@ public sealed class NationalInspectionRollupPostgresTests
                 "\"شواهد Outbox نامعتبر درخواست\"", "\"یکپارچگی درخواست اصلی نامعتبر\"",
                 "\"یکپارچگی مشاهده نامعتبر\"", "\"شواهد Audit بازرسی نامعتبر\"",
                 "\"مشاهده غیرقابل‌مقایسه\"", "\"آخرین مشاهده فنی\""
-            }, csvRecords[0].Split(','));
+            }, csvRecords[0].TrimStart('\uFEFF').Split(','));
             Assert.All(csvRecords, record => Assert.Equal(23, record.Split(',').Length));
             Assert.Equal("S98_NATIONAL_INSPECTION_CSV_RECEIPT_V1",
                 exportContext.Response.Headers["X-National-Inspection-Export-Contract"].ToString());
