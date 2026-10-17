@@ -65,6 +65,26 @@ test('workbench filters by one selected finding code across pages',async({page})
  await expect(page.getByRole('rowheader',{name:'source-finding / ۱'})).toHaveCount(0);
  expect(selectedCode).toBe('INSPECTION_AUDIT_EVIDENCE_INVALID');
 });
+test('workbench looks up one exact national program version',async({page})=>{
+ let exact=false;
+ await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>{
+  const u=new URL(r.request().url());
+  if(u.searchParams.has('targetProgramId')){
+   exact=true;
+   expect(u.searchParams.get('targetProgramId')).toBe('national-target');
+   expect(u.searchParams.get('targetNationalVersion')).toBe('3');
+   return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('national-target',3)],nextCursor:null})});
+  }
+  return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('national-other')],nextCursor:null})});
+ });
+ await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();
+ await page.getByLabel('شناسه برنامه ملی').fill('national-target');
+ await page.getByLabel('نسخه ملی').fill('3');
+ await page.getByRole('button',{name:'یافتن نسخه دقیق'}).click();
+ await expect(page.getByRole('rowheader',{name:'national-target / ۳'})).toBeVisible();
+ await expect(page.getByRole('rowheader',{name:'national-other / ۱'})).toHaveCount(0);
+ expect(exact).toBe(true);
+});
 test('workbench rejects a response that claims issuance authority',async({page})=>{
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[{...row('national-1'),issuanceAuthorized:true}],nextCursor:null})}));
  await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await expect(page.locator('section[aria-labelledby="inspection-rollup-title"] [role="alert"]')).toContainText('با قرارداد فنی سازگار نیست');await expect(page.getByRole('table')).toHaveCount(0);

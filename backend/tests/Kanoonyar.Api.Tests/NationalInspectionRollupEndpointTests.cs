@@ -71,7 +71,14 @@ public sealed class NationalInspectionRollupEndpointTests
     [InlineData("?findingCode=UNKNOWN")]
     [InlineData("?findingCode=INSPECTION_AUDIT_EVIDENCE_INVALID&findingCode=OUTBOX_EVIDENCE_INVALID")]
     [InlineData("?findingsOnly=false&findingCode=INSPECTION_AUDIT_EVIDENCE_INVALID")]
-    public async Task Invalid_or_ambiguous_cursor_or_filter_is_rejected_without_storage_access(string query) =>
+    [InlineData("?targetProgramId=alpha")]
+    [InlineData("?targetNationalVersion=1")]
+    [InlineData("?targetProgramId=alpha&targetNationalVersion=0")]
+    [InlineData("?targetProgramId=alpha&targetNationalVersion=01")]
+    [InlineData("?targetProgramId=%20alpha&targetNationalVersion=1")]
+    [InlineData("?targetProgramId=alpha&targetProgramId=beta&targetNationalVersion=1")]
+    [InlineData("?beforeProgramId=alpha&beforeNationalVersion=1&targetProgramId=alpha&targetNationalVersion=1")]
+    public async Task Invalid_or_ambiguous_cursor_filter_or_target_is_rejected_without_storage_access(string query) =>
         Assert.Equal(400, Status(await Call(query, authorization: new FixedAuthorization(true))));
 
     [Theory]
@@ -79,6 +86,8 @@ public sealed class NationalInspectionRollupEndpointTests
     [InlineData("?findingsOnly=false&beforeProgramId=alpha&beforeNationalVersion=1")]
     [InlineData("?findingsOnly=true&findingCode=INSPECTION_AUDIT_EVIDENCE_INVALID")]
     [InlineData("?findingCode=SOURCE_SNAPSHOT_DIGEST_INVALID&beforeProgramId=alpha&beforeNationalVersion=1")]
+    [InlineData("?targetProgramId=alpha&targetNationalVersion=1")]
+    [InlineData("?targetProgramId=alpha&targetNationalVersion=2&findingsOnly=true&findingCode=INSPECTION_AUDIT_EVIDENCE_INVALID")]
     public async Task Valid_filter_and_cursor_combinations_reach_default_deny(string query) =>
         Assert.Equal(403, Status(await Call(query)));
 
