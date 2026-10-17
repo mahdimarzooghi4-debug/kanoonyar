@@ -121,6 +121,8 @@ else
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapGet("/api/v1/identity/center-memberships", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
+    app.MapGet("/api/v1/headquarters/national-issuance/review-rollup/export.csv", () =>
+        Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapGet("/api/v1/headquarters/national-issuance/review-rollup", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/evidence-register", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
