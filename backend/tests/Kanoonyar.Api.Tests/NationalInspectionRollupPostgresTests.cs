@@ -1,4 +1,6 @@
 using System.Data;
+using System.Security.Cryptography;
+using System.Text;
 using System.Security.Claims;
 using System.Text.Json;
 using Kanoonyar.Api.Programs;
@@ -430,7 +432,7 @@ public sealed class NationalInspectionRollupPostgresTests
 
             await SeedAdditionalInspectionNotes(AdminUrl, prefix + "-01", 50);
             var dossierFirst = await Dossier(configuration, prefix + "-01", 1);
-            Assert.Equal("S106_NATIONAL_INSPECTION_DOSSIER_V4",
+            Assert.Equal("S108_NATIONAL_INSPECTION_DOSSIER_V5",
                 dossierFirst.GetProperty("contractVersion").GetString());
             var dossierRows = dossierFirst.GetProperty("inspections").EnumerateArray().ToArray();
             Assert.Equal(50, dossierRows.Length);
@@ -461,11 +463,19 @@ public sealed class NationalInspectionRollupPostgresTests
             var lastDossierRows = dossierSecond.GetProperty("inspections").EnumerateArray().ToArray();
             Assert.Single(lastDossierRows);
             Assert.Equal(51, dossierSecond.GetProperty("matchingNoteCount").GetInt64());
+            var expectedNoteSetSha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                string.Concat(dossierRows.Select(row => row.GetProperty("noteId").GetGuid())
+                    .Append(lastDossierRows[0].GetProperty("noteId").GetGuid())
+                    .Select(id => id.ToString("D")).OrderBy(id => id, StringComparer.Ordinal)
+                    .Select(id => id + "\n"))))).ToLowerInvariant();
+            Assert.Equal(expectedNoteSetSha256, dossierFirst.GetProperty("matchingNoteSetSha256").GetString());
+            Assert.Equal(expectedNoteSetSha256, dossierSecond.GetProperty("matchingNoteSetSha256").GetString());
             Assert.Equal(JsonValueKind.Null, dossierSecond.GetProperty("nextCursor").ValueKind);
             var emptyDossierPage = await Dossier(configuration, prefix + "-01", 1,
                 "1900-01-01T00:00:00Z", Guid.Parse("00000000-0000-0000-0000-000000000001"));
             Assert.Empty(emptyDossierPage.GetProperty("inspections").EnumerateArray());
             Assert.Equal(51, emptyDossierPage.GetProperty("matchingNoteCount").GetInt64());
+            Assert.Equal(expectedNoteSetSha256, emptyDossierPage.GetProperty("matchingNoteSetSha256").GetString());
             Assert.DoesNotContain(lastDossierRows[0].GetProperty("noteId").GetGuid(),
                 dossierRows.Select(row => row.GetProperty("noteId").GetGuid()));
 
@@ -478,6 +488,9 @@ public sealed class NationalInspectionRollupPostgresTests
             Assert.Equal("INSPECTION_AUDIT_EVIDENCE_INVALID",
                 Assert.Single(filteredDossierNote.GetProperty("findingCodes").EnumerateArray()).GetString());
             Assert.Equal(1, filteredDossier.GetProperty("matchingNoteCount").GetInt64());
+            var filteredNoteId = filteredDossierNote.GetProperty("noteId").GetGuid().ToString("D");
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(filteredNoteId + "\n")))
+                .ToLowerInvariant(), filteredDossier.GetProperty("matchingNoteSetSha256").GetString());
             var attributedCsvContext = new DefaultHttpContext();
             attributedCsvContext.Request.QueryString = new QueryString(
                 "?programId=" + Uri.EscapeDataString(prefix + "-02") + "&nationalVersion=1");

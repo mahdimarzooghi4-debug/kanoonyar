@@ -1,5 +1,6 @@
 using System.Data;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Security.Claims;
 using System.Text;
 using Kanoonyar.Api.Security;
@@ -164,6 +165,41 @@ public static class NationalInspectionDossierEndpoint
                     connection, transaction, cancellationToken))
                 return Results.Problem(statusCode: 503, title: "Unsafe national inspection read role");
 
+            long matchingNoteCount = 0;
+            string? matchingNoteSetSha256 = null;
+            if (!exportCsv)
+            {
+                await using var fingerprintCommand = new NpgsqlCommand(
+                    """
+                    SELECT d.note_id
+                    FROM programs.national_issuance_review_inspection_dossier d
+                    WHERE d.program_id=@program_id AND d.national_version=@national_version
+                      AND (@findings_only = false OR EXISTS (
+                        SELECT 1 FROM programs.national_issuance_review_inspection_findings f
+                        WHERE f.program_id=d.program_id AND f.national_version=d.national_version
+                          AND f.note_id=d.note_id))
+                      AND (@finding_code::text IS NULL OR EXISTS (
+                        SELECT 1 FROM programs.national_issuance_review_inspection_findings f
+                        WHERE f.program_id=d.program_id AND f.national_version=d.national_version
+                          AND f.note_id=d.note_id AND f.finding_code=@finding_code))
+                    ORDER BY d.note_id
+                    """, connection, transaction);
+                fingerprintCommand.Parameters.Add("program_id", NpgsqlDbType.Text).Value = target.ProgramId;
+                fingerprintCommand.Parameters.Add("national_version", NpgsqlDbType.Integer).Value = target.NationalVersion;
+                fingerprintCommand.Parameters.Add("findings_only", NpgsqlDbType.Boolean).Value = findingsOnly;
+                fingerprintCommand.Parameters.Add("finding_code", NpgsqlDbType.Text).Value =
+                    findingCode is null ? DBNull.Value : findingCode;
+                using var setHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                await using var fingerprintReader = await fingerprintCommand.ExecuteReaderAsync(cancellationToken);
+                while (await fingerprintReader.ReadAsync(cancellationToken))
+                {
+                    matchingNoteCount++;
+                    var canonicalId = Encoding.UTF8.GetBytes(fingerprintReader.GetGuid(0).ToString("D") + "\n");
+                    setHash.AppendData(canonicalId);
+                }
+                matchingNoteSetSha256 = Convert.ToHexString(setHash.GetHashAndReset()).ToLowerInvariant();
+            }
+
             await using var command = new NpgsqlCommand(
                 """
                 WITH filtered AS (
@@ -191,18 +227,15 @@ public static class NationalInspectionDossierEndpoint
                     OR (inspection_recorded_at,note_id)<(@before_at::timestamptz,@before_note_id::uuid))
                   ORDER BY inspection_recorded_at DESC,note_id DESC
                   LIMIT @row_limit
-                ),
-                matching_count AS (SELECT COUNT(*) AS matching_note_count FROM filtered)
+                )
                 SELECT p.request_id,p.note_id,p.inspection_recorded_at,p.source_changed_since_request,
                   p.original_request_integrity_valid,p.observation_integrity_valid,
                   p.audit_and_outbox_integrity_valid,p.current_source_matches_observation,
                   p.publication_state_changed,p.center_registry_change_count,
                   p.exact_issuance_change_count,p.source_observation_comparable,
-                  p.human_review_recorded,p.issuance_authorized,p.issuance_executed,
-                  p.finding_codes,matching_count.matching_note_count
-                FROM matching_count
-                LEFT JOIN paged p ON TRUE
-                ORDER BY p.inspection_recorded_at DESC NULLS LAST,p.note_id DESC NULLS LAST
+                  p.human_review_recorded,p.issuance_authorized,p.issuance_executed,p.finding_codes
+                FROM paged p
+                ORDER BY p.inspection_recorded_at DESC,p.note_id DESC
                 """, connection, transaction);
             command.Parameters.Add("program_id", NpgsqlDbType.Text).Value = target.ProgramId;
             command.Parameters.Add("national_version", NpgsqlDbType.Integer).Value = target.NationalVersion;
@@ -217,14 +250,10 @@ public static class NationalInspectionDossierEndpoint
             command.Parameters.Add("row_limit", NpgsqlDbType.Integer).Value = maximumRows + 1;
 
             var rows = new List<Inspection>(maximumRows + 1);
-            long matchingNoteCount = 0;
             await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
             {
                 while (await reader.ReadAsync(cancellationToken))
                 {
-                    matchingNoteCount = reader.GetInt64(16);
-                    if (reader.IsDBNull(0))
-                        continue;
                     rows.Add(new Inspection(
                         reader.GetGuid(0), reader.GetGuid(1),
                         reader.GetDateTime(2).ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
@@ -264,8 +293,9 @@ public static class NationalInspectionDossierEndpoint
             await transaction.CommitAsync(cancellationToken);
             return Results.Ok(new
             {
-                contractVersion = "S106_NATIONAL_INSPECTION_DOSSIER_V4",
+                contractVersion = "S108_NATIONAL_INSPECTION_DOSSIER_V5",
                 matchingNoteCount,
+                matchingNoteSetSha256,
                 programId = target.ProgramId,
                 nationalVersion = target.NationalVersion,
                 findingsOnly,

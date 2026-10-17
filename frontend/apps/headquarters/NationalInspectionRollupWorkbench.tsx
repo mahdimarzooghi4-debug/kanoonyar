@@ -3,7 +3,7 @@ type Cursor={beforeProgramId:string;beforeNationalVersion:number};
 type Target={programId:string;nationalVersion:number};
 type DossierCursor={beforeInspectedAt:string;beforeNoteId:string};
 type Inspection={requestId:string;noteId:string;inspectedAt:string;sourceChangedSinceRequest:boolean;originalRequestIntegrityValid:boolean;observationIntegrityValid:boolean;auditAndOutboxIntegrityValid:boolean;currentSourceMatchesObservation:boolean;publicationStateChanged:boolean|null;centerRegistryChangeCount:number|null;exactIssuanceChangeCount:number|null;sourceObservationComparable:boolean|null;humanReviewRecorded:false;issuanceAuthorized:false;issuanceExecuted:false;findingCodes:string[]};
-type DossierPage={inspections:Inspection[];matchingNoteCount:number;nextCursor:DossierCursor|null};
+type DossierPage={inspections:Inspection[];matchingNoteCount:number;matchingNoteSetSha256:string;nextCursor:DossierCursor|null};
 type DossierState={open:boolean;target:Target|null;findingsOnly:boolean;findingCode:string;status:'idle'|'loading'|'ready'|'error';error:string;pages:DossierPage[];index:number};
 const closedDossier:DossierState={open:false,target:null,findingsOnly:false,findingCode:'',status:'idle',error:'',pages:[],index:0};
 type Row={rollupContractVersion:'S90_NATIONAL_INSPECTION_ROLLUP_V2';programId:string;nationalVersion:number;reviewRequestCount:number;requestsWithoutInspectionCount:number;requestsWithInspectionCount:number;inspectionNoteCount:number;integrityConsistentNoteCount:number;integrityInconsistentNoteCount:number;sourceComparisonUnavailableNoteCount:number;currentSourceMatchNoteCount:number;currentSourceDriftNoteCount:number;sourceFreshnessUnclassifiedNoteCount:number;sourceSnapshotDigestInvalidRequestCount:number;sourceEnvelopeInvalidRequestCount:number;centerSelectionMismatchRequestCount:number;authorityFlagsNotClearRequestCount:number;auditEvidenceInvalidRequestCount:number;outboxEvidenceInvalidRequestCount:number;originalRequestIntegrityInvalidNoteCount:number;observationIntegrityInvalidNoteCount:number;inspectionAuditEvidenceInvalidNoteCount:number;sourceObservationNotComparableNoteCount:number;latestTechnicalObservationAt:string|null;humanReviewRecorded:false;issuanceAuthorized:false;issuanceExecuted:false};
@@ -57,7 +57,7 @@ async function read(cursor:Cursor|null,signal:AbortSignal,findingsOnly:boolean,f
 function parseDossierPage(value:unknown,target:Target,findingsOnly:boolean,findingCode:string):DossierPage|null{
  if(!value||typeof value!=='object')return null;
  const root=value as Record<string,unknown>;
- if(root.contractVersion!=='S106_NATIONAL_INSPECTION_DOSSIER_V4'||root.programId!==target.programId||root.nationalVersion!==target.nationalVersion||root.findingsOnly!==findingsOnly||root.findingCode!==(findingCode||null)||!Number.isSafeInteger(root.matchingNoteCount)||Number(root.matchingNoteCount)<0||!Array.isArray(root.inspections)||root.inspections.length>50||Number(root.matchingNoteCount)<root.inspections.length)return null;
+ if(root.contractVersion!=='S108_NATIONAL_INSPECTION_DOSSIER_V5'||root.programId!==target.programId||root.nationalVersion!==target.nationalVersion||root.findingsOnly!==findingsOnly||root.findingCode!==(findingCode||null)||!Number.isSafeInteger(root.matchingNoteCount)||Number(root.matchingNoteCount)<0||typeof root.matchingNoteSetSha256!=='string'||! /^[0-9a-f]{64}$/.test(root.matchingNoteSetSha256)||!Array.isArray(root.inspections)||root.inspections.length>50||Number(root.matchingNoteCount)<root.inspections.length)return null;
  const rows:Inspection[]=[],seen=new Set<string>();
  for(const raw of root.inspections){
   if(!raw||typeof raw!=='object')return null;
@@ -80,7 +80,7 @@ function parseDossierPage(value:unknown,target:Target,findingsOnly:boolean,findi
   if(typeof c.beforeInspectedAt!=='string'||c.beforeInspectedAt!==last.inspectedAt||typeof c.beforeNoteId!=='string'||c.beforeNoteId!==last.noteId)return null;
   next={beforeInspectedAt:c.beforeInspectedAt,beforeNoteId:c.beforeNoteId};
  }
- return {inspections:rows,matchingNoteCount:root.matchingNoteCount as number,nextCursor:next};
+ return {inspections:rows,matchingNoteCount:root.matchingNoteCount as number,matchingNoteSetSha256:root.matchingNoteSetSha256 as string,nextCursor:next};
 }
 async function readDossier(target:Target,cursor:DossierCursor|null,findingsOnly:boolean,findingCode:string):Promise<DossierPage>{
  const params=new URLSearchParams({programId:target.programId,nationalVersion:String(target.nationalVersion)});
@@ -150,8 +150,10 @@ export function NationalInspectionRollupWorkbench(){
   const request=++dossierRequest.current;setDossier({...dossier,status:'loading',error:''});
   try{const next=await readDossier(dossier.target,current.nextCursor,dossier.findingsOnly,dossier.findingCode);
    const initialMatchCount=dossier.pages[0]?.matchingNoteCount;
-   if(initialMatchCount!==undefined&&next.matchingNoteCount!==initialMatchCount)
-    throw Error('تعداد یادداشت‌های منطبق بین صفحه‌ها تغییر کرده است؛ برای جلوگیری از نمایش پروندهٔ ناسازگار، دوباره بارگذاری کنید.');
+   const initialMatchSetSha256=dossier.pages[0]?.matchingNoteSetSha256;
+   if(initialMatchCount!==undefined&&(next.matchingNoteCount!==initialMatchCount||
+      next.matchingNoteSetSha256!==initialMatchSetSha256))
+    throw Error('مجموعه یادداشت‌های منطبق بین صفحه‌ها تغییر کرده است؛ برای جلوگیری از نمایش پروندهٔ ناسازگار، دوباره بارگذاری کنید.');
    const prior=new Set(dossier.pages.flatMap(page=>page.inspections.map(row=>row.noteId)));
    if(next.inspections.some(row=>prior.has(row.noteId)))throw Error('صفحهٔ بعدی پروندهٔ فنی تکراری یا نامعتبر است.');
    if(request===dossierRequest.current)setDossier({...dossier,status:'ready',error:'',pages:[...dossier.pages,next],index:dossier.index+1});
