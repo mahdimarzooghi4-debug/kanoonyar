@@ -43,6 +43,7 @@ public static class NationalInspectionRollupEndpoint
     };
 
     private sealed record Cursor(string ProgramId, int NationalVersion);
+    private sealed record Target(string ProgramId, int NationalVersion);
     private sealed record Row(
         string RollupContractVersion,
         string ProgramId,
@@ -84,7 +85,7 @@ public static class NationalInspectionRollupEndpoint
         if (string.IsNullOrWhiteSpace(actor.FindFirst("sub")?.Value))
             return Results.Problem(statusCode: 403, title: "Verified subject required");
 
-        var cursorResult = ParseCursor(context.Request.Query, out var cursor, out var findingsOnly, out var findingCode);
+        var cursorResult = ParseCursor(context.Request.Query, out var cursor, out var findingsOnly, out var findingCode, out var target);
         if (cursorResult is not null) return cursorResult;
 
         bool permitted;
@@ -159,6 +160,8 @@ public static class NationalInspectionRollupEndpoint
                     OR (@finding_code='OBSERVATION_INTEGRITY_INVALID' AND observation_integrity_invalid_note_count > 0)
                     OR (@finding_code='INSPECTION_AUDIT_EVIDENCE_INVALID' AND inspection_audit_evidence_invalid_note_count > 0)
                     OR (@finding_code='SOURCE_OBSERVATION_NOT_COMPARABLE' AND source_observation_not_comparable_note_count > 0))
+                  AND (@target_program_id::text IS NULL OR program_id=@target_program_id::text)
+                  AND (@target_national_version::integer IS NULL OR national_version=@target_national_version::integer)
                 ORDER BY program_id DESC,national_version DESC
                 LIMIT 21
                 """;
@@ -170,6 +173,10 @@ public static class NationalInspectionRollupEndpoint
             command.Parameters.Add("findings_only", NpgsqlDbType.Boolean).Value = findingsOnly;
             command.Parameters.Add("finding_code", NpgsqlDbType.Text).Value =
                 findingCode is null ? DBNull.Value : findingCode;
+            command.Parameters.Add("target_program_id", NpgsqlDbType.Text).Value =
+                target is null ? DBNull.Value : target.ProgramId;
+            command.Parameters.Add("target_national_version", NpgsqlDbType.Integer).Value =
+                target is null ? DBNull.Value : target.NationalVersion;
 
             var rows = new List<Row>(PageSize + 1);
             await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
@@ -215,11 +222,13 @@ public static class NationalInspectionRollupEndpoint
     }
 
     private static IResult? ParseCursor(
-        IQueryCollection query, out Cursor? cursor, out bool findingsOnly, out string? findingCode)
+        IQueryCollection query, out Cursor? cursor, out bool findingsOnly, out string? findingCode,
+        out Target? target)
     {
         cursor = null;
         findingsOnly = false;
         findingCode = null;
+        target = null;
         var hasFindingsOnly = query.ContainsKey("findingsOnly");
         if (hasFindingsOnly)
         {
@@ -238,10 +247,28 @@ public static class NationalInspectionRollupEndpoint
             if (hasFindingsOnly && !findingsOnly) return Results.BadRequest();
         }
 
+        var hasTargetProgram = query.ContainsKey("targetProgramId");
+        var hasTargetVersion = query.ContainsKey("targetNationalVersion");
+        if (hasTargetProgram != hasTargetVersion) return Results.BadRequest();
+        if (hasTargetProgram)
+        {
+            if (query["targetProgramId"].Count != 1 || query["targetNationalVersion"].Count != 1)
+                return Results.BadRequest();
+            var targetProgramId = query["targetProgramId"].ToString();
+            var rawTargetVersion = query["targetNationalVersion"].ToString();
+            if (string.IsNullOrWhiteSpace(targetProgramId) || targetProgramId != targetProgramId.Trim() ||
+                targetProgramId.Length > 256 || targetProgramId.Any(char.IsControl) ||
+                !int.TryParse(rawTargetVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var targetVersion) ||
+                targetVersion <= 0 || rawTargetVersion != targetVersion.ToString(CultureInfo.InvariantCulture))
+                return Results.BadRequest();
+            target = new Target(targetProgramId, targetVersion);
+        }
+
         var hasProgram = query.ContainsKey("beforeProgramId");
         var hasVersion = query.ContainsKey("beforeNationalVersion");
-        if (hasProgram != hasVersion) return Results.BadRequest();
-        var expectedParameters = (hasFindingsOnly ? 1 : 0) + (hasFindingCode ? 1 : 0) + (hasProgram ? 2 : 0);
+        if (hasProgram != hasVersion || (hasProgram && hasTargetProgram)) return Results.BadRequest();
+        var expectedParameters = (hasFindingsOnly ? 1 : 0) + (hasFindingCode ? 1 : 0) +
+            (hasProgram ? 2 : 0) + (hasTargetProgram ? 2 : 0);
         if (query.Count != expectedParameters) return Results.BadRequest();
         if (!hasProgram) return null;
         if (query["beforeProgramId"].Count != 1 ||
