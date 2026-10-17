@@ -167,7 +167,7 @@ test('exact-version dossier CSV verifies schema, row count and SHA-256 before do
  await page.getByRole('button',{name:'نمایش پرونده فنی'}).click();const dossier=page.locator('section[aria-labelledby="inspection-dossier-title"]');
  const downloadPromise=page.waitForEvent('download');await dossier.getByRole('button',{name:'دانلود CSV پروندهٔ فنی'}).click();
  const download=await downloadPromise;expect(download.suggestedFilename()).toBe('national-inspection-dossier.csv');expect(requested).not.toBeNull();
- await expect(dossier.getByRole('status')).toContainText('شامل ۱ یادداشت فنی');
+ await expect(dossier.getByText(/پروندهٔ دقیق شامل ۱ یادداشت فنی است/)).toBeVisible();
 });
 test('dossier CSV refuses corrupt digest and over-limit partial exports',async({page})=>{
  let mode='digest';let downloads=0;page.on('download',()=>downloads++);
