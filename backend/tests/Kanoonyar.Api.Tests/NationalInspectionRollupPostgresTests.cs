@@ -546,15 +546,6 @@ public sealed class NationalInspectionRollupPostgresTests
                     .ToLowerInvariant(),
                 exportContext.Response.Headers["X-National-Inspection-Export-SHA256"].ToString());
 
-            await SeedCsvLimitGroups(AdminUrl);
-            var overLimitContext = new DefaultHttpContext();
-            overLimitContext.Request.QueryString = new QueryString(
-                "?findingsOnly=true&findingCode=OUTBOX_EVIDENCE_INVALID");
-            var overLimit = await NationalInspectionRollupEndpoint.ExportCsv(overLimitContext, Actor(),
-                configuration, new TestOnlyAllowAuthorization(), CancellationToken.None);
-            var overLimitProblem = Assert.IsType<ProblemHttpResult>(overLimit);
-            Assert.Equal(413, overLimitProblem.StatusCode);
-
             var filtered = new List<JsonElement>();
             string? filterBeforeId = null;
             int? filterBeforeVersion = null;
@@ -602,6 +593,17 @@ public sealed class NationalInspectionRollupPostgresTests
                 Assert.Equal(1, row.GetProperty("inspectionAuditEvidenceInvalidNoteCount").GetInt64()));
             Assert.DoesNotContain(filtered, x =>
                 x.GetProperty("programId").GetString() == prefix + "-01");
+
+            // Keep this large fixture last: it exists only to prove the export
+            // cap and makes full-view filtered scans needlessly expensive.
+            await SeedCsvLimitGroups(AdminUrl);
+            var overLimitContext = new DefaultHttpContext();
+            overLimitContext.Request.QueryString = new QueryString(
+                "?findingsOnly=true&findingCode=OUTBOX_EVIDENCE_INVALID");
+            var overLimit = await NationalInspectionRollupEndpoint.ExportCsv(overLimitContext, Actor(),
+                configuration, new TestOnlyAllowAuthorization(), CancellationToken.None);
+            var overLimitProblem = Assert.IsType<ProblemHttpResult>(overLimit);
+            Assert.Equal(413, overLimitProblem.StatusCode);
         }
         finally
         {
