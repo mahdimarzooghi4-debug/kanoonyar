@@ -64,6 +64,7 @@ GET /api/v1/centers/{centerId}/site/templates
 GET /api/v1/centers/{centerId}/site/templates/{templateId:guid}/revisions
 GET /api/v1/headquarters/national-issuance/review-rollup
 GET /api/v1/headquarters/national-issuance/review-rollup/export.csv
+GET /api/v1/headquarters/national-issuance/review-dossier
 GET /api/v1/identity/center-memberships
 GET /api/v1/identity/me
 POST /api/v1/centers/{centerId}/activity-reports/sourced
@@ -134,7 +135,7 @@ POST /api/v1/centers/{centerId}/site/templates/revisions
         Assert.Equal(expected.Concat(new[] { "GET /api/v1/programs/published",
             "GET /api/v1/programs/published/version" })
             .OrderBy(x => x, StringComparer.Ordinal), actual);
-        Assert.Equal(expected.Length + 2, endpoints.Length);
+        Assert.Equal(expected.Length + 3, endpoints.Length);
 
         foreach (var endpoint in endpoints)
         {
@@ -168,6 +169,8 @@ POST /api/v1/centers/{centerId}/site/templates/revisions
             services.GetRequiredService<ILocalPlanDraftReadAuthorization>());
         Assert.IsType<UnapprovedLocalPlanDraftWriteAuthorization>(
             services.GetRequiredService<ILocalPlanDraftWriteAuthorization>());
+        Assert.IsType<UnapprovedNationalInspectionDossierReadAuthorization>(
+            services.GetRequiredService<INationalInspectionDossierReadAuthorization>());
     }
 
     [Fact]
