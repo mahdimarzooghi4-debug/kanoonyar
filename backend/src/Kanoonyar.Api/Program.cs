@@ -41,6 +41,7 @@ if (oidcConfigured)
     app.UseAuthentication();
     app.UseAuthorization();
     app.MapGet("/api/v1/identity/me", AuthenticatedSubjectEndpoint.GetSubject).RequireAuthorization();
+    app.MapGet("/api/v1/headquarters/national-issuance/review-rollup/export.csv", NationalInspectionRollupEndpoint.ExportCsv).RequireAuthorization();
     app.MapGet("/api/v1/headquarters/national-issuance/review-rollup", NationalInspectionRollupEndpoint.List).RequireAuthorization();
     app.MapGet("/api/v1/identity/center-memberships", CenterMembershipEndpoint.GetMine).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/evidence-register", CenterCampaignEvidenceRegisterEndpoint.Get).RequireAuthorization();

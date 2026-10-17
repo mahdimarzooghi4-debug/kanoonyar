@@ -55,42 +55,6 @@ const findingCodes=[
  ['INSPECTION_AUDIT_EVIDENCE_INVALID','شواهد Audit بازرسی'],
  ['SOURCE_OBSERVATION_NOT_COMPARABLE','عدم‌مقایسه‌پذیری مشاهده']
 ] as const;
-const maxExportRows=10000,maxExportPages=500;
-const exportColumns=[
- ['programId','شناسه برنامه'],
- ['nationalVersion','نسخه ملی'],
- ['reviewRequestCount','درخواست'],
- ['requestsWithoutInspectionCount','بدون بازرسی'],
- ['requestsWithInspectionCount','با بازرسی'],
- ['inspectionNoteCount','یادداشت بازرسی'],
- ['integrityConsistentNoteCount','یکپارچگی سازگار'],
- ['integrityInconsistentNoteCount','یکپارچگی ناسازگار'],
- ['sourceComparisonUnavailableNoteCount','مقایسه ناموجود'],
- ['currentSourceMatchNoteCount','منبع منطبق'],
- ['currentSourceDriftNoteCount','منبع متغیر'],
- ['sourceFreshnessUnclassifiedNoteCount','تازگی نامشخص'],
- ['sourceSnapshotDigestInvalidRequestCount','Digest نامعتبر درخواست'],
- ['sourceEnvelopeInvalidRequestCount','ساختار نامعتبر درخواست'],
- ['centerSelectionMismatchRequestCount','عدم تطبیق انتخاب کانون'],
- ['authorityFlagsNotClearRequestCount','پرچم اختیار نامشخص'],
- ['auditEvidenceInvalidRequestCount','شواهد Audit نامعتبر درخواست'],
- ['outboxEvidenceInvalidRequestCount','شواهد Outbox نامعتبر درخواست'],
- ['originalRequestIntegrityInvalidNoteCount','یکپارچگی درخواست اصلی نامعتبر'],
- ['observationIntegrityInvalidNoteCount','یکپارچگی مشاهده نامعتبر'],
- ['inspectionAuditEvidenceInvalidNoteCount','شواهد Audit بازرسی نامعتبر'],
- ['sourceObservationNotComparableNoteCount','مشاهده غیرقابل‌مقایسه'],
- ['latestTechnicalObservationAt','آخرین مشاهده فنی']
-] as const;
-function csvCell(value:unknown):string{
- let text=String(value??'');
- if(/^[\u0000-\u0020]*[=+\-@]/.test(text))text="'"+text;
- return '"'+text.replaceAll('"','""')+'"';
-}
-function toCsv(rows:Row[]):string{
- const lines=[exportColumns.map(([,label])=>csvCell(label)).join(',')];
- for(const row of rows)lines.push(exportColumns.map(([key])=>csvCell(row[key])).join(','));
- return '\uFEFF'+lines.join('\r\n')+'\r\n';
-}
 export function NationalInspectionRollupWorkbench(){
  const [s,setS]=useState<State>(initial),[reload,setReload]=useState(0),[opened,setOpened]=useState(false),[findingsOnly,setFindingsOnly]=useState(false),[findingCode,setFindingCode]=useState('');
  const [targetProgramInput,setTargetProgramInput]=useState(''),[targetVersionInput,setTargetVersionInput]=useState(''),[target,setTarget]=useState<Target|null>(null),[targetError,setTargetError]=useState('');
@@ -99,29 +63,28 @@ export function NationalInspectionRollupWorkbench(){
  async function exportAll(){
   if(!opened||s.status!=='ready'||exporting)return;
   setExporting(true);setExportError('');setExportStatus('');
-  const controller=new AbortController(),all:Row[]=[],seen=new Set<string>(),cursors=new Set<string>();
-  let cursor:Cursor|null=null,pageCount=0;
   try{
-   while(true){
-    pageCount++;
-    if(pageCount>maxExportPages)throw Error('تعداد صفحات خروجی از سقف امن بیشتر است؛ فیلترهای دقیق‌تری انتخاب کنید.');
-    const page=await read(cursor,controller.signal,findingsOnly,findingCode,target);
-    for(const row of page.rollups){
-     const key=JSON.stringify([row.programId,row.nationalVersion]);
-     if(seen.has(key))throw Error('خروجی به‌دلیل تکراری بودن گروه‌ها متوقف شد؛ فایل ساخته نشد.');
-     seen.add(key);all.push(row);
-     if(all.length>maxExportRows)throw Error('حجم خروجی از سقف امن بیشتر است؛ فیلترهای دقیق‌تری انتخاب کنید.');
-    }
-    if(!page.nextCursor)break;
-    const cursorKey=JSON.stringify([page.nextCursor.beforeProgramId,page.nextCursor.beforeNationalVersion]);
-    if(cursors.has(cursorKey))throw Error('صفحه‌بندی خروجی معتبر نیست؛ فایل ساخته نشد.');
-    cursors.add(cursorKey);cursor=page.nextCursor;
-   }
-   const blob=new Blob([toCsv(all)],{type:'text/csv;charset=utf-8'});
+   const params=new URLSearchParams();
+   if(findingsOnly)params.set('findingsOnly','true');
+   if(findingCode)params.set('findingCode',findingCode);
+   if(target){params.set('targetProgramId',target.programId);params.set('targetNationalVersion',String(target.nationalVersion));}
+   const encoded=params.toString(),query=encoded?'?'+encoded:'';
+   const response=await fetch('/api/v1/headquarters/national-issuance/review-rollup/export.csv'+query,
+    {cache:'no-store',credentials:'same-origin',headers:{Accept:'text/csv'}});
+   if(response.status===401)throw Error('برای دریافت این فایل، ورود سازمانی لازم است.');
+   if(response.status===403)throw Error('دسترسی دریافت فایل پوشش بازرسی در این محیط فعال یا مجاز نیست.');
+   if(response.status===413)throw Error('حجم خروجی از سقف ۱۰٬۰۰۰ گروه بیشتر است؛ فیلتر دقیق‌تری انتخاب کنید.');
+   if(!response.ok)throw Error('فایل کامل پوشش بازرسی فعلاً در دسترس نیست.');
+   const blob=await response.blob();
+   if(!blob.type.toLowerCase().startsWith('text/csv')||blob.size<3)
+    throw Error('پاسخ خروجی CSV معتبر نیست؛ فایلی ساخته نشد.');
+   const signature=new Uint8Array(await blob.slice(0,3).arrayBuffer());
+   if(signature[0]!==0xef||signature[1]!==0xbb||signature[2]!==0xbf)
+    throw Error('فایل CSV فاقد نشان UTF-8 معتبر است؛ فایلی ساخته نشد.');
    const url=URL.createObjectURL(blob),anchor=document.createElement('a');
    anchor.href=url;anchor.download='national-inspection-rollup.csv';anchor.style.display='none';
    document.body.appendChild(anchor);anchor.click();anchor.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
-   setExportStatus('فایل CSV شامل '+n(all.length)+' ردیف تجمیعی آماده شد.');
+   setExportStatus('فایل CSV کامل و تجمیعی آماده شد.');
   }catch(e){
    setExportError(e instanceof Error?e.message:'خروجی کامل ساخته نشد؛ دوباره تلاش کنید.');
   }finally{setExporting(false);}
@@ -158,7 +121,7 @@ export function NationalInspectionRollupWorkbench(){
     </select>
    </label></>}
   {s.status==='ready'&&<div><button type="button" disabled={exporting} onClick={()=>void exportAll()}>{exporting?'در حال آماده‌سازی CSV…':'دانلود CSV تجمیعی'}</button>
-   {exporting&&<p role="status">همه صفحات مطابق فیلترها اعتبارسنجی می‌شوند؛ دانلود تا پایان کامل انجام نمی‌شود.</p>}
+   {exporting&&<p role="status">فایل در یک خواندن سازگار از پایگاه داده ساخته می‌شود؛ تا تکمیل اعتبارسنجی دانلود آغاز نمی‌شود.</p>}
    {exportError&&<p role="alert">{exportError}</p>}{exportStatus&&<p role="status">{exportStatus}</p>}
   </div>}
   {s.status==='loading'&&<p role="status">در حال دریافت خلاصه پوشش…</p>}
