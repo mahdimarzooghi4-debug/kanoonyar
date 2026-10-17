@@ -4,8 +4,8 @@ type Target={programId:string;nationalVersion:number};
 type DossierCursor={beforeInspectedAt:string;beforeNoteId:string};
 type Inspection={requestId:string;noteId:string;inspectedAt:string;sourceChangedSinceRequest:boolean;originalRequestIntegrityValid:boolean;observationIntegrityValid:boolean;auditAndOutboxIntegrityValid:boolean;currentSourceMatchesObservation:boolean;publicationStateChanged:boolean|null;centerRegistryChangeCount:number|null;exactIssuanceChangeCount:number|null;sourceObservationComparable:boolean|null;humanReviewRecorded:false;issuanceAuthorized:false;issuanceExecuted:false};
 type DossierPage={inspections:Inspection[];nextCursor:DossierCursor|null};
-type DossierState={open:boolean;target:Target|null;status:'idle'|'loading'|'ready'|'error';error:string;pages:DossierPage[];index:number};
-const closedDossier:DossierState={open:false,target:null,status:'idle',error:'',pages:[],index:0};
+type DossierState={open:boolean;target:Target|null;findingsOnly:boolean;findingCode:string;status:'idle'|'loading'|'ready'|'error';error:string;pages:DossierPage[];index:number};
+const closedDossier:DossierState={open:false,target:null,findingsOnly:false,findingCode:'',status:'idle',error:'',pages:[],index:0};
 type Row={rollupContractVersion:'S90_NATIONAL_INSPECTION_ROLLUP_V2';programId:string;nationalVersion:number;reviewRequestCount:number;requestsWithoutInspectionCount:number;requestsWithInspectionCount:number;inspectionNoteCount:number;integrityConsistentNoteCount:number;integrityInconsistentNoteCount:number;sourceComparisonUnavailableNoteCount:number;currentSourceMatchNoteCount:number;currentSourceDriftNoteCount:number;sourceFreshnessUnclassifiedNoteCount:number;sourceSnapshotDigestInvalidRequestCount:number;sourceEnvelopeInvalidRequestCount:number;centerSelectionMismatchRequestCount:number;authorityFlagsNotClearRequestCount:number;auditEvidenceInvalidRequestCount:number;outboxEvidenceInvalidRequestCount:number;originalRequestIntegrityInvalidNoteCount:number;observationIntegrityInvalidNoteCount:number;inspectionAuditEvidenceInvalidNoteCount:number;sourceObservationNotComparableNoteCount:number;latestTechnicalObservationAt:string|null;humanReviewRecorded:false;issuanceAuthorized:false;issuanceExecuted:false};
 type Page={rollups:Row[];nextCursor:Cursor|null};
 type State={status:'loading'|'ready'|'error';error:string;pages:Page[];index:number};
@@ -47,10 +47,10 @@ async function read(cursor:Cursor|null,signal:AbortSignal,findingsOnly:boolean,f
  if(!response.ok)throw Error('خلاصه پوشش بازرسی فعلاً در دسترس نیست.');
  const parsed=parsePage(await response.json());if(!parsed)throw Error('پاسخ پوشش بازرسی با قرارداد فنی سازگار نیست.');return parsed;
 }
-function parseDossierPage(value:unknown,target:Target):DossierPage|null{
+function parseDossierPage(value:unknown,target:Target,findingsOnly:boolean,findingCode:string):DossierPage|null{
  if(!value||typeof value!=='object')return null;
  const root=value as Record<string,unknown>;
- if(root.contractVersion!=='S101_NATIONAL_INSPECTION_DOSSIER_V1'||root.programId!==target.programId||root.nationalVersion!==target.nationalVersion||!Array.isArray(root.inspections)||root.inspections.length>50)return null;
+ if(root.contractVersion!=='S104_NATIONAL_INSPECTION_DOSSIER_V2'||root.programId!==target.programId||root.nationalVersion!==target.nationalVersion||root.findingsOnly!==findingsOnly||root.findingCode!==(findingCode||null)||!Array.isArray(root.inspections)||root.inspections.length>50)return null;
  const rows:Inspection[]=[],seen=new Set<string>();
  for(const raw of root.inspections){
   if(!raw||typeof raw!=='object')return null;
@@ -74,14 +74,15 @@ function parseDossierPage(value:unknown,target:Target):DossierPage|null{
  }
  return {inspections:rows,nextCursor:next};
 }
-async function readDossier(target:Target,cursor:DossierCursor|null):Promise<DossierPage>{
+async function readDossier(target:Target,cursor:DossierCursor|null,findingsOnly:boolean,findingCode:string):Promise<DossierPage>{
  const params=new URLSearchParams({programId:target.programId,nationalVersion:String(target.nationalVersion)});
  if(cursor){params.set('beforeInspectedAt',cursor.beforeInspectedAt);params.set('beforeNoteId',cursor.beforeNoteId);}
+ if(findingsOnly)params.set('findingsOnly','true');if(findingCode)params.set('findingCode',findingCode);
  const response=await fetch('/api/v1/headquarters/national-issuance/review-dossier?'+params.toString(),{cache:'no-store',credentials:'same-origin'});
  if(response.status===401)throw Error('برای مشاهده پرونده فنی، ورود سازمانی لازم است.');
  if(response.status===403)throw Error('دسترسی پرونده فنی در این محیط فعال یا مجاز نیست.');
  if(!response.ok)throw Error('پرونده فنی این نسخه فعلاً در دسترس نیست.');
- const parsed=parseDossierPage(await response.json(),target);if(!parsed)throw Error('پاسخ پرونده فنی با قرارداد بازرسی سازگار نیست.');return parsed;
+ const parsed=parseDossierPage(await response.json(),target,findingsOnly,findingCode);if(!parsed)throw Error('پاسخ پرونده فنی با قرارداد بازرسی سازگار نیست.');return parsed;
 }
 const n=(v:number)=>new Intl.NumberFormat('fa-IR').format(v);
 const findingCodes=[
@@ -99,6 +100,12 @@ const findingCodes=[
 const csvSchema='S100_NATIONAL_INSPECTION_CSV_SCHEMA_V1';
 const csvHeader=['شناسه برنامه','نسخه ملی','درخواست','بدون بازرسی','با بازرسی','یادداشت بازرسی','یکپارچگی سازگار','یکپارچگی ناسازگار','مقایسه ناموجود','منبع منطبق','منبع متغیر','تازگی نامشخص','Digest نامعتبر درخواست','ساختار نامعتبر درخواست','عدم تطبیق انتخاب کانون','پرچم اختیار نامشخص','شواهد Audit نامعتبر درخواست','شواهد Outbox نامعتبر درخواست','یکپارچگی درخواست اصلی نامعتبر','یکپارچگی مشاهده نامعتبر','شواهد Audit بازرسی نامعتبر','مشاهده غیرقابل‌مقایسه','آخرین مشاهده فنی'];
 const dossierCsvSchema='S103_NATIONAL_INSPECTION_DOSSIER_CSV_V1';
+const dossierFindingCodes=[
+ ['ORIGINAL_REQUEST_INTEGRITY_INVALID','یکپارچگی درخواست اصلی'],
+ ['OBSERVATION_INTEGRITY_INVALID','یکپارچگی مشاهده'],
+ ['INSPECTION_AUDIT_EVIDENCE_INVALID','شواهد Audit بازرسی'],
+ ['SOURCE_OBSERVATION_NOT_COMPARABLE','عدم‌مقایسه‌پذیری مشاهده']
+] as const;
 const dossierCsvHeader=['program_id','national_version','request_id','note_id','inspected_at','source_changed_since_request','original_request_integrity_valid','observation_integrity_valid','audit_and_outbox_integrity_valid','current_source_matches_observation','publication_state_changed','center_registry_change_count','exact_issuance_change_count','source_observation_comparable','human_review_recorded','issuance_authorized','issuance_executed'];
 function inspectCsv(text:string,expectedHeader:readonly string[]=csvHeader):number{
  if(!text.startsWith('\uFEFF'))throw Error('فایل CSV فاقد نشان UTF-8 معتبر است؛ فایلی ساخته نشد.');
@@ -129,17 +136,17 @@ export function NationalInspectionRollupWorkbench(){
  const [exportingDossier,setExportingDossier]=useState(false),[dossierExportError,setDossierExportError]=useState(''),[dossierExportStatus,setDossierExportStatus]=useState('');
  const [dossier,setDossier]=useState<DossierState>(closedDossier),dossierRequest=useRef(0);
  useEffect(()=>{if(!opened)return;const c=new AbortController();setS(initial);void read(null,c.signal,findingsOnly,findingCode,target).then(p=>{if(!c.signal.aborted)setS({status:'ready',error:'',pages:[p],index:0});}).catch(e=>{if(!c.signal.aborted)setS({status:'error',error:e instanceof Error?e.message:'خلاصه پوشش بازرسی فعلاً در دسترس نیست.',pages:[],index:0});});return()=>c.abort();},[reload,opened,findingsOnly,findingCode,target]);
- async function showDossier(selected:Target){
-  const request=++dossierRequest.current;setDossier({open:true,target:selected,status:'loading',error:'',pages:[],index:0});
-  try{const p=await readDossier(selected,null);if(request===dossierRequest.current)setDossier({open:true,target:selected,status:'ready',error:'',pages:[p],index:0});}
-  catch(e){if(request===dossierRequest.current)setDossier({open:true,target:selected,status:'error',error:e instanceof Error?e.message:'پرونده فنی در دسترس نیست.',pages:[],index:0});}
+ async function showDossier(selected:Target,findingsOnly=false,findingCode=''){
+  const request=++dossierRequest.current;setDossier({open:true,target:selected,findingsOnly,findingCode,status:'loading',error:'',pages:[],index:0});
+  try{const p=await readDossier(selected,null,findingsOnly,findingCode);if(request===dossierRequest.current)setDossier({open:true,target:selected,findingsOnly,findingCode,status:'ready',error:'',pages:[p],index:0});}
+  catch(e){if(request===dossierRequest.current)setDossier({open:true,target:selected,findingsOnly,findingCode,status:'error',error:e instanceof Error?e.message:'پرونده فنی در دسترس نیست.',pages:[],index:0});}
  }
  function closeDossier(){dossierRequest.current++;setDossier(closedDossier);}
  async function nextDossier(){
   const current=dossier.pages[dossier.index];if(!dossier.target||!current?.nextCursor||dossier.status==='loading')return;
   if(dossier.pages[dossier.index+1]){setDossier({...dossier,index:dossier.index+1,status:'ready'});return;}
   const request=++dossierRequest.current;setDossier({...dossier,status:'loading',error:''});
-  try{const next=await readDossier(dossier.target,current.nextCursor);
+  try{const next=await readDossier(dossier.target,current.nextCursor,dossier.findingsOnly,dossier.findingCode);
    const prior=new Set(dossier.pages.flatMap(page=>page.inspections.map(row=>row.noteId)));
    if(next.inspections.some(row=>prior.has(row.noteId)))throw Error('صفحهٔ بعدی پروندهٔ فنی تکراری یا نامعتبر است.');
    if(request===dossierRequest.current)setDossier({...dossier,status:'ready',error:'',pages:[...dossier.pages,next],index:dossier.index+1});
@@ -276,12 +283,21 @@ export function NationalInspectionRollupWorkbench(){
   {dossier.open&&dossier.target&&<section aria-labelledby="inspection-dossier-title" style={{marginTop:'1.5rem',padding:'1rem',border:'1px solid #bbb'}}>
    <h3 id="inspection-dossier-title">پروندهٔ فنی یادداشت‌های بازرسی — {dossier.target.programId} / {n(dossier.target.nationalVersion)}</h3>
    <p>فقط شناسه و وضعیت فنیِ شواهد نمایش داده می‌شود. این پرونده بررسی انسانی، مجوز یا صدور ابلاغ را ثبت نمی‌کند.</p>
+   <label>فیلتر یادداشت‌های فنی
+    <select aria-label="فیلتر پرونده فنی" value={dossier.findingCode|| (dossier.findingsOnly?'*':'')} disabled={dossier.status==='loading'} onChange={event=>{
+     const choice=event.target.value;void showDossier(dossier.target!,choice!=='' ,choice==='*'?'':choice);
+    }}>
+     <option value="">همهٔ یادداشت‌ها</option><option value="*">فقط یادداشت‌های دارای کد فنی</option>
+     {dossierFindingCodes.map(([code,label])=><option key={code} value={code}>{code} — {label}</option>)}
+    </select>
+   </label>
+   {dossier.findingsOnly&&<p>فیلتر فقط کدهای فنیِ موجود را محدود می‌کند؛ آن‌ها تصمیم، مجوز یا وضعیت صدور نیستند. CSV همچنان کل پروندهٔ نسخه را دربرمی‌گیرد.</p>}
    <button type="button" onClick={closeDossier}>بستن پرونده فنی</button>
    <button type="button" disabled={exportingDossier} onClick={()=>void exportDossier()}>{exportingDossier?'در حال اعتبارسنجی CSV پرونده…':'دانلود CSV پروندهٔ فنی'}</button>
    {exportingDossier&&<p role="status">خروجی نسخهٔ دقیق تا تطبیق طرح‌واره، تعداد ردیف‌ها و اثرانگشت دانلود نمی‌شود.</p>}
    {dossierExportError&&<p role="alert">{dossierExportError}</p>}{dossierExportStatus&&<p role="status">{dossierExportStatus}</p>}
    {dossier.status==='loading'&&<p role="status">در حال دریافت پروندهٔ فنی…</p>}
-   {dossier.status==='error'&&<div role="alert"><p>{dossier.error}</p><button type="button" onClick={()=>void showDossier(dossier.target!)}>تلاش دوباره</button></div>}
+   {dossier.status==='error'&&<div role="alert"><p>{dossier.error}</p><button type="button" onClick={()=>void showDossier(dossier.target!,dossier.findingsOnly,dossier.findingCode)}>تلاش دوباره</button></div>}
    {dossier.status==='ready'&&(()=>{const current=dossier.pages[dossier.index];return <>
     {current.inspections.length===0?<p role="status">یادداشت فنی بازرسی برای این نسخه ثبت نشده است.</p>:<div style={{overflowX:'auto'}}><table><caption>شواهد فنیِ صفحهٔ جاری؛ بدون متن یادداشت و شناسهٔ کانون</caption><thead><tr><th>زمان بازرسی</th><th>شناسه درخواست</th><th>شناسه یادداشت</th><th>تغییر منبع</th><th>یکپارچگی درخواست</th><th>یکپارچگی مشاهده</th><th>Audit / Outbox</th><th>تغییر پس از مشاهده</th><th>رجیستری / ابلاغ</th><th>مقایسه‌پذیری</th><th>وضعیت تصمیم</th></tr></thead><tbody>{current.inspections.map(item=><tr key={item.noteId}>
      <td>{new Date(item.inspectedAt).toLocaleString('fa-IR')}</td><td>{item.requestId}</td><td>{item.noteId}</td>

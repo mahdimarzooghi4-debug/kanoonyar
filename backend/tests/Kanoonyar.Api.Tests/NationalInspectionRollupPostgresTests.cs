@@ -276,7 +276,7 @@ public sealed class NationalInspectionRollupPostgresTests
     }
 
     private static async Task<JsonElement> Dossier(IConfiguration configuration, string programId, int version,
-        string? beforeInspectedAt = null, Guid? beforeNoteId = null)
+        string? beforeInspectedAt = null, Guid? beforeNoteId = null, string? findingCode = null)
     {
         var context = new DefaultHttpContext();
         var query = new List<KeyValuePair<string,string?>>
@@ -288,6 +288,11 @@ public sealed class NationalInspectionRollupPostgresTests
         {
             query.Add(new("beforeInspectedAt", beforeInspectedAt));
             query.Add(new("beforeNoteId", beforeNoteId.Value.ToString("D")));
+        }
+        if (findingCode is not null)
+        {
+            query.Add(new("findingsOnly", "true"));
+            query.Add(new("findingCode", findingCode));
         }
         context.Request.QueryString = QueryString.Create(query);
         var result = await NationalInspectionDossierEndpoint.List(context, Actor(), configuration,
@@ -425,7 +430,7 @@ public sealed class NationalInspectionRollupPostgresTests
 
             await SeedAdditionalInspectionNotes(AdminUrl, prefix + "-01", 50);
             var dossierFirst = await Dossier(configuration, prefix + "-01", 1);
-            Assert.Equal("S101_NATIONAL_INSPECTION_DOSSIER_V1",
+            Assert.Equal("S104_NATIONAL_INSPECTION_DOSSIER_V2",
                 dossierFirst.GetProperty("contractVersion").GetString());
             var dossierRows = dossierFirst.GetProperty("inspections").EnumerateArray().ToArray();
             Assert.Equal(50, dossierRows.Length);
@@ -457,6 +462,13 @@ public sealed class NationalInspectionRollupPostgresTests
             Assert.Equal(JsonValueKind.Null, dossierSecond.GetProperty("nextCursor").ValueKind);
             Assert.DoesNotContain(lastDossierRows[0].GetProperty("noteId").GetGuid(),
                 dossierRows.Select(row => row.GetProperty("noteId").GetGuid()));
+
+            var filteredDossier = await Dossier(configuration, prefix + "-02", 1,
+                findingCode: "INSPECTION_AUDIT_EVIDENCE_INVALID");
+            Assert.True(filteredDossier.GetProperty("findingsOnly").GetBoolean());
+            Assert.Equal("INSPECTION_AUDIT_EVIDENCE_INVALID",
+                filteredDossier.GetProperty("findingCode").GetString());
+            Assert.Single(filteredDossier.GetProperty("inspections").EnumerateArray());
 
             var dossierExportContext = new DefaultHttpContext();
             dossierExportContext.Request.QueryString = new QueryString(

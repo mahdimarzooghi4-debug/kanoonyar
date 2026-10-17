@@ -14,6 +14,13 @@ public static class NationalInspectionDossierEndpoint
 {
     private const int PageSize = 50;
     private const int MaximumCsvRows = 10_000;
+    private static readonly HashSet<string> FindingCodes = new(StringComparer.Ordinal)
+    {
+        "ORIGINAL_REQUEST_INTEGRITY_INVALID",
+        "OBSERVATION_INTEGRITY_INVALID",
+        "INSPECTION_AUDIT_EVIDENCE_INVALID",
+        "SOURCE_OBSERVATION_NOT_COMPARABLE"
+    };
     private sealed record Cursor(DateTimeOffset InspectedAt, Guid NoteId);
     private sealed record Target(string ProgramId, int NationalVersion);
 
@@ -77,10 +84,27 @@ public static class NationalInspectionDossierEndpoint
             return Results.BadRequest();
         var target = new Target(programId, version);
 
+        var findingsOnly = false;
+        if (query.ContainsKey("findingsOnly"))
+        {
+            if (query["findingsOnly"].Count != 1 || query["findingsOnly"] != "true")
+                return Results.BadRequest();
+            findingsOnly = true;
+        }
+        string? findingCode = null;
+        if (query.ContainsKey("findingCode"))
+        {
+            if (query["findingCode"].Count != 1 || !FindingCodes.Contains(query["findingCode"].ToString()))
+                return Results.BadRequest();
+            findingCode = query["findingCode"].ToString();
+            findingsOnly = true;
+        }
+
         var hasBeforeAt = query.ContainsKey("beforeInspectedAt");
         var hasBeforeId = query.ContainsKey("beforeNoteId");
-        if (hasBeforeAt != hasBeforeId || (exportCsv && hasBeforeAt) ||
-            query.Count != 2 + (hasBeforeAt ? 2 : 0))
+        if (hasBeforeAt != hasBeforeId || (exportCsv && (hasBeforeAt || findingsOnly)) ||
+            query.Count != 2 + (hasBeforeAt ? 2 : 0) + (query.ContainsKey("findingsOnly") ? 1 : 0) +
+                (query.ContainsKey("findingCode") ? 1 : 0))
             return Results.BadRequest();
 
         Cursor? cursor = null;
@@ -107,8 +131,8 @@ public static class NationalInspectionDossierEndpoint
                         NationalInspectionReadOperation.InspectionDossierPage,
                     target.ProgramId,
                     target.NationalVersion,
-                    FindingsOnly: false,
-                    FindingCode: null),
+                    FindingsOnly: findingsOnly,
+                    FindingCode: findingCode),
                 cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -147,15 +171,22 @@ public static class NationalInspectionDossierEndpoint
                   publication_state_changed,center_registry_change_count,
                   exact_issuance_change_count,source_observation_comparable,
                   human_review_recorded,issuance_authorized,issuance_executed
-                FROM programs.national_issuance_review_inspection_dossier
-                WHERE program_id=@program_id AND national_version=@national_version
+                FROM programs.national_issuance_review_inspection_dossier d
+                WHERE d.program_id=@program_id AND d.national_version=@national_version
+                  AND (@findings_only = false OR EXISTS (
+                    SELECT 1 FROM programs.national_issuance_review_inspection_findings f
+                    WHERE f.program_id=d.program_id AND f.national_version=d.national_version
+                      AND f.note_id=d.note_id AND (@finding_code::text IS NULL OR f.finding_code=@finding_code)))
                   AND (@before_at::timestamptz IS NULL
-                    OR (inspection_recorded_at,note_id)<(@before_at::timestamptz,@before_note_id::uuid))
-                ORDER BY inspection_recorded_at DESC,note_id DESC
+                    OR (d.inspection_recorded_at,d.note_id)<(@before_at::timestamptz,@before_note_id::uuid))
+                ORDER BY d.inspection_recorded_at DESC,d.note_id DESC
                 LIMIT @row_limit
                 """, connection, transaction);
             command.Parameters.Add("program_id", NpgsqlDbType.Text).Value = target.ProgramId;
             command.Parameters.Add("national_version", NpgsqlDbType.Integer).Value = target.NationalVersion;
+            command.Parameters.Add("findings_only", NpgsqlDbType.Boolean).Value = findingsOnly;
+            command.Parameters.Add("finding_code", NpgsqlDbType.Text).Value =
+                findingCode is null ? DBNull.Value : findingCode;
             command.Parameters.Add("before_at", NpgsqlDbType.TimestampTz).Value =
                 cursor is null ? DBNull.Value : cursor.InspectedAt;
             command.Parameters.Add("before_note_id", NpgsqlDbType.Uuid).Value =
@@ -206,9 +237,11 @@ public static class NationalInspectionDossierEndpoint
             await transaction.CommitAsync(cancellationToken);
             return Results.Ok(new
             {
-                contractVersion = "S101_NATIONAL_INSPECTION_DOSSIER_V1",
+                contractVersion = "S104_NATIONAL_INSPECTION_DOSSIER_V2",
                 programId = target.ProgramId,
                 nationalVersion = target.NationalVersion,
+                findingsOnly,
+                findingCode,
                 inspections = page,
                 nextCursor = last is null ? null : new
                 {
