@@ -150,6 +150,27 @@ test('technical dossier rejects a match count smaller than its page',async({page
  await expect(dossier.getByRole('alert')).toContainText('با قرارداد بازرسی سازگار نیست');
  await expect(dossier.getByRole('table')).toHaveCount(0);
 });
+test('technical dossier stops pagination when the matching total changes between snapshots',async({page})=>{
+ let calls=0;
+ await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>{
+  calls++;
+  const rows=calls===1?Array.from({length:50},(_,i)=>dossierRow('00000000-0000-0000-0000-'+String(i+1).padStart(12,'0'))):[dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff')];
+  const last=rows[rows.length-1];
+  return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
+   contractVersion:'S106_NATIONAL_INSPECTION_DOSSIER_V4',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,
+   matchingNoteCount:calls===1?51:52,inspections:rows,
+   nextCursor:calls===1?{beforeInspectedAt:last.inspectedAt,beforeNoteId:last.noteId}:null
+  })});
+ });
+ await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('dossier-program',4)],nextCursor:null})}));
+ await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await page.getByRole('button',{name:'نمایش پرونده فنی'}).click();
+ const dossier=page.locator('section[aria-labelledby="inspection-dossier-title"]');
+ await expect(dossier.getByRole('row')).toHaveCount(51);
+ await dossier.getByRole('button',{name:'بعدی'}).click();
+ await expect(dossier.getByRole('alert')).toContainText('تعداد یادداشت‌های منطبق بین صفحه‌ها تغییر کرده است');
+ await expect(dossier.getByRole('table')).toHaveCount(0);
+ expect(calls).toBe(2);
+});
 test('exact-version dossier CSV verifies schema, row count and SHA-256 before download',async({page})=>{
  let requested:URL|null=null;
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('dossier-program',4)],nextCursor:null})}));
