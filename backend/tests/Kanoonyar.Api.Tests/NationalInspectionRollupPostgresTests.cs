@@ -277,8 +277,9 @@ public sealed class NationalInspectionRollupPostgresTests
         return json.RootElement.Clone();
     }
 
-    private static async Task<JsonElement> Dossier(IConfiguration configuration, string programId, int version,
-        string? beforeInspectedAt = null, Guid? beforeNoteId = null, string? findingCode = null)
+    private static async Task<IResult> DossierResult(IConfiguration configuration, string programId, int version,
+        string? beforeInspectedAt = null, Guid? beforeNoteId = null, string? findingCode = null,
+        string? expectedMatchingNoteSetSha256 = null)
     {
         var context = new DefaultHttpContext();
         var query = new List<KeyValuePair<string,string?>>
@@ -296,9 +297,19 @@ public sealed class NationalInspectionRollupPostgresTests
             query.Add(new("findingsOnly", "true"));
             query.Add(new("findingCode", findingCode));
         }
+        if (expectedMatchingNoteSetSha256 is not null)
+            query.Add(new("expectedMatchingNoteSetSha256", expectedMatchingNoteSetSha256));
         context.Request.QueryString = QueryString.Create(query);
-        var result = await NationalInspectionDossierEndpoint.List(context, Actor(), configuration,
+        return await NationalInspectionDossierEndpoint.List(context, Actor(), configuration,
             new TestOnlyAllowAuthorization(), CancellationToken.None);
+    }
+
+    private static async Task<JsonElement> Dossier(IConfiguration configuration, string programId, int version,
+        string? beforeInspectedAt = null, Guid? beforeNoteId = null, string? findingCode = null,
+        string? expectedMatchingNoteSetSha256 = null)
+    {
+        var result = await DossierResult(configuration, programId, version, beforeInspectedAt,
+            beforeNoteId, findingCode, expectedMatchingNoteSetSha256);
         Assert.Equal(200, (result as IStatusCodeHttpResult)?.StatusCode);
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(
             Assert.IsAssignableFrom<IValueHttpResult>(result).Value, JsonOptions));
@@ -432,7 +443,7 @@ public sealed class NationalInspectionRollupPostgresTests
 
             await SeedAdditionalInspectionNotes(AdminUrl, prefix + "-01", 50);
             var dossierFirst = await Dossier(configuration, prefix + "-01", 1);
-            Assert.Equal("S108_NATIONAL_INSPECTION_DOSSIER_V5",
+            Assert.Equal("S109_NATIONAL_INSPECTION_DOSSIER_V6",
                 dossierFirst.GetProperty("contractVersion").GetString());
             var dossierRows = dossierFirst.GetProperty("inspections").EnumerateArray().ToArray();
             Assert.Equal(50, dossierRows.Length);
@@ -459,7 +470,8 @@ public sealed class NationalInspectionRollupPostgresTests
             Assert.NotEqual(JsonValueKind.Null, dossierCursor.ValueKind);
             var dossierSecond = await Dossier(configuration, prefix + "-01", 1,
                 dossierCursor.GetProperty("beforeInspectedAt").GetString(),
-                dossierCursor.GetProperty("beforeNoteId").GetGuid());
+                dossierCursor.GetProperty("beforeNoteId").GetGuid(),
+                expectedMatchingNoteSetSha256: dossierFirst.GetProperty("matchingNoteSetSha256").GetString());
             var lastDossierRows = dossierSecond.GetProperty("inspections").EnumerateArray().ToArray();
             Assert.Single(lastDossierRows);
             Assert.Equal(51, dossierSecond.GetProperty("matchingNoteCount").GetInt64());
@@ -471,8 +483,15 @@ public sealed class NationalInspectionRollupPostgresTests
             Assert.Equal(expectedNoteSetSha256, dossierFirst.GetProperty("matchingNoteSetSha256").GetString());
             Assert.Equal(expectedNoteSetSha256, dossierSecond.GetProperty("matchingNoteSetSha256").GetString());
             Assert.Equal(JsonValueKind.Null, dossierSecond.GetProperty("nextCursor").ValueKind);
+            var changedSet = await DossierResult(configuration, prefix + "-01", 1,
+                dossierCursor.GetProperty("beforeInspectedAt").GetString(),
+                dossierCursor.GetProperty("beforeNoteId").GetGuid(),
+                expectedMatchingNoteSetSha256: new string('0', 64));
+            Assert.IsType<ProblemHttpResult>(changedSet);
+            Assert.Equal(409, (changedSet as IStatusCodeHttpResult)?.StatusCode);
             var emptyDossierPage = await Dossier(configuration, prefix + "-01", 1,
-                "1900-01-01T00:00:00Z", Guid.Parse("00000000-0000-0000-0000-000000000001"));
+                "1900-01-01T00:00:00Z", Guid.Parse("00000000-0000-0000-0000-000000000001"),
+                expectedMatchingNoteSetSha256: expectedNoteSetSha256);
             Assert.Empty(emptyDossierPage.GetProperty("inspections").EnumerateArray());
             Assert.Equal(51, emptyDossierPage.GetProperty("matchingNoteCount").GetInt64());
             Assert.Equal(expectedNoteSetSha256, emptyDossierPage.GetProperty("matchingNoteSetSha256").GetString());

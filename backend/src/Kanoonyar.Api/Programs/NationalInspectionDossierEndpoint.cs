@@ -104,10 +104,23 @@ public static class NationalInspectionDossierEndpoint
 
         var hasBeforeAt = query.ContainsKey("beforeInspectedAt");
         var hasBeforeId = query.ContainsKey("beforeNoteId");
-        if (hasBeforeAt != hasBeforeId || (exportCsv && (hasBeforeAt || findingsOnly)) ||
-            query.Count != 2 + (hasBeforeAt ? 2 : 0) + (query.ContainsKey("findingsOnly") ? 1 : 0) +
+        var hasExpectedMatchSet = query.ContainsKey("expectedMatchingNoteSetSha256");
+        if (hasBeforeAt != hasBeforeId || hasExpectedMatchSet != hasBeforeAt ||
+            (exportCsv && (hasBeforeAt || findingsOnly)) ||
+            query.Count != 2 + (hasBeforeAt ? 2 : 0) + (hasExpectedMatchSet ? 1 : 0) +
+                (query.ContainsKey("findingsOnly") ? 1 : 0) +
                 (query.ContainsKey("findingCode") ? 1 : 0))
             return Results.BadRequest();
+
+        string? expectedMatchingNoteSetSha256 = null;
+        if (hasExpectedMatchSet)
+        {
+            var rawExpected = query["expectedMatchingNoteSetSha256"].ToString();
+            if (query["expectedMatchingNoteSetSha256"].Count != 1 || rawExpected.Length != 64 ||
+                rawExpected.Any(character => !(character is >= '0' and <= '9' or >= 'a' and <= 'f')))
+                return Results.BadRequest();
+            expectedMatchingNoteSetSha256 = rawExpected;
+        }
 
         Cursor? cursor = null;
         if (hasBeforeAt)
@@ -199,6 +212,11 @@ public static class NationalInspectionDossierEndpoint
                 }
                 matchingNoteSetSha256 = Convert.ToHexString(setHash.GetHashAndReset()).ToLowerInvariant();
             }
+
+            if (expectedMatchingNoteSetSha256 is not null &&
+                !string.Equals(expectedMatchingNoteSetSha256, matchingNoteSetSha256, StringComparison.Ordinal))
+                return Results.Problem(statusCode: StatusCodes.Status409Conflict,
+                    title: "National inspection dossier match set changed");
 
             await using var command = new NpgsqlCommand(
                 """
@@ -293,7 +311,7 @@ public static class NationalInspectionDossierEndpoint
             await transaction.CommitAsync(cancellationToken);
             return Results.Ok(new
             {
-                contractVersion = "S108_NATIONAL_INSPECTION_DOSSIER_V5",
+                contractVersion = "S109_NATIONAL_INSPECTION_DOSSIER_V6",
                 matchingNoteCount,
                 matchingNoteSetSha256,
                 programId = target.ProgramId,

@@ -57,7 +57,7 @@ async function read(cursor:Cursor|null,signal:AbortSignal,findingsOnly:boolean,f
 function parseDossierPage(value:unknown,target:Target,findingsOnly:boolean,findingCode:string):DossierPage|null{
  if(!value||typeof value!=='object')return null;
  const root=value as Record<string,unknown>;
- if(root.contractVersion!=='S108_NATIONAL_INSPECTION_DOSSIER_V5'||root.programId!==target.programId||root.nationalVersion!==target.nationalVersion||root.findingsOnly!==findingsOnly||root.findingCode!==(findingCode||null)||!Number.isSafeInteger(root.matchingNoteCount)||Number(root.matchingNoteCount)<0||typeof root.matchingNoteSetSha256!=='string'||! /^[0-9a-f]{64}$/.test(root.matchingNoteSetSha256)||!Array.isArray(root.inspections)||root.inspections.length>50||Number(root.matchingNoteCount)<root.inspections.length)return null;
+ if(root.contractVersion!=='S109_NATIONAL_INSPECTION_DOSSIER_V6'||root.programId!==target.programId||root.nationalVersion!==target.nationalVersion||root.findingsOnly!==findingsOnly||root.findingCode!==(findingCode||null)||!Number.isSafeInteger(root.matchingNoteCount)||Number(root.matchingNoteCount)<0||typeof root.matchingNoteSetSha256!=='string'||! /^[0-9a-f]{64}$/.test(root.matchingNoteSetSha256)||!Array.isArray(root.inspections)||root.inspections.length>50||Number(root.matchingNoteCount)<root.inspections.length)return null;
  const rows:Inspection[]=[],seen=new Set<string>();
  for(const raw of root.inspections){
   if(!raw||typeof raw!=='object')return null;
@@ -82,13 +82,15 @@ function parseDossierPage(value:unknown,target:Target,findingsOnly:boolean,findi
  }
  return {inspections:rows,matchingNoteCount:root.matchingNoteCount as number,matchingNoteSetSha256:root.matchingNoteSetSha256 as string,nextCursor:next};
 }
-async function readDossier(target:Target,cursor:DossierCursor|null,findingsOnly:boolean,findingCode:string):Promise<DossierPage>{
+async function readDossier(target:Target,cursor:DossierCursor|null,findingsOnly:boolean,findingCode:string,expectedMatchingNoteSetSha256?:string):Promise<DossierPage>{
  const params=new URLSearchParams({programId:target.programId,nationalVersion:String(target.nationalVersion)});
- if(cursor){params.set('beforeInspectedAt',cursor.beforeInspectedAt);params.set('beforeNoteId',cursor.beforeNoteId);}
+ if(cursor){params.set('beforeInspectedAt',cursor.beforeInspectedAt);params.set('beforeNoteId',cursor.beforeNoteId);
+  if(expectedMatchingNoteSetSha256)params.set('expectedMatchingNoteSetSha256',expectedMatchingNoteSetSha256);}
  if(findingsOnly)params.set('findingsOnly','true');if(findingCode)params.set('findingCode',findingCode);
  const response=await fetch('/api/v1/headquarters/national-issuance/review-dossier?'+params.toString(),{cache:'no-store',credentials:'same-origin'});
  if(response.status===401)throw Error('برای مشاهده پرونده فنی، ورود سازمانی لازم است.');
  if(response.status===403)throw Error('دسترسی پرونده فنی در این محیط فعال یا مجاز نیست.');
+ if(response.status===409)throw Error('مجموعه یادداشت‌های منطبق تغییر کرده است؛ برای جلوگیری از نمایش پروندهٔ ناسازگار، دوباره بارگذاری کنید.');
  if(!response.ok)throw Error('پرونده فنی این نسخه فعلاً در دسترس نیست.');
  const parsed=parseDossierPage(await response.json(),target,findingsOnly,findingCode);if(!parsed)throw Error('پاسخ پرونده فنی با قرارداد بازرسی سازگار نیست.');return parsed;
 }
@@ -148,7 +150,7 @@ export function NationalInspectionRollupWorkbench(){
   const current=dossier.pages[dossier.index];if(!dossier.target||!current?.nextCursor||dossier.status==='loading')return;
   if(dossier.pages[dossier.index+1]){setDossier({...dossier,index:dossier.index+1,status:'ready'});return;}
   const request=++dossierRequest.current;setDossier({...dossier,status:'loading',error:''});
-  try{const next=await readDossier(dossier.target,current.nextCursor,dossier.findingsOnly,dossier.findingCode);
+  try{const next=await readDossier(dossier.target,current.nextCursor,dossier.findingsOnly,dossier.findingCode,dossier.pages[0]?.matchingNoteSetSha256);
    const initialMatchCount=dossier.pages[0]?.matchingNoteCount;
    const initialMatchSetSha256=dossier.pages[0]?.matchingNoteSetSha256;
    if(initialMatchCount!==undefined&&(next.matchingNoteCount!==initialMatchCount||
