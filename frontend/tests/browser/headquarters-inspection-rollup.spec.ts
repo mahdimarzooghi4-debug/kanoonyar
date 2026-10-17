@@ -99,7 +99,7 @@ test('technical dossier drilldown is version-scoped, keyset-paged and excludes p
  let dossierCalls=0;
  await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>{
   const u=new URL(r.request().url());dossierCalls++;expect(u.searchParams.get('programId')).toBe('dossier-program');expect(u.searchParams.get('nationalVersion')).toBe('4');
-  if(dossierCalls===1){expect(u.searchParams.has('beforeNoteId')).toBe(false);const rows=Array.from({length:50},(_,i)=>dossierRow('00000000-0000-0000-0000-'+String(i+1).padStart(12,'0')));const last=rows[49];return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({contractVersion:'S108_NATIONAL_INSPECTION_DOSSIER_V5',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,matchingNoteSetSha256:'a'.repeat(64),matchingNoteCount:51,inspections:rows,nextCursor:{beforeInspectedAt:last.inspectedAt,beforeNoteId:last.noteId}})});}
+  if(dossierCalls===1){expect(u.searchParams.has('beforeNoteId')).toBe(false);const rows=Array.from({length:50},(_,i)=>dossierRow('00000000-0000-0000-0000-'+String(i+1).padStart(12,'0')));const last=rows[49];return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({contractVersion:'S109_NATIONAL_INSPECTION_DOSSIER_V6',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,matchingNoteSetSha256:'a'.repeat(64),matchingNoteCount:51,inspections:rows,nextCursor:{beforeInspectedAt:last.inspectedAt,beforeNoteId:last.noteId}})});}
   expect(u.searchParams.get('beforeNoteId')).toBe('00000000-0000-0000-0000-000000000050');expect(u.searchParams.get('beforeInspectedAt')).toBe('2026-10-17T12:00:00.0000000Z');
   return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({contractVersion:'S108_NATIONAL_INSPECTION_DOSSIER_V5',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,matchingNoteSetSha256:'a'.repeat(64),matchingNoteCount:51,inspections:[dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff')],nextCursor:null})});
  });
@@ -150,17 +150,20 @@ test('technical dossier rejects a match count smaller than its page',async({page
  await expect(dossier.getByRole('alert')).toContainText('با قرارداد بازرسی سازگار نیست');
  await expect(dossier.getByRole('table')).toHaveCount(0);
 });
-test('technical dossier stops pagination when the matching set changes with an equal count',async({page})=>{
+test('technical dossier sends its match-set precondition and hides a server-rejected continuation',async({page})=>{
  let calls=0;
  await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>{
   calls++;
-  const rows=calls===1?Array.from({length:50},(_,i)=>dossierRow('00000000-0000-0000-0000-'+String(i+1).padStart(12,'0'))):[dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff')];
+  const url=new URL(r.request().url());
+  const rows=Array.from({length:50},(_,i)=>dossierRow('00000000-0000-0000-0000-'+String(i+1).padStart(12,'0')));
   const last=rows[rows.length-1];
-  return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
-   contractVersion:'S108_NATIONAL_INSPECTION_DOSSIER_V5',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,
-   matchingNoteSetSha256:calls===1?'a'.repeat(64):'b'.repeat(64),matchingNoteCount:51,inspections:rows,
-   nextCursor:calls===1?{beforeInspectedAt:last.inspectedAt,beforeNoteId:last.noteId}:null
+  if(calls===1)return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
+   contractVersion:'S109_NATIONAL_INSPECTION_DOSSIER_V6',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,
+   matchingNoteSetSha256:'a'.repeat(64),matchingNoteCount:51,inspections:rows,
+   nextCursor:{beforeInspectedAt:last.inspectedAt,beforeNoteId:last.noteId}
   })});
+  expect(url.searchParams.get('expectedMatchingNoteSetSha256')).toBe('a'.repeat(64));
+  return r.fulfill({status:409,contentType:'application/problem+json',body:JSON.stringify({status:409,title:'National inspection dossier match set changed'})});
  });
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('dossier-program',4)],nextCursor:null})}));
  await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await page.getByRole('button',{name:'نمایش پرونده فنی'}).click();
