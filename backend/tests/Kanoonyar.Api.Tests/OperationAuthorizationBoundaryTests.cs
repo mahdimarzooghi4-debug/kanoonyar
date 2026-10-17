@@ -63,6 +63,7 @@ GET /api/v1/centers/{centerId}/site/navigation/revisions
 GET /api/v1/centers/{centerId}/site/templates
 GET /api/v1/centers/{centerId}/site/templates/{templateId:guid}/revisions
 GET /api/v1/headquarters/national-issuance/review-rollup
+GET /api/v1/headquarters/national-issuance/review-rollup/export.csv
 GET /api/v1/identity/center-memberships
 GET /api/v1/identity/me
 POST /api/v1/centers/{centerId}/activity-reports/sourced

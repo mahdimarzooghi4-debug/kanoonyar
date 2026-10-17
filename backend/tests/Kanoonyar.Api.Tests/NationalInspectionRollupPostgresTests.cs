@@ -333,6 +333,28 @@ public sealed class NationalInspectionRollupPostgresTests
                 targetProgramId: prefix + "-missing", targetNationalVersion: 1);
             Assert.Empty(missingTarget.GetProperty("rollups").EnumerateArray());
 
+            var exportContext = new DefaultHttpContext();
+            exportContext.Request.QueryString = QueryString.Create(new[]
+            {
+                new KeyValuePair<string,string?>("findingsOnly", "true"),
+                new KeyValuePair<string,string?>("findingCode", "INSPECTION_AUDIT_EVIDENCE_INVALID"),
+                new KeyValuePair<string,string?>("targetProgramId", prefix + "-02"),
+                new KeyValuePair<string,string?>("targetNationalVersion", "1")
+            });
+            var exportResult = Assert.IsType<FileContentHttpResult>(
+                await NationalInspectionRollupEndpoint.ExportCsv(exportContext, Actor(),
+                    configuration, new TestOnlyAllowAuthorization(), CancellationToken.None));
+            Assert.Equal("text/csv; charset=utf-8", exportResult.ContentType);
+            Assert.Equal("national-inspection-rollup.csv", exportResult.FileDownloadName);
+            var csv = System.Text.Encoding.UTF8.GetString(exportResult.FileContents.ToArray());
+            Assert.StartsWith("\uFEFF", csv);
+            Assert.Contains("\"شناسه برنامه\"", csv);
+            Assert.Contains("\"" + prefix + "-02\"", csv);
+            Assert.DoesNotContain("centerId", csv);
+            Assert.DoesNotContain("technicalNote", csv);
+            Assert.DoesNotContain("explicitCenterIds", csv);
+            Assert.Equal(2, csv.Split("\r\n", StringSplitOptions.RemoveEmptyEntries).Length);
+
             var filtered = new List<JsonElement>();
             string? filterBeforeId = null;
             int? filterBeforeVersion = null;

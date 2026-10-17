@@ -25,14 +25,19 @@ public sealed class NationalInspectionRollupEndpointTests
 
     private static Task<IResult> Call(string query = "", ClaimsPrincipal? actor = null,
         INationalInspectionRollupReadAuthorization? authorization = null,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null, bool exportCsv = false)
     {
         var context = new DefaultHttpContext();
         context.Request.QueryString = new QueryString(query);
-        return NationalInspectionRollupEndpoint.List(context, actor ?? Actor(),
-            configuration ?? new ConfigurationBuilder().Build(),
-            authorization ?? new UnapprovedNationalInspectionRollupReadAuthorization(),
-            CancellationToken.None);
+        return exportCsv
+            ? NationalInspectionRollupEndpoint.ExportCsv(context, actor ?? Actor(),
+                configuration ?? new ConfigurationBuilder().Build(),
+                authorization ?? new UnapprovedNationalInspectionRollupReadAuthorization(),
+                CancellationToken.None)
+            : NationalInspectionRollupEndpoint.List(context, actor ?? Actor(),
+                configuration ?? new ConfigurationBuilder().Build(),
+                authorization ?? new UnapprovedNationalInspectionRollupReadAuthorization(),
+                CancellationToken.None);
     }
 
     [Fact]
@@ -46,6 +51,28 @@ public sealed class NationalInspectionRollupEndpointTests
 
         Assert.Equal(403, Status(await Call(actor: Actor(), configuration: config)));
     }
+
+    [Fact]
+    public async Task CSV_export_is_default_denied_before_opening_database()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["NATIONAL_INSPECTION_ROLLUP_READ_DATABASE_URL"] =
+                "Host=127.0.0.1;Port=1;Database=missing;Username=none;Password=none;Timeout=1"
+        }).Build();
+
+        Assert.Equal(403, Status(await Call(
+            "?findingsOnly=true&findingCode=SOURCE_SNAPSHOT_DIGEST_INVALID",
+            configuration: config, exportCsv: true)));
+    }
+
+    [Theory]
+    [InlineData("?beforeProgramId=alpha&beforeNationalVersion=1")]
+    [InlineData("?beforeProgramId=alpha")]
+    [InlineData("?targetProgramId=alpha&targetNationalVersion=1&unexpected=true")]
+    public async Task CSV_export_rejects_cursors_and_unknown_parameters_without_storage_access(string query) =>
+        Assert.Equal(400, Status(await Call(query,
+            authorization: new FixedAuthorization(true), exportCsv: true)));
 
     [Fact]
     public async Task Anonymous_and_subjectless_actors_are_denied()

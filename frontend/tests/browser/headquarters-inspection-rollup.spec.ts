@@ -86,22 +86,19 @@ test('workbench looks up one exact national program version',async({page})=>{
  await expect(page.getByRole('rowheader',{name:'national-other / ۱'})).toHaveCount(0);
  expect(exact).toBe(true);
 });
-test('CSV export follows active finding filters across all pages and contains only safe aggregates',async({page})=>{
- const requested:string[]=[];let capturingExport=false;
+test('CSV export uses one atomic filtered endpoint response and excludes private fields',async({page})=>{
+ const requested:URL[]=[];
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>{
   const u=new URL(r.request().url());
-  if(u.searchParams.get('findingsOnly')==='true'){
-   if(u.searchParams.get('findingCode')!=='INSPECTION_AUDIT_EVIDENCE_INVALID')
-    return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[{...row('finding-program'),inspectionAuditEvidenceInvalidNoteCount:1}],nextCursor:null})});
-   if(!capturingExport)return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[{...row('filtered-program'),inspectionAuditEvidenceInvalidNoteCount:1}],nextCursor:null})});
-   requested.push(u.search);
-   if(u.searchParams.has('beforeProgramId')){
-    expect(u.searchParams.get('beforeProgramId')).toBe('export-20');
-    expect(u.searchParams.get('beforeNationalVersion')).toBe('1');
-    return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[{...row('export-21'),inspectionAuditEvidenceInvalidNoteCount:1},{...row('export-22'),inspectionAuditEvidenceInvalidNoteCount:1}],nextCursor:null})});
-   }
-   return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:Array.from({length:20},(_,i)=>({...row(i===0?'=1+1':'export-'+String(i+1).padStart(2,'0')),inspectionAuditEvidenceInvalidNoteCount:1})),nextCursor:{beforeProgramId:'export-20',beforeNationalVersion:1}})});
+  if(u.pathname.endsWith('/export.csv')){
+   requested.push(u);
+   const header='"شناسه برنامه","نسخه ملی","درخواست","آخرین مشاهده فنی"';
+   const rows=Array.from({length:22},(_,i)=>'"'+(i===0?"'=1+1":'export-'+String(i+1).padStart(2,'0'))+'","1","1",""');
+   const csv='\uFEFF'+header+'\r\n'+rows.join('\r\n')+'\r\n';
+   return r.fulfill({status:200,contentType:'text/csv; charset=utf-8',body:csv});
   }
+  if(u.searchParams.get('findingsOnly')==='true'&&u.searchParams.get('findingCode')==='INSPECTION_AUDIT_EVIDENCE_INVALID')
+   return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[{...row('filtered-program'),inspectionAuditEvidenceInvalidNoteCount:1}],nextCursor:null})});
   return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('initial')],nextCursor:null})});
  });
  await page.goto('/');
@@ -109,26 +106,39 @@ test('CSV export follows active finding filters across all pages and contains on
  await page.getByRole('button',{name:'فقط گروه‌های دارای کد فنی'}).click();
  await page.getByLabel('کد فنی مشخص').selectOption('INSPECTION_AUDIT_EVIDENCE_INVALID');
  await expect(page.getByRole('rowheader',{name:'filtered-program / ۱'})).toBeVisible();
- capturingExport=true;
  const downloadPromise=page.waitForEvent('download');
  await page.getByRole('button',{name:'دانلود CSV تجمیعی'}).click();
  const download=await downloadPromise;
  expect(download.suggestedFilename()).toBe('national-inspection-rollup.csv');
+ expect(requested).toHaveLength(1);
+ expect(requested[0].searchParams.get('findingsOnly')).toBe('true');
+ expect(requested[0].searchParams.get('findingCode')).toBe('INSPECTION_AUDIT_EVIDENCE_INVALID');
+ expect(requested[0].searchParams.has('beforeProgramId')).toBe(false);
  const filePath=await download.path();expect(filePath).not.toBeNull();
  const csv=await readFile(filePath!,'utf8');
  expect(csv.charCodeAt(0)).toBe(0xFEFF);
- const lines=csv.slice(1).trimEnd().split('\r\n');
- expect(lines).toHaveLength(23);
- expect(lines[1]).toContain('"\'=1+1"');
- expect(lines[21]).toContain('"export-21"');
- expect(lines[22]).toContain('"export-22"');
- expect(requested.length).toBe(2);
- for(const query of requested){
-  const params=new URLSearchParams(query);
-  expect(params.get('findingsOnly')).toBe('true');
-  expect(params.get('findingCode')).toBe('INSPECTION_AUDIT_EVIDENCE_INVALID');
- }
- for(const privateLabel of ['centerId','noteId','technicalNote','explicitCenterIds','privateSource'])expect(csv).not.toContain(privateLabel);
+ expect(csv.split('\r\n')).toHaveLength(24);
+ expect(csv.split('\r\n')[1]).toContain('"\'=1+1"');
+ expect(csv).not.toContain('centerId');
+ expect(csv).not.toContain('technicalNote');
+});
+test('CSV export does not start a download when the backend rejects the row limit',async({page})=>{
+ let exports=0,downloads=0;
+ page.on('download',()=>{downloads++;});
+ await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>{
+  const u=new URL(r.request().url());
+  if(u.pathname.endsWith('/export.csv')){
+   exports++;
+   return r.fulfill({status:413,contentType:'application/problem+json',body:'{}'});
+  }
+  return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('ready')],nextCursor:null})});
+ });
+ await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();
+ await expect(page.getByRole('rowheader',{name:'ready / ۱'})).toBeVisible();
+ await page.getByRole('button',{name:'دانلود CSV تجمیعی'}).click();
+ await expect(page.locator('section[aria-labelledby="inspection-rollup-title"] [role="alert"]')).toContainText('۱۰٬۰۰۰');
+ expect(exports).toBe(1);
+ expect(downloads).toBe(0);
 });
 test('workbench rejects a response that claims issuance authority',async({page})=>{
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[{...row('national-1'),issuanceAuthorized:true}],nextCursor:null})}));
