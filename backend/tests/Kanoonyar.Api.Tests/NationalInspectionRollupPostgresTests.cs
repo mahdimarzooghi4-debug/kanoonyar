@@ -398,9 +398,25 @@ public sealed class NationalInspectionRollupPostgresTests
             Assert.DoesNotContain("centerId", csv);
             Assert.DoesNotContain("technicalNote", csv);
             Assert.DoesNotContain("explicitCenterIds", csv);
-            Assert.Equal(2, csv.Split("\r\n", StringSplitOptions.RemoveEmptyEntries).Length);
+            var csvRecords = csv.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+            Assert.Equal(2, csvRecords.Length);
+            Assert.Equal(new[]
+            {
+                "\"شناسه برنامه\"", "\"نسخه ملی\"", "\"درخواست\"", "\"بدون بازرسی\"",
+                "\"با بازرسی\"", "\"یادداشت بازرسی\"", "\"یکپارچگی سازگار\"",
+                "\"یکپارچگی ناسازگار\"", "\"مقایسه ناموجود\"", "\"منبع منطبق\"",
+                "\"منبع متغیر\"", "\"تازگی نامشخص\"", "\"Digest نامعتبر درخواست\"",
+                "\"ساختار نامعتبر درخواست\"", "\"عدم تطبیق انتخاب کانون\"",
+                "\"پرچم اختیار نامشخص\"", "\"شواهد Audit نامعتبر درخواست\"",
+                "\"شواهد Outbox نامعتبر درخواست\"", "\"یکپارچگی درخواست اصلی نامعتبر\"",
+                "\"یکپارچگی مشاهده نامعتبر\"", "\"شواهد Audit بازرسی نامعتبر\"",
+                "\"مشاهده غیرقابل‌مقایسه\"", "\"آخرین مشاهده فنی\""
+            }, csvRecords[0].Split(','));
+            Assert.All(csvRecords, record => Assert.Equal(23, record.Split(',').Length));
             Assert.Equal("S98_NATIONAL_INSPECTION_CSV_RECEIPT_V1",
                 exportContext.Response.Headers["X-National-Inspection-Export-Contract"].ToString());
+            Assert.Equal("S100_NATIONAL_INSPECTION_CSV_SCHEMA_V1",
+                exportContext.Response.Headers["X-National-Inspection-Export-Schema"].ToString());
             Assert.Equal("1",
                 exportContext.Response.Headers["X-National-Inspection-Export-Row-Count"].ToString());
             Assert.Equal(
