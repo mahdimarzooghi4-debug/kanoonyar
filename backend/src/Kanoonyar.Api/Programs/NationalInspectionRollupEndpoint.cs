@@ -226,6 +226,12 @@ public static class NationalInspectionRollupEndpoint
                         title: "National inspection export exceeds the safe row limit");
 
                 var csv = BuildCsv(rows);
+                context.Response.Headers["X-National-Inspection-Export-Contract"] =
+                    "S98_NATIONAL_INSPECTION_CSV_RECEIPT_V1";
+                context.Response.Headers["X-National-Inspection-Export-Row-Count"] =
+                    rows.Count.ToString(CultureInfo.InvariantCulture);
+                context.Response.Headers["X-National-Inspection-Export-SHA256"] =
+                    Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(csv)).ToLowerInvariant();
                 await transaction.CommitAsync(cancellationToken);
                 return Results.File(csv, "text/csv; charset=utf-8", "national-inspection-rollup.csv");
             }
