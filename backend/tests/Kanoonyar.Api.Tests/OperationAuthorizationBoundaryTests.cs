@@ -135,7 +135,7 @@ POST /api/v1/centers/{centerId}/site/templates/revisions
         Assert.Equal(expected.Concat(new[] { "GET /api/v1/programs/published",
             "GET /api/v1/programs/published/version" })
             .OrderBy(x => x, StringComparer.Ordinal), actual);
-        Assert.Equal(expected.Length + 3, endpoints.Length);
+        Assert.Equal(expected.Length + 2, endpoints.Length);
 
         foreach (var endpoint in endpoints)
         {
@@ -179,13 +179,15 @@ POST /api/v1/centers/{centerId}/site/templates/revisions
         using var factory = Create(configured: false);
         var endpoints = Endpoints(factory);
         var expected = ExpectedAuthenticatedRoutes.OrderBy(x => x, StringComparer.Ordinal).ToArray();
+        var expectedWithoutOidcOnlyRoute = expected.Where(route =>
+            route != "GET /api/v1/headquarters/national-issuance/review-dossier").ToArray();
         var actual = Inventory(endpoints);
-        Assert.Equal(expected.Concat(new[] { "GET /api/v1/programs/published",
+        Assert.Equal(expectedWithoutOidcOnlyRoute.Concat(new[] { "GET /api/v1/programs/published",
             "GET /api/v1/programs/published/version" })
             .OrderBy(x => x, StringComparer.Ordinal), actual);
 
         using var client = factory.CreateClient();
-        foreach (var route in expected)
+        foreach (var route in expectedWithoutOidcOnlyRoute)
         {
             var separator = route.IndexOf(' ');
             var method = route[..separator];
