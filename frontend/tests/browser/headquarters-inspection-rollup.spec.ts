@@ -99,20 +99,20 @@ test('technical dossier drilldown is version-scoped, keyset-paged and excludes p
  let dossierCalls=0;
  await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>{
   const u=new URL(r.request().url());dossierCalls++;expect(u.searchParams.get('programId')).toBe('dossier-program');expect(u.searchParams.get('nationalVersion')).toBe('4');
-  if(dossierCalls===1){expect(u.searchParams.has('beforeNoteId')).toBe(false);const rows=Array.from({length:50},(_,i)=>dossierRow('00000000-0000-0000-0000-'+String(i+1).padStart(12,'0')));const last=rows[49];return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({contractVersion:'S105_NATIONAL_INSPECTION_DOSSIER_V3',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,inspections:rows,nextCursor:{beforeInspectedAt:last.inspectedAt,beforeNoteId:last.noteId}})});}
+  if(dossierCalls===1){expect(u.searchParams.has('beforeNoteId')).toBe(false);const rows=Array.from({length:50},(_,i)=>dossierRow('00000000-0000-0000-0000-'+String(i+1).padStart(12,'0')));const last=rows[49];return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({contractVersion:'S106_NATIONAL_INSPECTION_DOSSIER_V4',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,matchingNoteCount:51,inspections:rows,nextCursor:{beforeInspectedAt:last.inspectedAt,beforeNoteId:last.noteId}})});}
   expect(u.searchParams.get('beforeNoteId')).toBe('00000000-0000-0000-0000-000000000050');expect(u.searchParams.get('beforeInspectedAt')).toBe('2026-10-17T12:00:00.0000000Z');
-  return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({contractVersion:'S105_NATIONAL_INSPECTION_DOSSIER_V3',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,inspections:[dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff')],nextCursor:null})});
+  return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({contractVersion:'S106_NATIONAL_INSPECTION_DOSSIER_V4',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,matchingNoteCount:51,inspections:[dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff')],nextCursor:null})});
  });
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('dossier-program',4)],nextCursor:null})}));
  await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await expect(page.getByRole('rowheader',{name:'dossier-program / ۴'})).toBeVisible();
  await page.getByRole('button',{name:'نمایش پرونده فنی'}).click();
  const dossier=page.locator('section[aria-labelledby="inspection-dossier-title"]');await expect(dossier.getByRole('heading')).toContainText('dossier-program / ۴');
- await expect(dossier.getByRole('row')).toHaveCount(51);await expect(dossier.getByText('مجوز و صدور false')).toHaveCount(50);
+ await expect(dossier.getByRole('row')).toHaveCount(51);await expect(dossier.getByText('مجوز و صدور false')).toHaveCount(50);await expect(dossier.getByText(/۵۱ یادداشت با فیلتر فعلی/)).toBeVisible();
  await expect(dossier).not.toContainText('centerId');await expect(dossier).not.toContainText('technicalNote');
  await dossier.getByRole('button',{name:'بعدی'}).click();await expect(dossier.getByRole('row')).toHaveCount(2);await expect(dossier.getByText('شناسه یادداشت')).toBeVisible();expect(dossierCalls).toBe(2);
 });
 test('technical dossier rejects any asserted human decision or issuance state',async({page})=>{
- await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({contractVersion:'S105_NATIONAL_INSPECTION_DOSSIER_V3',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,inspections:[{...dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff'),humanReviewRecorded:true}],nextCursor:null})}));
+ await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({contractVersion:'S106_NATIONAL_INSPECTION_DOSSIER_V4',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,matchingNoteCount:1,inspections:[{...dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff'),humanReviewRecorded:true}],nextCursor:null})}));
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('dossier-program',4)],nextCursor:null})}));
  await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await expect(page.getByRole('rowheader',{name:'dossier-program / ۴'})).toBeVisible();await page.getByRole('button',{name:'نمایش پرونده فنی'}).click();
  const dossier=page.locator('section[aria-labelledby="inspection-dossier-title"]');await expect(dossier.getByRole('alert')).toContainText('با قرارداد بازرسی سازگار نیست');await expect(dossier.getByRole('table')).toHaveCount(0);
@@ -123,8 +123,8 @@ test('technical dossier finding filter is bound to exact target and response con
  await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>{
   const url=new URL(r.request().url()),findingCode=url.searchParams.get('findingCode');requested.push(url);
   return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
-   contractVersion:'S105_NATIONAL_INSPECTION_DOSSIER_V3',findingsOnly:findingCode!==null||url.searchParams.get('findingsOnly')==='true',
-   findingCode,programId:'dossier-program',nationalVersion:4,
+   contractVersion:'S106_NATIONAL_INSPECTION_DOSSIER_V4',findingsOnly:findingCode!==null||url.searchParams.get('findingsOnly')==='true',
+   findingCode,programId:'dossier-program',nationalVersion:4,matchingNoteCount:1,
    inspections:findingCode?[{...dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff'),findingCodes:[findingCode]}]:[dossierRow('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee')],nextCursor:null
   })});
  });
@@ -139,10 +139,21 @@ test('technical dossier finding filter is bound to exact target and response con
  expect(requested.at(-1)?.searchParams.get('findingsOnly')).toBe('true');
  expect(requested.at(-1)?.searchParams.get('findingCode')).toBe('INSPECTION_AUDIT_EVIDENCE_INVALID');
 });
+test('technical dossier rejects a match count smaller than its page',async({page})=>{
+ await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
+  contractVersion:'S106_NATIONAL_INSPECTION_DOSSIER_V4',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,
+  matchingNoteCount:0,inspections:[dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff')],nextCursor:null
+ })}));
+ await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('dossier-program',4)],nextCursor:null})}));
+ await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await page.getByRole('button',{name:'نمایش پرونده فنی'}).click();
+ const dossier=page.locator('section[aria-labelledby="inspection-dossier-title"]');
+ await expect(dossier.getByRole('alert')).toContainText('با قرارداد بازرسی سازگار نیست');
+ await expect(dossier.getByRole('table')).toHaveCount(0);
+});
 test('exact-version dossier CSV verifies schema, row count and SHA-256 before download',async({page})=>{
  let requested:URL|null=null;
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('dossier-program',4)],nextCursor:null})}));
- await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({contractVersion:'S105_NATIONAL_INSPECTION_DOSSIER_V3',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,inspections:[dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff')],nextCursor:null})}));
+ await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({contractVersion:'S106_NATIONAL_INSPECTION_DOSSIER_V4',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,matchingNoteCount:1,inspections:[dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff')],nextCursor:null})}));
  await page.route('**/api/v1/headquarters/national-issuance/review-dossier/export.csv**',r=>{
   requested=new URL(r.request().url());expect(requested.searchParams.get('programId')).toBe('dossier-program');expect(requested.searchParams.get('nationalVersion')).toBe('4');
   const csv=dossierCsv('dossier-program'),digest=createHash('sha256').update(csv,'utf8').digest('hex');
@@ -156,12 +167,12 @@ test('exact-version dossier CSV verifies schema, row count and SHA-256 before do
  await page.getByRole('button',{name:'نمایش پرونده فنی'}).click();const dossier=page.locator('section[aria-labelledby="inspection-dossier-title"]');
  const downloadPromise=page.waitForEvent('download');await dossier.getByRole('button',{name:'دانلود CSV پروندهٔ فنی'}).click();
  const download=await downloadPromise;expect(download.suggestedFilename()).toBe('national-inspection-dossier.csv');expect(requested).not.toBeNull();
- await expect(dossier.getByRole('status')).toContainText('شامل ۱ یادداشت فنی');
+ await expect(dossier.getByText(/پروندهٔ دقیق شامل ۱ یادداشت فنی است/)).toBeVisible();
 });
 test('dossier CSV refuses corrupt digest and over-limit partial exports',async({page})=>{
  let mode='digest';let downloads=0;page.on('download',()=>downloads++);
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('dossier-program',4)],nextCursor:null})}));
- await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({contractVersion:'S105_NATIONAL_INSPECTION_DOSSIER_V3',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,inspections:[dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff')],nextCursor:null})}));
+ await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({contractVersion:'S106_NATIONAL_INSPECTION_DOSSIER_V4',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,matchingNoteCount:1,inspections:[dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff')],nextCursor:null})}));
  await page.route('**/api/v1/headquarters/national-issuance/review-dossier/export.csv**',r=>{
   if(mode==='limit')return r.fulfill({status:413,contentType:'application/problem+json',body:'{}'});
   return r.fulfill({status:200,contentType:'text/csv; charset=utf-8',body:dossierCsv('dossier-program'),headers:{

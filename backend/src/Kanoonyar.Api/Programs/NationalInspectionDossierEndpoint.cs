@@ -166,27 +166,43 @@ public static class NationalInspectionDossierEndpoint
 
             await using var command = new NpgsqlCommand(
                 """
-                SELECT d.request_id,d.note_id,d.inspection_recorded_at,d.source_changed_since_request,
-                  d.original_request_integrity_valid,d.observation_integrity_valid,
-                  d.audit_and_outbox_integrity_valid,d.current_source_matches_observation,
-                  d.publication_state_changed,d.center_registry_change_count,
-                  d.exact_issuance_change_count,d.source_observation_comparable,
-                  d.human_review_recorded,d.issuance_authorized,d.issuance_executed,
-                  finding_codes.codes AS finding_codes
-                FROM programs.national_issuance_review_inspection_dossier d
-                CROSS JOIN LATERAL (
-                  SELECT ARRAY(SELECT f.finding_code
-                    FROM programs.national_issuance_review_inspection_findings f
-                    WHERE f.program_id=d.program_id AND f.national_version=d.national_version
-                      AND f.note_id=d.note_id ORDER BY f.finding_code) AS codes
-                ) finding_codes
-                WHERE d.program_id=@program_id AND d.national_version=@national_version
-                  AND (@findings_only = false OR cardinality(finding_codes.codes) > 0)
-                  AND (@finding_code::text IS NULL OR @finding_code = ANY(finding_codes.codes))
-                  AND (@before_at::timestamptz IS NULL
-                    OR (d.inspection_recorded_at,d.note_id)<(@before_at::timestamptz,@before_note_id::uuid))
-                ORDER BY d.inspection_recorded_at DESC,d.note_id DESC
-                LIMIT @row_limit
+                WITH filtered AS (
+                  SELECT d.request_id,d.note_id,d.inspection_recorded_at,d.source_changed_since_request,
+                    d.original_request_integrity_valid,d.observation_integrity_valid,
+                    d.audit_and_outbox_integrity_valid,d.current_source_matches_observation,
+                    d.publication_state_changed,d.center_registry_change_count,
+                    d.exact_issuance_change_count,d.source_observation_comparable,
+                    d.human_review_recorded,d.issuance_authorized,d.issuance_executed,
+                    finding_codes.codes AS finding_codes
+                  FROM programs.national_issuance_review_inspection_dossier d
+                  CROSS JOIN LATERAL (
+                    SELECT ARRAY(SELECT f.finding_code
+                      FROM programs.national_issuance_review_inspection_findings f
+                      WHERE f.program_id=d.program_id AND f.national_version=d.national_version
+                        AND f.note_id=d.note_id ORDER BY f.finding_code) AS codes
+                  ) finding_codes
+                  WHERE d.program_id=@program_id AND d.national_version=@national_version
+                    AND (@findings_only = false OR cardinality(finding_codes.codes) > 0)
+                    AND (@finding_code::text IS NULL OR @finding_code = ANY(finding_codes.codes))
+                ),
+                paged AS (
+                  SELECT * FROM filtered
+                  WHERE (@before_at::timestamptz IS NULL
+                    OR (inspection_recorded_at,note_id)<(@before_at::timestamptz,@before_note_id::uuid))
+                  ORDER BY inspection_recorded_at DESC,note_id DESC
+                  LIMIT @row_limit
+                ),
+                matching_count AS (SELECT COUNT(*) AS matching_note_count FROM filtered)
+                SELECT p.request_id,p.note_id,p.inspection_recorded_at,p.source_changed_since_request,
+                  p.original_request_integrity_valid,p.observation_integrity_valid,
+                  p.audit_and_outbox_integrity_valid,p.current_source_matches_observation,
+                  p.publication_state_changed,p.center_registry_change_count,
+                  p.exact_issuance_change_count,p.source_observation_comparable,
+                  p.human_review_recorded,p.issuance_authorized,p.issuance_executed,
+                  p.finding_codes,matching_count.matching_note_count
+                FROM matching_count
+                LEFT JOIN paged p ON TRUE
+                ORDER BY p.inspection_recorded_at DESC NULLS LAST,p.note_id DESC NULLS LAST
                 """, connection, transaction);
             command.Parameters.Add("program_id", NpgsqlDbType.Text).Value = target.ProgramId;
             command.Parameters.Add("national_version", NpgsqlDbType.Integer).Value = target.NationalVersion;
@@ -201,10 +217,14 @@ public static class NationalInspectionDossierEndpoint
             command.Parameters.Add("row_limit", NpgsqlDbType.Integer).Value = maximumRows + 1;
 
             var rows = new List<Inspection>(maximumRows + 1);
+            long matchingNoteCount = 0;
             await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
             {
                 while (await reader.ReadAsync(cancellationToken))
                 {
+                    matchingNoteCount = reader.GetInt64(16);
+                    if (reader.IsDBNull(0))
+                        continue;
                     rows.Add(new Inspection(
                         reader.GetGuid(0), reader.GetGuid(1),
                         reader.GetDateTime(2).ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
@@ -244,7 +264,8 @@ public static class NationalInspectionDossierEndpoint
             await transaction.CommitAsync(cancellationToken);
             return Results.Ok(new
             {
-                contractVersion = "S105_NATIONAL_INSPECTION_DOSSIER_V3",
+                contractVersion = "S106_NATIONAL_INSPECTION_DOSSIER_V4",
+                matchingNoteCount,
                 programId = target.ProgramId,
                 nationalVersion = target.NationalVersion,
                 findingsOnly,
