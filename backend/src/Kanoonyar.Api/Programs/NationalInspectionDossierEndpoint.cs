@@ -1,6 +1,7 @@
 using System.Data;
 using System.Globalization;
 using System.Security.Claims;
+using System.Text;
 using Kanoonyar.Api.Security;
 using Microsoft.AspNetCore.Http;
 using Npgsql;
@@ -12,6 +13,7 @@ namespace Kanoonyar.Api.Programs;
 public static class NationalInspectionDossierEndpoint
 {
     private const int PageSize = 50;
+    private const int MaximumCsvRows = 10_000;
     private sealed record Cursor(DateTimeOffset InspectedAt, Guid NoteId);
     private sealed record Target(string ProgramId, int NationalVersion);
 
@@ -32,12 +34,29 @@ public static class NationalInspectionDossierEndpoint
         bool IssuanceAuthorized,
         bool IssuanceExecuted);
 
-    public static async Task<IResult> List(
+    public static Task<IResult> List(
         HttpContext context,
         ClaimsPrincipal actor,
         IConfiguration configuration,
         INationalInspectionReadAuthorization authorization,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        Execute(context, actor, configuration, authorization, cancellationToken, exportCsv: false);
+
+    public static Task<IResult> ExportCsv(
+        HttpContext context,
+        ClaimsPrincipal actor,
+        IConfiguration configuration,
+        INationalInspectionReadAuthorization authorization,
+        CancellationToken cancellationToken) =>
+        Execute(context, actor, configuration, authorization, cancellationToken, exportCsv: true);
+
+    private static async Task<IResult> Execute(
+        HttpContext context,
+        ClaimsPrincipal actor,
+        IConfiguration configuration,
+        INationalInspectionReadAuthorization authorization,
+        CancellationToken cancellationToken,
+        bool exportCsv)
     {
         if (actor.Identity?.IsAuthenticated != true)
             return Results.Problem(statusCode: 401, title: "Authentication required");
@@ -60,7 +79,8 @@ public static class NationalInspectionDossierEndpoint
 
         var hasBeforeAt = query.ContainsKey("beforeInspectedAt");
         var hasBeforeId = query.ContainsKey("beforeNoteId");
-        if (hasBeforeAt != hasBeforeId || query.Count != 2 + (hasBeforeAt ? 2 : 0))
+        if (hasBeforeAt != hasBeforeId || (exportCsv && hasBeforeAt) ||
+            query.Count != 2 + (hasBeforeAt ? 2 : 0))
             return Results.BadRequest();
 
         Cursor? cursor = null;
@@ -83,7 +103,8 @@ public static class NationalInspectionDossierEndpoint
         {
             permitted = await authorization.IsAuthorizedAsync(actor,
                 new NationalInspectionReadScope(
-                    NationalInspectionReadOperation.InspectionDossierPage,
+                    exportCsv ? NationalInspectionReadOperation.InspectionDossierCsvExport :
+                        NationalInspectionReadOperation.InspectionDossierPage,
                     target.ProgramId,
                     target.NationalVersion,
                     FindingsOnly: false,
@@ -139,9 +160,10 @@ public static class NationalInspectionDossierEndpoint
                 cursor is null ? DBNull.Value : cursor.InspectedAt;
             command.Parameters.Add("before_note_id", NpgsqlDbType.Uuid).Value =
                 cursor is null ? DBNull.Value : cursor.NoteId;
-            command.Parameters.Add("row_limit", NpgsqlDbType.Integer).Value = PageSize + 1;
+            var maximumRows = exportCsv ? MaximumCsvRows : PageSize;
+            command.Parameters.Add("row_limit", NpgsqlDbType.Integer).Value = maximumRows + 1;
 
-            var rows = new List<Inspection>(PageSize + 1);
+            var rows = new List<Inspection>(maximumRows + 1);
             await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
             {
                 while (await reader.ReadAsync(cancellationToken))
@@ -157,6 +179,25 @@ public static class NationalInspectionDossierEndpoint
                         reader.IsDBNull(11) ? null : reader.GetBoolean(11),
                         reader.GetBoolean(12), reader.GetBoolean(13), reader.GetBoolean(14)));
                 }
+            }
+
+            if (exportCsv)
+            {
+                if (rows.Count > MaximumCsvRows)
+                    return Results.Problem(statusCode: StatusCodes.Status413PayloadTooLarge,
+                        title: "National inspection dossier export exceeds the safe row limit");
+
+                var csv = BuildCsv(target, rows);
+                context.Response.Headers["X-National-Inspection-Dossier-Export-Contract"] =
+                    "S103_NATIONAL_INSPECTION_DOSSIER_CSV_RECEIPT_V1";
+                context.Response.Headers["X-National-Inspection-Dossier-Export-Schema"] =
+                    "S103_NATIONAL_INSPECTION_DOSSIER_CSV_V1";
+                context.Response.Headers["X-National-Inspection-Dossier-Export-Row-Count"] =
+                    rows.Count.ToString(CultureInfo.InvariantCulture);
+                context.Response.Headers["X-National-Inspection-Dossier-Export-SHA256"] =
+                    Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(csv)).ToLowerInvariant();
+                await transaction.CommitAsync(cancellationToken);
+                return Results.File(csv, "text/csv; charset=utf-8", "national-inspection-dossier.csv");
             }
 
             var hasMore = rows.Count > PageSize;
@@ -184,5 +225,58 @@ public static class NationalInspectionDossierEndpoint
         {
             return Results.Problem(statusCode: 503, title: "National inspection dossier unavailable");
         }
+    }
+
+    private static byte[] BuildCsv(Target target, IReadOnlyList<Inspection> rows)
+    {
+        var builder = new StringBuilder();
+        builder.Append('\uFEFF');
+        builder.AppendJoin(',', new[]
+        {
+            "program_id", "national_version", "request_id", "note_id", "inspected_at",
+            "source_changed_since_request", "original_request_integrity_valid",
+            "observation_integrity_valid", "audit_and_outbox_integrity_valid",
+            "current_source_matches_observation", "publication_state_changed",
+            "center_registry_change_count", "exact_issuance_change_count",
+            "source_observation_comparable", "human_review_recorded",
+            "issuance_authorized", "issuance_executed"
+        }.Select(CsvCell));
+        builder.Append("\r\n");
+
+        foreach (var row in rows)
+        {
+            builder.AppendJoin(',', new[]
+            {
+                CsvCell(target.ProgramId),
+                target.NationalVersion.ToString(CultureInfo.InvariantCulture),
+                row.RequestId.ToString("D"),
+                row.NoteId.ToString("D"),
+                CsvCell(row.InspectedAt),
+                row.SourceChangedSinceRequest.ToString().ToLowerInvariant(),
+                row.OriginalRequestIntegrityValid.ToString().ToLowerInvariant(),
+                row.ObservationIntegrityValid.ToString().ToLowerInvariant(),
+                row.AuditAndOutboxIntegrityValid.ToString().ToLowerInvariant(),
+                row.CurrentSourceMatchesObservation.ToString().ToLowerInvariant(),
+                row.PublicationStateChanged?.ToString().ToLowerInvariant() ?? "",
+                row.CenterRegistryChangeCount?.ToString(CultureInfo.InvariantCulture) ?? "",
+                row.ExactIssuanceChangeCount?.ToString(CultureInfo.InvariantCulture) ?? "",
+                row.SourceObservationComparable?.ToString().ToLowerInvariant() ?? "",
+                row.HumanReviewRecorded.ToString().ToLowerInvariant(),
+                row.IssuanceAuthorized.ToString().ToLowerInvariant(),
+                row.IssuanceExecuted.ToString().ToLowerInvariant()
+            }.Select(CsvCell));
+            builder.Append("\r\n");
+        }
+
+        return Encoding.UTF8.GetBytes(builder.ToString());
+    }
+
+    private static string CsvCell(string value)
+    {
+        var first = 0;
+        while (first < value.Length && value[first] <= 0x20) first++;
+        if (first < value.Length && value[first] is '=' or '+' or '-' or '@')
+            value = "'" + value;
+        return "\"" + value.Replace("\"", "\"\"") + "\"";
     }
 }

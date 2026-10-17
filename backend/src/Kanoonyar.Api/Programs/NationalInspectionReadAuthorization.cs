@@ -7,7 +7,8 @@ public enum NationalInspectionReadOperation
 {
     RollupPage,
     RollupCsvExport,
-    InspectionDossierPage
+    InspectionDossierPage,
+    InspectionDossierCsvExport
 }
 
 /// <summary>

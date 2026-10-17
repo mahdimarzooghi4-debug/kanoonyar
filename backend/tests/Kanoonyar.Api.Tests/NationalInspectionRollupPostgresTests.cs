@@ -458,6 +458,36 @@ public sealed class NationalInspectionRollupPostgresTests
             Assert.DoesNotContain(lastDossierRows[0].GetProperty("noteId").GetGuid(),
                 dossierRows.Select(row => row.GetProperty("noteId").GetGuid()));
 
+            var dossierExportContext = new DefaultHttpContext();
+            dossierExportContext.Request.QueryString = new QueryString(
+                "?programId=" + Uri.EscapeDataString(prefix + "-01") + "&nationalVersion=1");
+            var dossierExport = Assert.IsType<FileContentHttpResult>(
+                await NationalInspectionDossierEndpoint.ExportCsv(dossierExportContext, Actor(),
+                    configuration, new TestOnlyAllowAuthorization(), CancellationToken.None));
+            Assert.Equal("text/csv; charset=utf-8", dossierExport.ContentType);
+            Assert.Equal("national-inspection-dossier.csv", dossierExport.FileDownloadName);
+            var dossierCsv = System.Text.Encoding.UTF8.GetString(dossierExport.FileContents.ToArray());
+            Assert.StartsWith("\uFEFF", dossierCsv);
+            Assert.Contains("\"program_id\",\"national_version\",\"request_id\",\"note_id\"", dossierCsv);
+            Assert.Contains("\"" + prefix + "-01\"", dossierCsv);
+            Assert.DoesNotContain("centerId", dossierCsv);
+            Assert.DoesNotContain("explicitCenterIds", dossierCsv);
+            Assert.DoesNotContain("technicalNote", dossierCsv);
+            Assert.DoesNotContain("UNVERIFIED-s101-ci-fixture", dossierCsv);
+            var dossierCsvRecords = dossierCsv.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+            Assert.Equal(52, dossierCsvRecords.Length);
+            Assert.All(dossierCsvRecords, record => Assert.Equal(17, record.Split(',').Length));
+            Assert.Equal("S103_NATIONAL_INSPECTION_DOSSIER_CSV_RECEIPT_V1",
+                dossierExportContext.Response.Headers["X-National-Inspection-Dossier-Export-Contract"].ToString());
+            Assert.Equal("S103_NATIONAL_INSPECTION_DOSSIER_CSV_V1",
+                dossierExportContext.Response.Headers["X-National-Inspection-Dossier-Export-Schema"].ToString());
+            Assert.Equal("51",
+                dossierExportContext.Response.Headers["X-National-Inspection-Dossier-Export-Row-Count"].ToString());
+            Assert.Equal(
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(dossierExport.FileContents.Span))
+                    .ToLowerInvariant(),
+                dossierExportContext.Response.Headers["X-National-Inspection-Dossier-Export-SHA256"].ToString());
+
             var exactTarget = await Page(configuration, targetProgramId: prefix + "-02", targetNationalVersion: 1);
             var exactTargetRow = Assert.Single(exactTarget.GetProperty("rollups").EnumerateArray());
             Assert.Equal(prefix + "-02", exactTargetRow.GetProperty("programId").GetString());
@@ -516,15 +546,6 @@ public sealed class NationalInspectionRollupPostgresTests
                     .ToLowerInvariant(),
                 exportContext.Response.Headers["X-National-Inspection-Export-SHA256"].ToString());
 
-            await SeedCsvLimitGroups(AdminUrl);
-            var overLimitContext = new DefaultHttpContext();
-            overLimitContext.Request.QueryString = new QueryString(
-                "?findingsOnly=true&findingCode=OUTBOX_EVIDENCE_INVALID");
-            var overLimit = await NationalInspectionRollupEndpoint.ExportCsv(overLimitContext, Actor(),
-                configuration, new TestOnlyAllowAuthorization(), CancellationToken.None);
-            var overLimitProblem = Assert.IsType<ProblemHttpResult>(overLimit);
-            Assert.Equal(413, overLimitProblem.StatusCode);
-
             var filtered = new List<JsonElement>();
             string? filterBeforeId = null;
             int? filterBeforeVersion = null;
@@ -572,6 +593,17 @@ public sealed class NationalInspectionRollupPostgresTests
                 Assert.Equal(1, row.GetProperty("inspectionAuditEvidenceInvalidNoteCount").GetInt64()));
             Assert.DoesNotContain(filtered, x =>
                 x.GetProperty("programId").GetString() == prefix + "-01");
+
+            // Keep this large fixture last: it exists only to prove the export
+            // cap and makes full-view filtered scans needlessly expensive.
+            await SeedCsvLimitGroups(AdminUrl);
+            var overLimitContext = new DefaultHttpContext();
+            overLimitContext.Request.QueryString = new QueryString(
+                "?findingsOnly=true&findingCode=OUTBOX_EVIDENCE_INVALID");
+            var overLimit = await NationalInspectionRollupEndpoint.ExportCsv(overLimitContext, Actor(),
+                configuration, new TestOnlyAllowAuthorization(), CancellationToken.None);
+            var overLimitProblem = Assert.IsType<ProblemHttpResult>(overLimit);
+            Assert.Equal(413, overLimitProblem.StatusCode);
         }
         finally
         {
