@@ -3,7 +3,7 @@ type Cursor={beforeProgramId:string;beforeNationalVersion:number};
 type Target={programId:string;nationalVersion:number};
 type DossierCursor={beforeInspectedAt:string;beforeNoteId:string};
 type Inspection={requestId:string;noteId:string;inspectedAt:string;sourceChangedSinceRequest:boolean;originalRequestIntegrityValid:boolean;observationIntegrityValid:boolean;auditAndOutboxIntegrityValid:boolean;currentSourceMatchesObservation:boolean;publicationStateChanged:boolean|null;centerRegistryChangeCount:number|null;exactIssuanceChangeCount:number|null;sourceObservationComparable:boolean|null;humanReviewRecorded:false;issuanceAuthorized:false;issuanceExecuted:false;findingCodes:string[]};
-type DossierPage={inspections:Inspection[];nextCursor:DossierCursor|null};
+type DossierPage={inspections:Inspection[];matchingNoteCount:number;nextCursor:DossierCursor|null};
 type DossierState={open:boolean;target:Target|null;findingsOnly:boolean;findingCode:string;status:'idle'|'loading'|'ready'|'error';error:string;pages:DossierPage[];index:number};
 const closedDossier:DossierState={open:false,target:null,findingsOnly:false,findingCode:'',status:'idle',error:'',pages:[],index:0};
 type Row={rollupContractVersion:'S90_NATIONAL_INSPECTION_ROLLUP_V2';programId:string;nationalVersion:number;reviewRequestCount:number;requestsWithoutInspectionCount:number;requestsWithInspectionCount:number;inspectionNoteCount:number;integrityConsistentNoteCount:number;integrityInconsistentNoteCount:number;sourceComparisonUnavailableNoteCount:number;currentSourceMatchNoteCount:number;currentSourceDriftNoteCount:number;sourceFreshnessUnclassifiedNoteCount:number;sourceSnapshotDigestInvalidRequestCount:number;sourceEnvelopeInvalidRequestCount:number;centerSelectionMismatchRequestCount:number;authorityFlagsNotClearRequestCount:number;auditEvidenceInvalidRequestCount:number;outboxEvidenceInvalidRequestCount:number;originalRequestIntegrityInvalidNoteCount:number;observationIntegrityInvalidNoteCount:number;inspectionAuditEvidenceInvalidNoteCount:number;sourceObservationNotComparableNoteCount:number;latestTechnicalObservationAt:string|null;humanReviewRecorded:false;issuanceAuthorized:false;issuanceExecuted:false};
@@ -57,7 +57,7 @@ async function read(cursor:Cursor|null,signal:AbortSignal,findingsOnly:boolean,f
 function parseDossierPage(value:unknown,target:Target,findingsOnly:boolean,findingCode:string):DossierPage|null{
  if(!value||typeof value!=='object')return null;
  const root=value as Record<string,unknown>;
- if(root.contractVersion!=='S105_NATIONAL_INSPECTION_DOSSIER_V3'||root.programId!==target.programId||root.nationalVersion!==target.nationalVersion||root.findingsOnly!==findingsOnly||root.findingCode!==(findingCode||null)||!Array.isArray(root.inspections)||root.inspections.length>50)return null;
+ if(root.contractVersion!=='S106_NATIONAL_INSPECTION_DOSSIER_V4'||root.programId!==target.programId||root.nationalVersion!==target.nationalVersion||root.findingsOnly!==findingsOnly||root.findingCode!==(findingCode||null)||!Number.isSafeInteger(root.matchingNoteCount)||Number(root.matchingNoteCount)<0||!Array.isArray(root.inspections)||root.inspections.length>50||Number(root.matchingNoteCount)<root.inspections.length)return null;
  const rows:Inspection[]=[],seen=new Set<string>();
  for(const raw of root.inspections){
   if(!raw||typeof raw!=='object')return null;
@@ -80,7 +80,7 @@ function parseDossierPage(value:unknown,target:Target,findingsOnly:boolean,findi
   if(typeof c.beforeInspectedAt!=='string'||c.beforeInspectedAt!==last.inspectedAt||typeof c.beforeNoteId!=='string'||c.beforeNoteId!==last.noteId)return null;
   next={beforeInspectedAt:c.beforeInspectedAt,beforeNoteId:c.beforeNoteId};
  }
- return {inspections:rows,nextCursor:next};
+ return {inspections:rows,matchingNoteCount:root.matchingNoteCount as number,nextCursor:next};
 }
 async function readDossier(target:Target,cursor:DossierCursor|null,findingsOnly:boolean,findingCode:string):Promise<DossierPage>{
  const params=new URLSearchParams({programId:target.programId,nationalVersion:String(target.nationalVersion)});
@@ -301,6 +301,7 @@ export function NationalInspectionRollupWorkbench(){
    {dossier.status==='loading'&&<p role="status">در حال دریافت پروندهٔ فنی…</p>}
    {dossier.status==='error'&&<div role="alert"><p>{dossier.error}</p><button type="button" onClick={()=>void showDossier(dossier.target!,dossier.findingsOnly,dossier.findingCode)}>تلاش دوباره</button></div>}
    {dossier.status==='ready'&&(()=>{const current=dossier.pages[dossier.index];return <>
+    <p role="status">در این خوانش، {n(current.matchingNoteCount)} یادداشت با فیلتر فعلی برای این نسخه منطبق است. شمارش و صفحه از snapshot همین درخواست‌اند.</p>
     {current.inspections.length===0?<p role="status">یادداشت فنی با این فیلتر برای این نسخه ثبت نشده است.</p>:<div style={{overflowX:'auto'}}><table><caption>شواهد فنیِ صفحهٔ جاری؛ بدون متن یادداشت و شناسهٔ کانون</caption><thead><tr><th>زمان بازرسی</th><th>شناسه درخواست</th><th>شناسه یادداشت</th><th>کدهای فنی</th><th>تغییر منبع</th><th>یکپارچگی درخواست</th><th>یکپارچگی مشاهده</th><th>Audit / Outbox</th><th>تغییر پس از مشاهده</th><th>رجیستری / ابلاغ</th><th>مقایسه‌پذیری</th><th>وضعیت تصمیم</th></tr></thead><tbody>{current.inspections.map(item=><tr key={item.noteId}>
      <td>{new Date(item.inspectedAt).toLocaleString('fa-IR')}</td><td>{item.requestId}</td><td>{item.noteId}</td>
      <td>{item.findingCodes.length?item.findingCodes.map(code=>{const label=dossierFindingCodes.find(([known])=>known===code)?.[1]||code;return <span key={code}>{code} — {label}<br/></span>}):'کدی ثبت نشده'}</td>
