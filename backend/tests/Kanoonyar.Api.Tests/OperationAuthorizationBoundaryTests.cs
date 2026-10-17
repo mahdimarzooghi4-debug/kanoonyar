@@ -169,8 +169,8 @@ POST /api/v1/centers/{centerId}/site/templates/revisions
             services.GetRequiredService<ILocalPlanDraftReadAuthorization>());
         Assert.IsType<UnapprovedLocalPlanDraftWriteAuthorization>(
             services.GetRequiredService<ILocalPlanDraftWriteAuthorization>());
-        Assert.IsType<UnapprovedNationalInspectionDossierReadAuthorization>(
-            services.GetRequiredService<INationalInspectionDossierReadAuthorization>());
+        Assert.IsType<UnapprovedNationalInspectionReadAuthorization>(
+            services.GetRequiredService<INationalInspectionReadAuthorization>());
     }
 
     [Fact]
