@@ -40,7 +40,7 @@ test('workbench filters national groups by stable technical finding codes',async
  await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();
  await expect(page.getByRole('rowheader',{name:'clean-program / ۱'})).toBeVisible();
  await page.getByRole('button',{name:'فقط گروه‌های دارای کد فنی'}).click();
- await expect(page.getByRole('rowheader',{name:'filtered-program / ۱'})).toBeVisible();
+ await expect(page.getByRole('rowheader',{name:'finding-program / ۱'})).toBeVisible();
  await expect(page.getByRole('rowheader',{name:'clean-program / ۱'})).toHaveCount(0);
  await expect(page.getByRole('button',{name:'فقط گروه‌های دارای کد فنی'})).toHaveAttribute('aria-pressed','true');
  expect(filtered).toBe(true);
@@ -108,7 +108,7 @@ test('CSV export follows active finding filters across all pages and contains on
  await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();
  await page.getByRole('button',{name:'فقط گروه‌های دارای کد فنی'}).click();
  await page.getByLabel('کد فنی مشخص').selectOption('INSPECTION_AUDIT_EVIDENCE_INVALID');
- await expect(page.getByRole('rowheader',{name:'finding-program / ۱'})).toBeVisible();
+ await expect(page.getByRole('rowheader',{name:'filtered-program / ۱'})).toBeVisible();
  capturingExport=true;
  const downloadPromise=page.waitForEvent('download');
  await page.getByRole('button',{name:'دانلود CSV تجمیعی'}).click();
