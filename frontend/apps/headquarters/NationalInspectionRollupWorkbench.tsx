@@ -149,6 +149,9 @@ export function NationalInspectionRollupWorkbench(){
   if(dossier.pages[dossier.index+1]){setDossier({...dossier,index:dossier.index+1,status:'ready'});return;}
   const request=++dossierRequest.current;setDossier({...dossier,status:'loading',error:''});
   try{const next=await readDossier(dossier.target,current.nextCursor,dossier.findingsOnly,dossier.findingCode);
+   const initialMatchCount=dossier.pages[0]?.matchingNoteCount;
+   if(initialMatchCount!==undefined&&next.matchingNoteCount!==initialMatchCount)
+    throw Error('تعداد یادداشت‌های منطبق بین صفحه‌ها تغییر کرده است؛ برای جلوگیری از نمایش پروندهٔ ناسازگار، دوباره بارگذاری کنید.');
    const prior=new Set(dossier.pages.flatMap(page=>page.inspections.map(row=>row.noteId)));
    if(next.inspections.some(row=>prior.has(row.noteId)))throw Error('صفحهٔ بعدی پروندهٔ فنی تکراری یا نامعتبر است.');
    if(request===dossierRequest.current)setDossier({...dossier,status:'ready',error:'',pages:[...dossier.pages,next],index:dossier.index+1});
