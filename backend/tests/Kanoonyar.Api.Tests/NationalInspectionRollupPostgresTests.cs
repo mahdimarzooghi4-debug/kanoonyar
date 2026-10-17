@@ -346,7 +346,7 @@ public sealed class NationalInspectionRollupPostgresTests
                     configuration, new TestOnlyAllowAuthorization(), CancellationToken.None));
             Assert.Equal("text/csv; charset=utf-8", exportResult.ContentType);
             Assert.Equal("national-inspection-rollup.csv", exportResult.FileDownloadName);
-            var csv = System.Text.Encoding.UTF8.GetString(exportResult.FileContents);
+            var csv = System.Text.Encoding.UTF8.GetString(exportResult.FileContents.ToArray());
             Assert.StartsWith("\uFEFF", csv);
             Assert.Contains("\"شناسه برنامه\"", csv);
             Assert.Contains("\"" + prefix + "-02\"", csv);
