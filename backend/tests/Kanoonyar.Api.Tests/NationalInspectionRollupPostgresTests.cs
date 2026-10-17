@@ -430,13 +430,13 @@ public sealed class NationalInspectionRollupPostgresTests
 
             await SeedAdditionalInspectionNotes(AdminUrl, prefix + "-01", 50);
             var dossierFirst = await Dossier(configuration, prefix + "-01", 1);
-            Assert.Equal("S104_NATIONAL_INSPECTION_DOSSIER_V2",
+            Assert.Equal("S105_NATIONAL_INSPECTION_DOSSIER_V3",
                 dossierFirst.GetProperty("contractVersion").GetString());
             var dossierRows = dossierFirst.GetProperty("inspections").EnumerateArray().ToArray();
             Assert.Equal(50, dossierRows.Length);
             Assert.All(dossierRows, row =>
             {
-                Assert.Equal(15, row.EnumerateObject().Count());
+                Assert.Equal(16, row.EnumerateObject().Count());
                 Assert.Equal(prefix + "-01", dossierFirst.GetProperty("programId").GetString());
                 Assert.True(row.GetProperty("originalRequestIntegrityValid").GetBoolean());
                 Assert.True(row.GetProperty("observationIntegrityValid").GetBoolean());
@@ -468,7 +468,17 @@ public sealed class NationalInspectionRollupPostgresTests
             Assert.True(filteredDossier.GetProperty("findingsOnly").GetBoolean());
             Assert.Equal("INSPECTION_AUDIT_EVIDENCE_INVALID",
                 filteredDossier.GetProperty("findingCode").GetString());
-            Assert.Single(filteredDossier.GetProperty("inspections").EnumerateArray());
+            var filteredDossierNote = Assert.Single(filteredDossier.GetProperty("inspections").EnumerateArray());
+            Assert.Equal("INSPECTION_AUDIT_EVIDENCE_INVALID",
+                Assert.Single(filteredDossierNote.GetProperty("findingCodes").EnumerateArray()).GetString());
+            var attributedCsvContext = new DefaultHttpContext();
+            attributedCsvContext.Request.QueryString = new QueryString(
+                "?programId=" + Uri.EscapeDataString(prefix + "-02") + "&nationalVersion=1");
+            var attributedCsv = Assert.IsType<FileContentHttpResult>(
+                await NationalInspectionDossierEndpoint.ExportCsv(attributedCsvContext, Actor(),
+                    configuration, new TestOnlyAllowAuthorization(), CancellationToken.None));
+            Assert.Contains("\"INSPECTION_AUDIT_EVIDENCE_INVALID\"",
+                System.Text.Encoding.UTF8.GetString(attributedCsv.FileContents.ToArray()));
 
             var dossierExportContext = new DefaultHttpContext();
             dossierExportContext.Request.QueryString = new QueryString(
@@ -488,10 +498,11 @@ public sealed class NationalInspectionRollupPostgresTests
             Assert.DoesNotContain("UNVERIFIED-s101-ci-fixture", dossierCsv);
             var dossierCsvRecords = dossierCsv.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
             Assert.Equal(52, dossierCsvRecords.Length);
-            Assert.All(dossierCsvRecords, record => Assert.Equal(17, record.Split(',').Length));
-            Assert.Equal("S103_NATIONAL_INSPECTION_DOSSIER_CSV_RECEIPT_V1",
+            Assert.All(dossierCsvRecords, record => Assert.Equal(18, record.Split(',').Length));
+            Assert.Contains("\"finding_codes\"", dossierCsvRecords[0]);
+            Assert.Equal("S105_NATIONAL_INSPECTION_DOSSIER_CSV_RECEIPT_V2",
                 dossierExportContext.Response.Headers["X-National-Inspection-Dossier-Export-Contract"].ToString());
-            Assert.Equal("S103_NATIONAL_INSPECTION_DOSSIER_CSV_V1",
+            Assert.Equal("S105_NATIONAL_INSPECTION_DOSSIER_CSV_V2",
                 dossierExportContext.Response.Headers["X-National-Inspection-Dossier-Export-Schema"].ToString());
             Assert.Equal("51",
                 dossierExportContext.Response.Headers["X-National-Inspection-Dossier-Export-Row-Count"].ToString());
