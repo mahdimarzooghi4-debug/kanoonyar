@@ -205,6 +205,11 @@ public sealed class NationalInspectionRollupPostgresTests
         var prefix = "s98-export-cap-" + Guid.NewGuid().ToString("N");
         await using var admin = new NpgsqlConnection(adminUrl);
         await admin.OpenAsync();
+        await using var transaction = await admin.BeginTransactionAsync();
+        await using (var triggerMode = new NpgsqlCommand(
+            "SET LOCAL session_replication_role = replica", admin, transaction))
+            await triggerMode.ExecuteNonQueryAsync();
+
         await using var command = new NpgsqlCommand(
             """
             WITH generated AS (
@@ -228,9 +233,16 @@ public sealed class NationalInspectionRollupPostgresTests
               snapshot,encode(sha256(convert_to(snapshot::text,'UTF8')),'hex'),
               'Synthetic export cap test','s98-ci-export-cap'
             FROM generated
-            """, admin);
+            """, admin, transaction);
         command.Parameters.AddWithValue("prefix", prefix);
         Assert.Equal(10001, await command.ExecuteNonQueryAsync());
+
+        // The fixture intentionally omits the matching audit/outbox evidence so
+        // every generated group remains a diagnostic-only integrity finding.
+        await using (var restoreTriggerMode = new NpgsqlCommand(
+            "SET LOCAL session_replication_role = origin", admin, transaction))
+            await restoreTriggerMode.ExecuteNonQueryAsync();
+        await transaction.CommitAsync();
     }
 
     private static async Task<JsonElement> Page(IConfiguration configuration, string? beforeProgramId = null,
