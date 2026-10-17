@@ -200,6 +200,51 @@ public sealed class NationalInspectionRollupPostgresTests
         return prefix;
     }
 
+    private static async Task SeedCsvLimitGroups(string adminUrl)
+    {
+        var prefix = "s98-export-cap-" + Guid.NewGuid().ToString("N");
+        await using var admin = new NpgsqlConnection(adminUrl);
+        await admin.OpenAsync();
+        await using var transaction = await admin.BeginTransactionAsync();
+        await using (var triggerMode = new NpgsqlCommand(
+            "SET LOCAL session_replication_role = replica", admin, transaction))
+            await triggerMode.ExecuteNonQueryAsync();
+
+        await using var command = new NpgsqlCommand(
+            """
+            WITH generated AS (
+              SELECT n,gen_random_uuid() AS request_id,
+                jsonb_build_object(
+                  'formatVersion','S60_SOURCE_SNAPSHOT_V1',
+                  'programId',@prefix,
+                  'nationalVersion',n,
+                  'exactPublicationExists',false,
+                  'centers',jsonb_build_array(jsonb_build_object(
+                    'centerId','s98-unregistered-fixture-center',
+                    'registryExists',false,'registryActive',false,
+                    'exactIssuanceExists',false))) AS snapshot
+              FROM generate_series(1,10001) AS series(n)
+            )
+            INSERT INTO programs.national_issuance_review_intents
+              (request_id,program_id,national_version,explicit_center_ids,
+               original_source_snapshot,source_digest_sha256,
+               stated_review_reason,unverified_requester_subject)
+            SELECT request_id,@prefix,n,ARRAY['s98-unregistered-fixture-center']::text[],
+              snapshot,encode(sha256(convert_to(snapshot::text,'UTF8')),'hex'),
+              'Synthetic export cap test','s98-ci-export-cap'
+            FROM generated
+            """, admin, transaction);
+        command.Parameters.AddWithValue("prefix", prefix);
+        Assert.Equal(10001, await command.ExecuteNonQueryAsync());
+
+        // The fixture intentionally omits the matching audit/outbox evidence so
+        // every generated group remains a diagnostic-only integrity finding.
+        await using (var restoreTriggerMode = new NpgsqlCommand(
+            "SET LOCAL session_replication_role = origin", admin, transaction))
+            await restoreTriggerMode.ExecuteNonQueryAsync();
+        await transaction.CommitAsync();
+    }
+
     private static async Task<JsonElement> Page(IConfiguration configuration, string? beforeProgramId = null,
         int? beforeVersion = null, bool findingsOnly = false, string? findingCode = null,
         string? targetProgramId = null, int? targetNationalVersion = null)
@@ -354,6 +399,23 @@ public sealed class NationalInspectionRollupPostgresTests
             Assert.DoesNotContain("technicalNote", csv);
             Assert.DoesNotContain("explicitCenterIds", csv);
             Assert.Equal(2, csv.Split("\r\n", StringSplitOptions.RemoveEmptyEntries).Length);
+            Assert.Equal("S98_NATIONAL_INSPECTION_CSV_RECEIPT_V1",
+                exportContext.Response.Headers["X-National-Inspection-Export-Contract"].ToString());
+            Assert.Equal("1",
+                exportContext.Response.Headers["X-National-Inspection-Export-Row-Count"].ToString());
+            Assert.Equal(
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(exportResult.FileContents.Span))
+                    .ToLowerInvariant(),
+                exportContext.Response.Headers["X-National-Inspection-Export-SHA256"].ToString());
+
+            await SeedCsvLimitGroups(AdminUrl);
+            var overLimitContext = new DefaultHttpContext();
+            overLimitContext.Request.QueryString = new QueryString(
+                "?findingsOnly=true&findingCode=OUTBOX_EVIDENCE_INVALID");
+            var overLimit = await NationalInspectionRollupEndpoint.ExportCsv(overLimitContext, Actor(),
+                configuration, new TestOnlyAllowAuthorization(), CancellationToken.None);
+            var overLimitProblem = Assert.IsType<ProblemHttpResult>(overLimit);
+            Assert.Equal(413, overLimitProblem.StatusCode);
 
             var filtered = new List<JsonElement>();
             string? filterBeforeId = null;
