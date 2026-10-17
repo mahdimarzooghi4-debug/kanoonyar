@@ -40,7 +40,7 @@ test('workbench filters national groups by stable technical finding codes',async
  await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();
  await expect(page.getByRole('rowheader',{name:'clean-program / ۱'})).toBeVisible();
  await page.getByRole('button',{name:'فقط گروه‌های دارای کد فنی'}).click();
- await expect(page.getByRole('rowheader',{name:'finding-program / ۱'})).toBeVisible();
+ await expect(page.getByRole('rowheader',{name:'filtered-program / ۱'})).toBeVisible();
  await expect(page.getByRole('rowheader',{name:'clean-program / ۱'})).toHaveCount(0);
  await expect(page.getByRole('button',{name:'فقط گروه‌های دارای کد فنی'})).toHaveAttribute('aria-pressed','true');
  expect(filtered).toBe(true);
@@ -93,7 +93,8 @@ test('CSV export follows active finding filters across all pages and contains on
   if(u.searchParams.get('findingsOnly')==='true'){
    if(u.searchParams.get('findingCode')!=='INSPECTION_AUDIT_EVIDENCE_INVALID')
     return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[{...row('finding-program'),inspectionAuditEvidenceInvalidNoteCount:1}],nextCursor:null})});
-   if(capturingExport)requested.push(u.search);
+   if(!capturingExport)return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[{...row('filtered-program'),inspectionAuditEvidenceInvalidNoteCount:1}],nextCursor:null})});
+   requested.push(u.search);
    if(u.searchParams.has('beforeProgramId')){
     expect(u.searchParams.get('beforeProgramId')).toBe('export-20');
     expect(u.searchParams.get('beforeNationalVersion')).toBe('1');
