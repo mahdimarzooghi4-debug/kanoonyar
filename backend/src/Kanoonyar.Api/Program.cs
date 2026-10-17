@@ -5,8 +5,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHealthChecks();
 builder.Services.AddProblemDetails();
-builder.Services.AddSingleton<INationalInspectionRollupReadAuthorization, UnapprovedNationalInspectionRollupReadAuthorization>();
-builder.Services.AddSingleton<INationalInspectionDossierReadAuthorization, UnapprovedNationalInspectionDossierReadAuthorization>();
+builder.Services.AddSingleton<INationalInspectionReadAuthorization, UnapprovedNationalInspectionReadAuthorization>();
 var oidcConfigured = builder.AddConfiguredOidc();
 
 builder.Services.AddSingleton<ILocalPlanDraftWriteAuthorization, UnapprovedLocalPlanDraftWriteAuthorization>();
