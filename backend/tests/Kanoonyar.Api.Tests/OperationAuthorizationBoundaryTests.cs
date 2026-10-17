@@ -65,6 +65,7 @@ GET /api/v1/centers/{centerId}/site/templates/{templateId:guid}/revisions
 GET /api/v1/headquarters/national-issuance/review-rollup
 GET /api/v1/headquarters/national-issuance/review-rollup/export.csv
 GET /api/v1/headquarters/national-issuance/review-dossier
+GET /api/v1/headquarters/national-issuance/review-dossier/export.csv
 GET /api/v1/identity/center-memberships
 GET /api/v1/identity/me
 POST /api/v1/centers/{centerId}/activity-reports/sourced
@@ -180,7 +181,8 @@ POST /api/v1/centers/{centerId}/site/templates/revisions
         var endpoints = Endpoints(factory);
         var expected = ExpectedAuthenticatedRoutes.OrderBy(x => x, StringComparer.Ordinal).ToArray();
         var expectedWithoutOidcOnlyRoute = expected.Where(route =>
-            route != "GET /api/v1/headquarters/national-issuance/review-dossier").ToArray();
+            route is not ("GET /api/v1/headquarters/national-issuance/review-dossier" or
+                "GET /api/v1/headquarters/national-issuance/review-dossier/export.csv")).ToArray();
         var actual = Inventory(endpoints);
         Assert.Equal(expectedWithoutOidcOnlyRoute.Concat(new[] { "GET /api/v1/programs/published",
             "GET /api/v1/programs/published/version" })
