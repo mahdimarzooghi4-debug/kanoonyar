@@ -79,6 +79,24 @@ public sealed class NationalInspectionDossierEndpointTests
     }
 
     [Fact]
+    public async Task Dossier_findings_filter_is_allowlisted_and_bound_into_authorization_scope()
+    {
+        var authorization = new FixedAuthorization(false);
+        Assert.Equal(403, await Status(await NationalInspectionDossierEndpoint.List(
+            Context("?programId=national-1&nationalVersion=3&findingsOnly=true&findingCode=OBSERVATION_INTEGRITY_INVALID"),
+            Actor(), Config(), authorization, default)));
+        Assert.Equal(new NationalInspectionReadScope(
+            NationalInspectionReadOperation.InspectionDossierPage, "national-1", 3,
+            FindingsOnly: true, FindingCode: "OBSERVATION_INTEGRITY_INVALID"), authorization.LastScope);
+
+        var untouchedAuthorization = new FixedAuthorization(true);
+        Assert.Equal(400, await Status(await NationalInspectionDossierEndpoint.List(
+            Context("?programId=national-1&nationalVersion=3&findingCode=ISSUANCE_AUTHORIZED"),
+            Actor(), Config(), untouchedAuthorization, default)));
+        Assert.Null(untouchedAuthorization.LastScope);
+    }
+
+    [Fact]
     public async Task CSV_export_has_distinct_exact_target_scope_and_rejects_page_cursor()
     {
         var authorization = new FixedAuthorization(false);
@@ -87,6 +105,12 @@ public sealed class NationalInspectionDossierEndpointTests
         Assert.Equal(new NationalInspectionReadScope(
             NationalInspectionReadOperation.InspectionDossierCsvExport, "national-2", 8,
             FindingsOnly: false, FindingCode: null), authorization.LastScope);
+
+        var filteredExportAuthorization = new FixedAuthorization(true);
+        Assert.Equal(400, await Status(await NationalInspectionDossierEndpoint.ExportCsv(
+            Context("?programId=national-2&nationalVersion=8&findingsOnly=true"), Actor(), Config(),
+            filteredExportAuthorization, default)));
+        Assert.Null(filteredExportAuthorization.LastScope);
 
         var untouchedAuthorization = new FixedAuthorization(true);
         Assert.Equal(400, await Status(await NationalInspectionDossierEndpoint.ExportCsv(
