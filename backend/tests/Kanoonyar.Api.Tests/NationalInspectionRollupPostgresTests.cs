@@ -22,7 +22,8 @@ public sealed class NationalInspectionRollupPostgresTests
     private static string? AdminUrl => Environment.GetEnvironmentVariable("CENTER_DRAFT_INTEGRATION_ADMIN_URL");
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private sealed class TestOnlyAllowAuthorization : INationalInspectionRollupReadAuthorization
+    private sealed class TestOnlyAllowAuthorization : INationalInspectionRollupReadAuthorization,
+        INationalInspectionDossierReadAuthorization
     {
         public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, CancellationToken cancellationToken) =>
             ValueTask.FromResult(true);
@@ -274,6 +275,61 @@ public sealed class NationalInspectionRollupPostgresTests
         return json.RootElement.Clone();
     }
 
+    private static async Task<JsonElement> Dossier(IConfiguration configuration, string programId, int version,
+        string? beforeInspectedAt = null, Guid? beforeNoteId = null)
+    {
+        var context = new DefaultHttpContext();
+        var query = new List<KeyValuePair<string,string?>>
+        {
+            new("programId", programId),
+            new("nationalVersion", version.ToString(System.Globalization.CultureInfo.InvariantCulture))
+        };
+        if (beforeInspectedAt is not null && beforeNoteId.HasValue)
+        {
+            query.Add(new("beforeInspectedAt", beforeInspectedAt));
+            query.Add(new("beforeNoteId", beforeNoteId.Value.ToString("D")));
+        }
+        context.Request.QueryString = QueryString.Create(query);
+        var result = await NationalInspectionDossierEndpoint.List(context, Actor(), configuration,
+            new TestOnlyAllowAuthorization(), CancellationToken.None);
+        Assert.Equal(200, (result as IStatusCodeHttpResult)?.StatusCode);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(
+            Assert.IsAssignableFrom<IValueHttpResult>(result).Value, JsonOptions));
+        return json.RootElement.Clone();
+    }
+
+    private static async Task SeedAdditionalInspectionNotes(string adminUrl, string programId, int count)
+    {
+        await using var connection = new NpgsqlConnection(adminUrl);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead);
+        Guid requestId;
+        await using (var find = new NpgsqlCommand(
+            "SELECT request_id FROM programs.national_issuance_review_intents WHERE program_id=@program AND national_version=1",
+            connection, transaction))
+        {
+            find.Parameters.AddWithValue("program", programId);
+            requestId = (Guid)(await find.ExecuteScalarAsync()
+                ?? throw new InvalidOperationException("S101 synthetic request was not found"));
+        }
+        for (var index = 0; index < count; index++)
+        {
+            await using var capture = new NpgsqlCommand(
+                """
+                SELECT programs.capture_national_issuance_review_inspection_note(
+                  @note,@request,'UNVERIFIED-s101-ci-fixture',
+                  'Synthetic technical dossier pagination only',@audit,@event,@correlation)
+                """, connection, transaction);
+            capture.Parameters.AddWithValue("note", Guid.NewGuid());
+            capture.Parameters.AddWithValue("request", requestId);
+            capture.Parameters.AddWithValue("audit", Guid.NewGuid());
+            capture.Parameters.AddWithValue("event", Guid.NewGuid());
+            capture.Parameters.AddWithValue("correlation", Guid.NewGuid().ToString("N"));
+            await capture.ExecuteNonQueryAsync();
+        }
+        await transaction.CommitAsync();
+    }
+
     [Fact]
     public async Task Restricted_API_reader_paginates_all_rollup_groups_without_private_fields()
     {
@@ -293,7 +349,8 @@ public sealed class NationalInspectionRollupPostgresTests
             var configuration = new ConfigurationBuilder().AddInMemoryCollection(
                 new Dictionary<string, string?>
                 {
-                    ["NATIONAL_INSPECTION_ROLLUP_READ_DATABASE_URL"] = readBuilder.ConnectionString
+                    ["NATIONAL_INSPECTION_ROLLUP_READ_DATABASE_URL"] = readBuilder.ConnectionString,
+                    ["NATIONAL_INSPECTION_DOSSIER_READ_DATABASE_URL"] = readBuilder.ConnectionString
                 }).Build();
 
             var all = new List<JsonElement>();
@@ -365,6 +422,41 @@ public sealed class NationalInspectionRollupPostgresTests
             Assert.Equal(21, fixtures.Count(x =>
                 x.GetProperty("inspectionAuditEvidenceInvalidNoteCount").GetInt64() == 1));
             Assert.True(pages >= 2);
+
+            await SeedAdditionalInspectionNotes(AdminUrl, prefix + "-01", 50);
+            var dossierFirst = await Dossier(configuration, prefix + "-01", 1);
+            Assert.Equal("S101_NATIONAL_INSPECTION_DOSSIER_V1",
+                dossierFirst.GetProperty("contractVersion").GetString());
+            var dossierRows = dossierFirst.GetProperty("inspections").EnumerateArray().ToArray();
+            Assert.Equal(50, dossierRows.Length);
+            Assert.All(dossierRows, row =>
+            {
+                Assert.Equal(15, row.EnumerateObject().Count());
+                Assert.Equal(prefix + "-01", dossierFirst.GetProperty("programId").GetString());
+                Assert.True(row.GetProperty("originalRequestIntegrityValid").GetBoolean());
+                Assert.True(row.GetProperty("observationIntegrityValid").GetBoolean());
+                Assert.True(row.GetProperty("auditAndOutboxIntegrityValid").GetBoolean());
+                Assert.False(row.GetProperty("humanReviewRecorded").GetBoolean());
+                Assert.False(row.GetProperty("issuanceAuthorized").GetBoolean());
+                Assert.False(row.GetProperty("issuanceExecuted").GetBoolean());
+                foreach (var privateField in new[]
+                {
+                    "centerId","explicitCenterIds","originalSourceSnapshot","observedSourceSnapshot",
+                    "technicalNote","unverifiedInspectorSubject","originalSourceDigestSha256",
+                    "pinnedRequestDigestSha256","observedDigestSha256"
+                }) Assert.False(row.TryGetProperty(privateField, out _));
+            });
+            Assert.Equal(50, dossierRows.Select(row => row.GetProperty("noteId").GetGuid()).Distinct().Count());
+            var dossierCursor = dossierFirst.GetProperty("nextCursor");
+            Assert.NotEqual(JsonValueKind.Null, dossierCursor.ValueKind);
+            var dossierSecond = await Dossier(configuration, prefix + "-01", 1,
+                dossierCursor.GetProperty("beforeInspectedAt").GetString(),
+                dossierCursor.GetProperty("beforeNoteId").GetGuid());
+            var lastDossierRows = dossierSecond.GetProperty("inspections").EnumerateArray().ToArray();
+            Assert.Single(lastDossierRows);
+            Assert.Equal(JsonValueKind.Null, dossierSecond.GetProperty("nextCursor").ValueKind);
+            Assert.DoesNotContain(lastDossierRows[0].GetProperty("noteId").GetGuid(),
+                dossierRows.Select(row => row.GetProperty("noteId").GetGuid()));
 
             var exactTarget = await Page(configuration, targetProgramId: prefix + "-02", targetNationalVersion: 1);
             var exactTargetRow = Assert.Single(exactTarget.GetProperty("rollups").EnumerateArray());
