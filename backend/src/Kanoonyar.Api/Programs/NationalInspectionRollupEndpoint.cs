@@ -228,6 +228,8 @@ public static class NationalInspectionRollupEndpoint
                 var csv = BuildCsv(rows);
                 context.Response.Headers["X-National-Inspection-Export-Contract"] =
                     "S98_NATIONAL_INSPECTION_CSV_RECEIPT_V1";
+                context.Response.Headers["X-National-Inspection-Export-Schema"] =
+                    "S100_NATIONAL_INSPECTION_CSV_SCHEMA_V1";
                 context.Response.Headers["X-National-Inspection-Export-Row-Count"] =
                     rows.Count.ToString(CultureInfo.InvariantCulture);
                 context.Response.Headers["X-National-Inspection-Export-SHA256"] =
