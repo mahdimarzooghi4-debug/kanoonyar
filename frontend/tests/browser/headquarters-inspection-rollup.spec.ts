@@ -107,6 +107,7 @@ test('CSV export follows active finding filters across all pages and contains on
  await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();
  await page.getByRole('button',{name:'فقط گروه‌های دارای کد فنی'}).click();
  await page.getByLabel('کد فنی مشخص').selectOption('INSPECTION_AUDIT_EVIDENCE_INVALID');
+ await expect(page.getByRole('rowheader',{name:'finding-program / ۱'})).toBeVisible();
  capturingExport=true;
  const downloadPromise=page.waitForEvent('download');
  await page.getByRole('button',{name:'دانلود CSV تجمیعی'}).click();
