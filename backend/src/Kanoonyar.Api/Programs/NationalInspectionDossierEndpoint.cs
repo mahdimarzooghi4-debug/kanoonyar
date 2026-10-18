@@ -216,7 +216,38 @@ public static class NationalInspectionDossierEndpoint
             if (expectedMatchingNoteSetSha256 is not null &&
                 !string.Equals(expectedMatchingNoteSetSha256, matchingNoteSetSha256, StringComparison.Ordinal))
                 return Results.Problem(statusCode: StatusCodes.Status409Conflict,
-                    title: "National inspection dossier match set changed");
+                    title: "National inspection dossier continuation changed");
+
+            if (cursor is not null)
+            {
+                await using var anchorCommand = new NpgsqlCommand(
+                    """
+                    SELECT EXISTS (
+                      SELECT 1
+                      FROM programs.national_issuance_review_inspection_dossier d
+                      WHERE d.program_id=@program_id AND d.national_version=@national_version
+                        AND d.note_id=@before_note_id AND d.inspection_recorded_at=@before_at
+                        AND (@findings_only = false OR EXISTS (
+                          SELECT 1 FROM programs.national_issuance_review_inspection_findings f
+                          WHERE f.program_id=d.program_id AND f.national_version=d.national_version
+                            AND f.note_id=d.note_id))
+                        AND (@finding_code::text IS NULL OR EXISTS (
+                          SELECT 1 FROM programs.national_issuance_review_inspection_findings f
+                          WHERE f.program_id=d.program_id AND f.national_version=d.national_version
+                            AND f.note_id=d.note_id AND f.finding_code=@finding_code))
+                    )
+                    """, connection, transaction);
+                anchorCommand.Parameters.Add("program_id", NpgsqlDbType.Text).Value = target.ProgramId;
+                anchorCommand.Parameters.Add("national_version", NpgsqlDbType.Integer).Value = target.NationalVersion;
+                anchorCommand.Parameters.Add("before_note_id", NpgsqlDbType.Uuid).Value = cursor.NoteId;
+                anchorCommand.Parameters.Add("before_at", NpgsqlDbType.TimestampTz).Value = cursor.InspectedAt;
+                anchorCommand.Parameters.Add("findings_only", NpgsqlDbType.Boolean).Value = findingsOnly;
+                anchorCommand.Parameters.Add("finding_code", NpgsqlDbType.Text).Value =
+                    findingCode is null ? DBNull.Value : findingCode;
+                if (await anchorCommand.ExecuteScalarAsync(cancellationToken) is not true)
+                    return Results.Problem(statusCode: StatusCodes.Status409Conflict,
+                        title: "National inspection dossier continuation changed");
+            }
 
             await using var command = new NpgsqlCommand(
                 """
@@ -311,7 +342,7 @@ public static class NationalInspectionDossierEndpoint
             await transaction.CommitAsync(cancellationToken);
             return Results.Ok(new
             {
-                contractVersion = "S109_NATIONAL_INSPECTION_DOSSIER_V6",
+                contractVersion = "S110_NATIONAL_INSPECTION_DOSSIER_V7",
                 matchingNoteCount,
                 matchingNoteSetSha256,
                 programId = target.ProgramId,

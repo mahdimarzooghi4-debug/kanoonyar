@@ -57,7 +57,7 @@ async function read(cursor:Cursor|null,signal:AbortSignal,findingsOnly:boolean,f
 function parseDossierPage(value:unknown,target:Target,findingsOnly:boolean,findingCode:string):DossierPage|null{
  if(!value||typeof value!=='object')return null;
  const root=value as Record<string,unknown>;
- if(root.contractVersion!=='S109_NATIONAL_INSPECTION_DOSSIER_V6'||root.programId!==target.programId||root.nationalVersion!==target.nationalVersion||root.findingsOnly!==findingsOnly||root.findingCode!==(findingCode||null)||!Number.isSafeInteger(root.matchingNoteCount)||Number(root.matchingNoteCount)<0||typeof root.matchingNoteSetSha256!=='string'||! /^[0-9a-f]{64}$/.test(root.matchingNoteSetSha256)||!Array.isArray(root.inspections)||root.inspections.length>50||Number(root.matchingNoteCount)<root.inspections.length)return null;
+ if(root.contractVersion!=='S110_NATIONAL_INSPECTION_DOSSIER_V7'||root.programId!==target.programId||root.nationalVersion!==target.nationalVersion||root.findingsOnly!==findingsOnly||root.findingCode!==(findingCode||null)||!Number.isSafeInteger(root.matchingNoteCount)||Number(root.matchingNoteCount)<0||typeof root.matchingNoteSetSha256!=='string'||! /^[0-9a-f]{64}$/.test(root.matchingNoteSetSha256)||!Array.isArray(root.inspections)||root.inspections.length>50||Number(root.matchingNoteCount)<root.inspections.length)return null;
  const rows:Inspection[]=[],seen=new Set<string>();
  for(const raw of root.inspections){
   if(!raw||typeof raw!=='object')return null;
