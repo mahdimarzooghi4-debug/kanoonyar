@@ -306,7 +306,7 @@ export function NationalInspectionRollupWorkbench(){
    {exportingDossier&&<p role="status">خروجی نسخهٔ دقیق تا تطبیق طرح‌واره، تعداد ردیف‌ها و اثرانگشت دانلود نمی‌شود.</p>}
    {dossierExportError&&<p role="alert">{dossierExportError}</p>}{dossierExportStatus&&<p role="status">{dossierExportStatus}</p>}
    {dossier.status==='loading'&&<p role="status">در حال دریافت پروندهٔ فنی…</p>}
-   {dossier.status==='error'&&<div role="alert"><p>{dossier.error}</p><button type="button" onClick={()=>void showDossier(dossier.target!,dossier.findingsOnly,dossier.findingCode)}>تلاش دوباره</button></div>}
+   {dossier.status==='error'&&<div role="alert"><p>{dossier.error}</p><button type="button" onClick={()=>void showDossier(dossier.target!,dossier.findingsOnly,dossier.findingCode)}>بارگذاری دوباره از صفحهٔ اول</button></div>}
    {dossier.status==='ready'&&(()=>{const current=dossier.pages[dossier.index];return <>
     <p role="status">در این خوانش، {n(current.matchingNoteCount)} یادداشت با فیلتر فعلی برای این نسخه منطبق است. شمارش و صفحه از snapshot همین درخواست‌اند.</p>
     {current.inspections.length===0?<p role="status">یادداشت فنی با این فیلتر برای این نسخه ثبت نشده است.</p>:<div style={{overflowX:'auto'}}><table><caption>شواهد فنیِ صفحهٔ جاری؛ بدون متن یادداشت و شناسهٔ کانون</caption><thead><tr><th>زمان بازرسی</th><th>شناسه درخواست</th><th>شناسه یادداشت</th><th>کدهای فنی</th><th>تغییر منبع</th><th>یکپارچگی درخواست</th><th>یکپارچگی مشاهده</th><th>Audit / Outbox</th><th>تغییر پس از مشاهده</th><th>رجیستری / ابلاغ</th><th>مقایسه‌پذیری</th><th>وضعیت تصمیم</th></tr></thead><tbody>{current.inspections.map(item=><tr key={item.noteId}>
