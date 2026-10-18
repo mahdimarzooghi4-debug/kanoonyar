@@ -1,6 +1,5 @@
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 
@@ -30,12 +29,8 @@ public sealed class HealthEndpointIntegrationTests : IClassFixture<WebApplicatio
     {
         using var factory = _factory.WithWebHostBuilder(builder => builder
             .UseEnvironment("Staging")
-            .ConfigureAppConfiguration((_, configuration) =>
-                configuration.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["OIDC_AUTHORITY"] = "",
-                    ["OIDC_AUDIENCE"] = ""
-                })));
+            .UseSetting("OIDC_AUTHORITY", "")
+            .UseSetting("OIDC_AUDIENCE", ""));
         using var client = factory.CreateClient();
 
         using var readiness = await client.GetAsync("/health/ready");
@@ -50,12 +45,8 @@ public sealed class HealthEndpointIntegrationTests : IClassFixture<WebApplicatio
     {
         using var factory = _factory.WithWebHostBuilder(builder => builder
             .UseEnvironment("Staging")
-            .ConfigureAppConfiguration((_, configuration) =>
-                configuration.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["OIDC_AUTHORITY"] = "https://identity.stage.example.invalid",
-                    ["OIDC_AUDIENCE"] = "kanoonyar-stage"
-                })));
+            .UseSetting("OIDC_AUTHORITY", "https://identity.stage.example.invalid")
+            .UseSetting("OIDC_AUDIENCE", "kanoonyar-stage"));
         using var client = factory.CreateClient();
 
         using var readiness = await client.GetAsync("/health/ready");
