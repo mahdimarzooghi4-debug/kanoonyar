@@ -443,7 +443,7 @@ public sealed class NationalInspectionRollupPostgresTests
 
             await SeedAdditionalInspectionNotes(AdminUrl, prefix + "-01", 50);
             var dossierFirst = await Dossier(configuration, prefix + "-01", 1);
-            Assert.Equal("S109_NATIONAL_INSPECTION_DOSSIER_V6",
+            Assert.Equal("S110_NATIONAL_INSPECTION_DOSSIER_V7",
                 dossierFirst.GetProperty("contractVersion").GetString());
             var dossierRows = dossierFirst.GetProperty("inspections").EnumerateArray().ToArray();
             Assert.Equal(50, dossierRows.Length);
@@ -489,8 +489,20 @@ public sealed class NationalInspectionRollupPostgresTests
                 expectedMatchingNoteSetSha256: new string('0', 64));
             Assert.IsType<ProblemHttpResult>(changedSet);
             Assert.Equal(409, (changedSet as IStatusCodeHttpResult)?.StatusCode);
+            var missingPrecondition = await DossierResult(configuration, prefix + "-01", 1,
+                dossierCursor.GetProperty("beforeInspectedAt").GetString(),
+                dossierCursor.GetProperty("beforeNoteId").GetGuid());
+            Assert.Equal(400, (missingPrecondition as IStatusCodeHttpResult)?.StatusCode);
+            var changedAnchor = await DossierResult(configuration, prefix + "-01", 1,
+                DateTimeOffset.Parse(dossierCursor.GetProperty("beforeInspectedAt").GetString()!,
+                    System.Globalization.CultureInfo.InvariantCulture).AddSeconds(1).ToString("O"),
+                dossierCursor.GetProperty("beforeNoteId").GetGuid(),
+                expectedMatchingNoteSetSha256: expectedNoteSetSha256);
+            Assert.IsType<ProblemHttpResult>(changedAnchor);
+            Assert.Equal(409, (changedAnchor as IStatusCodeHttpResult)?.StatusCode);
             var emptyDossierPage = await Dossier(configuration, prefix + "-01", 1,
-                "1900-01-01T00:00:00Z", Guid.Parse("00000000-0000-0000-0000-000000000001"),
+                lastDossierRows[0].GetProperty("inspectedAt").GetString(),
+                lastDossierRows[0].GetProperty("noteId").GetGuid(),
                 expectedMatchingNoteSetSha256: expectedNoteSetSha256);
             Assert.Empty(emptyDossierPage.GetProperty("inspections").EnumerateArray());
             Assert.Equal(51, emptyDossierPage.GetProperty("matchingNoteCount").GetInt64());
