@@ -174,6 +174,62 @@ test('technical dossier sends its match-set precondition and hides a server-reje
  await expect(dossier.getByRole('table')).toHaveCount(0);
  expect(calls).toBe(2);
 });
+test('stale dossier recovery restarts page one and preserves target and finding filter',async({page})=>{
+ let calls=0;
+ const findingCode='INSPECTION_AUDIT_EVIDENCE_INVALID';
+ const requested:URL[]=[];
+ await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>{
+  calls++;
+  const url=new URL(r.request().url());requested.push(url);
+  const code=url.searchParams.get('findingCode');
+  expect(url.searchParams.get('programId')).toBe('dossier-program');
+  expect(url.searchParams.get('nationalVersion')).toBe('4');
+  if(calls===1){
+   expect(code).toBeNull();
+   return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
+    contractVersion:'S110_NATIONAL_INSPECTION_DOSSIER_V7',findingsOnly:false,findingCode:null,
+    programId:'dossier-program',nationalVersion:4,matchingNoteSetSha256:'c'.repeat(64),
+    matchingNoteCount:1,inspections:[dossierRow('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee')],nextCursor:null
+   })});
+  }
+  expect(code).toBe(findingCode);
+  if(calls===2)return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
+   contractVersion:'S110_NATIONAL_INSPECTION_DOSSIER_V7',findingsOnly:true,findingCode,
+   programId:'dossier-program',nationalVersion:4,matchingNoteSetSha256:'a'.repeat(64),matchingNoteCount:51,
+   inspections:Array.from({length:50},(_,i)=>({...dossierRow('00000000-0000-0000-0000-'+String(i+1).padStart(12,'0')),findingCodes:[findingCode]})),
+   nextCursor:{beforeInspectedAt:dossierRow('00000000-0000-0000-0000-000000000050').inspectedAt,beforeNoteId:'00000000-0000-0000-0000-000000000050'}
+  })});
+  if(calls===3){
+   expect(url.searchParams.get('expectedMatchingNoteSetSha256')).toBe('a'.repeat(64));
+   expect(url.searchParams.has('beforeNoteId')).toBe(true);
+   return r.fulfill({status:409,contentType:'application/problem+json',body:JSON.stringify({status:409,title:'National inspection dossier continuation changed'})});
+  }
+  expect(calls).toBe(4);
+  expect(url.searchParams.has('beforeNoteId')).toBe(false);
+  expect(url.searchParams.has('expectedMatchingNoteSetSha256')).toBe(false);
+  return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
+   contractVersion:'S110_NATIONAL_INSPECTION_DOSSIER_V7',findingsOnly:true,findingCode,
+   programId:'dossier-program',nationalVersion:4,matchingNoteSetSha256:'b'.repeat(64),matchingNoteCount:1,
+   inspections:[{...dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff'),findingCodes:[findingCode]}],nextCursor:null
+  })});
+ });
+ await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('dossier-program',4)],nextCursor:null})}));
+ await page.goto('/');
+ await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();
+ await page.getByRole('button',{name:'نمایش پرونده فنی'}).click();
+ const dossier=page.locator('section[aria-labelledby="inspection-dossier-title"]');
+ await dossier.getByLabel('فیلتر پرونده فنی').selectOption(findingCode);
+ await expect(dossier.getByRole('row')).toHaveCount(51);
+ await dossier.getByRole('button',{name:'بعدی'}).click();
+ await expect(dossier.getByRole('alert')).toContainText('مجموعه یادداشت‌های منطبق تغییر کرده است');
+ await expect(dossier.getByRole('table')).toHaveCount(0);
+ await dossier.getByRole('button',{name:'بارگذاری دوباره از صفحهٔ اول'}).click();
+ await expect(dossier.getByRole('cell',{name:'ffffffff-ffff-ffff-ffff-ffffffffffff'})).toBeVisible();
+ await expect(dossier.getByRole('cell',{name:/INSPECTION_AUDIT_EVIDENCE_INVALID/})).toBeVisible();
+ await expect(dossier).not.toContainText('00000000-0000-0000-0000-000000000050');
+ expect(calls).toBe(4);
+ expect(requested[3].searchParams.get('findingCode')).toBe(findingCode);
+});
 test('exact-version dossier CSV verifies schema, row count and SHA-256 before download',async({page})=>{
  let requested:URL|null=null;
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('dossier-program',4)],nextCursor:null})}));
