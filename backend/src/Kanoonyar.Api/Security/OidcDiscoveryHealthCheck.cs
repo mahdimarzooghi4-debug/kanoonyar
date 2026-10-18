@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
@@ -54,6 +53,10 @@ public sealed class OidcDiscoveryHealthCheck(
         catch (JsonException)
         {
             return HealthCheckResult.Unhealthy("The configured OIDC discovery document is invalid.");
+        }
+        catch (IOException)
+        {
+            return HealthCheckResult.Unhealthy("The configured OIDC discovery document could not be read.");
         }
     }
 }
