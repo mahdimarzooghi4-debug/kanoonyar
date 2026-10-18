@@ -66,7 +66,7 @@ function parseDossierPage(value:unknown,target:Target,findingsOnly:boolean,findi
   const nullableCount=(v:unknown)=>v===null||(typeof v==='number'&&Number.isSafeInteger(v)&&v>=0);
   if(typeof r.requestId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.requestId)||
    typeof r.noteId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.noteId)||seen.has(r.noteId)||
-   typeof r.inspectedAt!=='string'||!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{7}Z$/.test(r.inspectedAt)||!Number.isFinite(Date.parse(r.inspectedAt))||
+   typeof r.inspectedAt!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$/.test(r.inspectedAt)||!Number.isFinite(Date.parse(r.inspectedAt))||
    ['sourceChangedSinceRequest','originalRequestIntegrityValid','observationIntegrityValid','auditAndOutboxIntegrityValid','currentSourceMatchesObservation'].some(k=>typeof r[k]!=='boolean')||
    !nullableBool(r.publicationStateChanged)||!nullableCount(r.centerRegistryChangeCount)||!nullableCount(r.exactIssuanceChangeCount)||!nullableBool(r.sourceObservationComparable)||
    r.humanReviewRecorded!==false||r.issuanceAuthorized!==false||r.issuanceExecuted!==false||
