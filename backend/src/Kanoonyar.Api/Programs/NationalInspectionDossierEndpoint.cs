@@ -244,7 +244,7 @@ public static class NationalInspectionDossierEndpoint
                 anchorCommand.Parameters.Add("findings_only", NpgsqlDbType.Boolean).Value = findingsOnly;
                 anchorCommand.Parameters.Add("finding_code", NpgsqlDbType.Text).Value =
                     findingCode is null ? DBNull.Value : findingCode;
-                if (!await anchorCommand.ExecuteScalarAsync(cancellationToken) is true)
+                if (await anchorCommand.ExecuteScalarAsync(cancellationToken) is not true)
                     return Results.Problem(statusCode: StatusCodes.Status409Conflict,
                         title: "National inspection dossier continuation changed");
             }
