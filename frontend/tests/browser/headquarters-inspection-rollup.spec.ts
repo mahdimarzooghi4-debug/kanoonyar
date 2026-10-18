@@ -230,6 +230,23 @@ test('stale dossier recovery restarts page one and preserves target and finding 
  expect(calls).toBe(4);
  expect(requested[3].searchParams.get('findingCode')).toBe(findingCode);
 });
+test('dossier rejects rows outside descending inspection-time order',async({page})=>{
+ await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('dossier-program',4)],nextCursor:null})}));
+ await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
+  contractVersion:'S110_NATIONAL_INSPECTION_DOSSIER_V7',findingsOnly:false,findingCode:null,programId:'dossier-program',nationalVersion:4,
+  matchingNoteSetSha256:'a'.repeat(64),matchingNoteCount:2,
+  inspections:[
+   {...dossierRow('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'),inspectedAt:'2026-10-16T12:00:00.0000000Z'},
+   {...dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff'),inspectedAt:'2026-10-17T12:00:00.0000000Z'}
+  ],nextCursor:null
+ })}));
+ await page.goto('/');
+ await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();
+ await page.getByRole('button',{name:'نمایش پرونده فنی'}).click();
+ const dossier=page.locator('section[aria-labelledby="inspection-dossier-title"]');
+ await expect(dossier.getByRole('alert')).toContainText('قرارداد بازرسی');
+ await expect(dossier.getByRole('table')).toHaveCount(0);
+});
 test('exact-version dossier CSV verifies schema, row count and SHA-256 before download',async({page})=>{
  let requested:URL|null=null;
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('dossier-program',4)],nextCursor:null})}));
