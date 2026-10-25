@@ -958,3 +958,90 @@ BEGIN
    ) THEN RAISE EXCEPTION 'S78 failed observed-scalar isolation for synthetic note %',v_note_id; END IF;
  END LOOP;
 END;$s78_observation_scalar_types$;
+
+
+-- S79 isolates semantic observation failures with valid hashes, scope equality,
+-- paired audit/outbox evidence, and non-authorizing flags.
+CREATE TEMP TABLE s79_observation_fixtures(
+ note_id uuid,request_id uuid,audit_id uuid,event_id uuid
+) ON COMMIT PRESERVE ROWS;
+INSERT INTO s79_observation_fixtures VALUES
+ ('aa790000-0000-4000-8000-000000000001',
+  'aa600000-0000-4000-8000-000000000081',
+  'aa790000-0000-4000-8000-000000000011',
+  'aa790000-0000-4000-8000-000000000021'),
+ ('aa790000-0000-4000-8000-000000000002',
+  'aa600000-0000-4000-8000-000000000091',
+  'aa790000-0000-4000-8000-000000000012',
+  'aa790000-0000-4000-8000-000000000022'),
+ ('aa790000-0000-4000-8000-000000000003',
+  'aa600000-0000-4000-8000-000000000101',
+  'aa790000-0000-4000-8000-000000000013',
+  'aa790000-0000-4000-8000-000000000023'),
+ ('aa790000-0000-4000-8000-000000000004',
+  'aa600000-0000-4000-8000-000000000111',
+  'aa790000-0000-4000-8000-000000000014',
+  'aa790000-0000-4000-8000-000000000024');
+
+BEGIN;
+INSERT INTO programs.national_issuance_review_inspection_notes(
+ note_id,request_id,pinned_request_digest_sha256,observed_source_snapshot,
+ observed_digest_sha256,source_changed_since_request,
+ unverified_inspector_subject,technical_note
+)
+SELECT f.note_id,i.request_id,i.source_digest_sha256,
+ i.original_source_snapshot,i.source_digest_sha256,false,
+ 'UNVERIFIED-s79-fixture-inspector',
+ 'Synthetic semantic observation integrity fixture'
+FROM s79_observation_fixtures f
+JOIN programs.national_issuance_review_intents i ON i.request_id=f.request_id;
+
+INSERT INTO governance.command_audit(
+ audit_id,occurred_at,actor_subject_id,center_id,action_code,target_type,
+ target_id,correlation_id,metadata
+)
+SELECT f.audit_id,transaction_timestamp(),'UNVERIFIED-s79-fixture-inspector',NULL,
+ 'NATIONAL_ISSUANCE_REVIEW_INSPECTION_NOTE_CAPTURED',
+ 'national_issuance_review_inspection_note',f.note_id::text,
+ 's79-'||f.note_id::text,
+ jsonb_build_object('request_id',f.request_id,'source_changed',false,
+   'unverified_actor',true,'human_review_recorded',false,
+   'issuance_authorized',false,'issuance_executed',false)
+FROM s79_observation_fixtures f;
+
+INSERT INTO governance.outbox_events(
+ event_id,audit_id,event_type,aggregate_type,aggregate_id,occurred_at,payload
+)
+SELECT f.event_id,f.audit_id,'NationalIssuanceReviewInspectionNoteCaptured',
+ 'national_issuance_review_inspection_note',f.note_id::text,
+ transaction_timestamp(),
+ jsonb_build_object('note_id',f.note_id,'request_id',f.request_id,
+   'source_changed',false,'technical_only',true,
+   'human_review_recorded',false,'issuance_authorized',false,
+   'issuance_executed',false)
+FROM s79_observation_fixtures f;
+COMMIT;
+
+DO $s79_observation_semantics$
+DECLARE v_note_id uuid;
+BEGIN
+ FOREACH v_note_id IN ARRAY ARRAY[
+   'aa790000-0000-4000-8000-000000000001'::uuid,
+   'aa790000-0000-4000-8000-000000000002'::uuid,
+   'aa790000-0000-4000-8000-000000000003'::uuid,
+   'aa790000-0000-4000-8000-000000000004'::uuid
+ ] LOOP
+   IF NOT EXISTS (
+     SELECT 1 FROM programs.national_issuance_review_inspection_dossier d
+     WHERE d.note_id=v_note_id
+       AND d.original_request_integrity_valid=true
+       AND d.observation_integrity_valid=true
+       AND d.audit_and_outbox_integrity_valid=true
+       AND d.source_observation_comparable=false
+       AND d.human_review_recorded=false
+       AND d.issuance_authorized=false
+       AND d.issuance_executed=false
+   ) THEN RAISE EXCEPTION 'S79 failed semantic observation isolation for synthetic note %',v_note_id; END IF;
+ END LOOP;
+END;$s79_observation_semantics$;
+DROP TABLE s79_observation_fixtures;
