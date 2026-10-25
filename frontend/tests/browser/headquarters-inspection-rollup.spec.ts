@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 test.skip(process.env.KANOONYAR_BROWSER_EXPERIENCE !== 'headquarters', 'Headquarters-only inspection workbench');
+const exportHeaders=['شناسه برنامه','نسخه ملی','درخواست','بدون بازرسی','با بازرسی','یادداشت بازرسی','یکپارچگی سازگار','یکپارچگی ناسازگار','مقایسه ناموجود','منبع منطبق','منبع متغیر','تازگی نامشخص','Digest نامعتبر درخواست','ساختار نامعتبر درخواست','عدم تطبیق انتخاب کانون','پرچم اختیار نامشخص','شواهد Audit نامعتبر درخواست','شواهد Outbox نامعتبر درخواست','یکپارچگی درخواست اصلی نامعتبر','یکپارچگی مشاهده نامعتبر','شواهد Audit بازرسی نامعتبر','مشاهده غیرقابل‌مقایسه','آخرین مشاهده فنی'];
+const csvCell=(value:string)=>'"'+value.replaceAll('"','""')+'"';
+const exportCsv=(ids:string[])=>'\uFEFF'+exportHeaders.map(csvCell).join(',')+'\r\n'+ids.map((id,index)=>{const values=Array(23).fill('');values[0]=id;values[1]='1';values[2]='1';if(index===1)values[22]='first\r\nsecond';return values.map(csvCell).join(',');}).join('\r\n')+'\r\n';
 const row=(programId:string,version=1)=>({rollupContractVersion:'S90_NATIONAL_INSPECTION_ROLLUP_V2',programId,nationalVersion:version,reviewRequestCount:2,requestsWithoutInspectionCount:1,requestsWithInspectionCount:1,inspectionNoteCount:1,integrityConsistentNoteCount:1,integrityInconsistentNoteCount:0,sourceComparisonUnavailableNoteCount:0,currentSourceMatchNoteCount:0,currentSourceDriftNoteCount:1,sourceFreshnessUnclassifiedNoteCount:0,sourceSnapshotDigestInvalidRequestCount:0,sourceEnvelopeInvalidRequestCount:0,centerSelectionMismatchRequestCount:0,authorityFlagsNotClearRequestCount:0,auditEvidenceInvalidRequestCount:0,outboxEvidenceInvalidRequestCount:0,originalRequestIntegrityInvalidNoteCount:0,observationIntegrityInvalidNoteCount:0,inspectionAuditEvidenceInvalidNoteCount:0,sourceObservationNotComparableNoteCount:0,latestTechnicalObservationAt:'2026-10-16T12:00:00Z',humanReviewRecorded:false,issuanceAuthorized:false,issuanceExecuted:false});
 test('forbidden inspection read shows no rollup data',async({page})=>{
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup',r=>r.fulfill({status:403,contentType:'application/problem+json',body:'{}'}));
@@ -93,15 +96,12 @@ test('CSV export uses one atomic filtered endpoint response and excludes private
   const u=new URL(r.request().url());
   if(u.pathname.endsWith('/export.csv')){
    requested.push(u);
-   const header='"شناسه برنامه","نسخه ملی","درخواست","آخرین مشاهده فنی"';
-   const rows=Array.from({length:22},(_,i)=>{
-    const id=i===0?"'=1+1":i===1?'export-02 first\r\nsecond':'export-'+String(i+1).padStart(2,'0');
-    return [id,'1','1',''].map(value=>'"'+value.replaceAll('"','""')+'"').join(',');
-   });
-   const csv='\uFEFF'+header+'\r\n'+rows.join('\r\n')+'\r\n';
+   const ids=Array.from({length:22},(_,i)=>i===0?"'=1+1":i===1?'export-02':'export-'+String(i+1).padStart(2,'0'));
+   const csv=exportCsv(ids);
    const digest=createHash('sha256').update(csv,'utf8').digest('hex');
    return r.fulfill({status:200,contentType:'text/csv; charset=utf-8',body:csv,headers:{
     'X-National-Inspection-Export-Contract':'S98_NATIONAL_INSPECTION_CSV_RECEIPT_V1',
+    'X-National-Inspection-Export-Schema':'S100_NATIONAL_INSPECTION_CSV_SCHEMA_V1',
     'X-National-Inspection-Export-Row-Count':'22',
     'X-National-Inspection-Export-SHA256':digest
    }});
@@ -132,15 +132,52 @@ test('CSV export uses one atomic filtered endpoint response and excludes private
  expect(csv).not.toContain('technicalNote');
  await expect(page.getByText(/SHA-256:/)).toBeVisible();
 });
+test('CSV export refuses a validly receipted file with the wrong schema version',async({page})=>{
+ let downloads=0;page.on('download',()=>{downloads++;});
+ await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>{
+  const u=new URL(r.request().url());if(u.pathname.endsWith('/export.csv')){const csv=exportCsv(['synthetic']);return r.fulfill({status:200,contentType:'text/csv; charset=utf-8',body:csv,headers:{
+   'X-National-Inspection-Export-Contract':'S98_NATIONAL_INSPECTION_CSV_RECEIPT_V1','X-National-Inspection-Export-Schema':'S99_UNKNOWN_SCHEMA',
+   'X-National-Inspection-Export-Row-Count':'1','X-National-Inspection-Export-SHA256':createHash('sha256').update(csv,'utf8').digest('hex')}});}
+  return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('ready')],nextCursor:null})});
+ });
+ await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await expect(page.getByRole('rowheader',{name:'ready / ۱'})).toBeVisible();
+ await page.getByRole('button',{name:'دانلود CSV تجمیعی'}).click();
+ await expect(page.locator('section[aria-labelledby="inspection-rollup-title"] [role="alert"]')).toContainText('رسید یکپارچگی');expect(downloads).toBe(0);
+});
+test('CSV export refuses rows whose column count differs from the declared schema',async({page})=>{
+ let downloads=0;page.on('download',()=>{downloads++;});
+ await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>{
+  const u=new URL(r.request().url());if(u.pathname.endsWith('/export.csv')){const csv='\uFEFF'+exportHeaders.map(csvCell).join(',')+'\r\n'+Array(22).fill('"value"').join(',')+'\r\n';return r.fulfill({status:200,contentType:'text/csv; charset=utf-8',body:csv,headers:{
+   'X-National-Inspection-Export-Contract':'S98_NATIONAL_INSPECTION_CSV_RECEIPT_V1','X-National-Inspection-Export-Schema':'S100_NATIONAL_INSPECTION_CSV_SCHEMA_V1',
+   'X-National-Inspection-Export-Row-Count':'1','X-National-Inspection-Export-SHA256':createHash('sha256').update(csv,'utf8').digest('hex')}});}
+  return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('ready')],nextCursor:null})});
+ });
+ await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await expect(page.getByRole('rowheader',{name:'ready / ۱'})).toBeVisible();
+ await page.getByRole('button',{name:'دانلود CSV تجمیعی'}).click();
+ await expect(page.locator('section[aria-labelledby="inspection-rollup-title"] [role="alert"]')).toContainText('تعداد ستون');expect(downloads).toBe(0);
+});
+test('CSV export refuses a reordered header even when the schema version matches',async({page})=>{
+ let downloads=0;page.on('download',()=>{downloads++;});
+ await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>{
+  const u=new URL(r.request().url());if(u.pathname.endsWith('/export.csv')){const headers=[...exportHeaders];[headers[0],headers[1]]=[headers[1],headers[0]];const csv='\uFEFF'+headers.map(csvCell).join(',')+'\r\n'+Array(23).fill('"value"').join(',')+'\r\n';return r.fulfill({status:200,contentType:'text/csv; charset=utf-8',body:csv,headers:{
+   'X-National-Inspection-Export-Contract':'S98_NATIONAL_INSPECTION_CSV_RECEIPT_V1','X-National-Inspection-Export-Schema':'S100_NATIONAL_INSPECTION_CSV_SCHEMA_V1',
+   'X-National-Inspection-Export-Row-Count':'1','X-National-Inspection-Export-SHA256':createHash('sha256').update(csv,'utf8').digest('hex')}});}
+  return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('ready')],nextCursor:null})});
+ });
+ await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await expect(page.getByRole('rowheader',{name:'ready / ۱'})).toBeVisible();
+ await page.getByRole('button',{name:'دانلود CSV تجمیعی'}).click();
+ await expect(page.locator('section[aria-labelledby="inspection-rollup-title"] [role="alert"]')).toContainText('سرستون CSV');expect(downloads).toBe(0);
+});
 test('CSV export refuses a file whose receipt digest does not match',async({page})=>{
  let downloads=0;
  page.on('download',()=>{downloads++;});
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>{
   const u=new URL(r.request().url());
   if(u.pathname.endsWith('/export.csv')){
-   const csv='\uFEFF"شناسه برنامه"\r\n"synthetic"\r\n';
+   const csv=exportCsv(['synthetic']);
    return r.fulfill({status:200,contentType:'text/csv; charset=utf-8',body:csv,headers:{
     'X-National-Inspection-Export-Contract':'S98_NATIONAL_INSPECTION_CSV_RECEIPT_V1',
+    'X-National-Inspection-Export-Schema':'S100_NATIONAL_INSPECTION_CSV_SCHEMA_V1',
     'X-National-Inspection-Export-Row-Count':'1',
     'X-National-Inspection-Export-SHA256':'0'.repeat(64)
    }});
@@ -159,9 +196,10 @@ test('CSV export refuses a receipt whose row count disagrees with quoted records
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>{
   const u=new URL(r.request().url());
   if(u.pathname.endsWith('/export.csv')){
-   const csv='\uFEFF"شناسه برنامه"\r\n"synthetic"\r\n';
+   const csv=exportCsv(['synthetic']);
    return r.fulfill({status:200,contentType:'text/csv; charset=utf-8',body:csv,headers:{
     'X-National-Inspection-Export-Contract':'S98_NATIONAL_INSPECTION_CSV_RECEIPT_V1',
+    'X-National-Inspection-Export-Schema':'S100_NATIONAL_INSPECTION_CSV_SCHEMA_V1',
     'X-National-Inspection-Export-Row-Count':'2',
     'X-National-Inspection-Export-SHA256':createHash('sha256').update(csv,'utf8').digest('hex')
    }});

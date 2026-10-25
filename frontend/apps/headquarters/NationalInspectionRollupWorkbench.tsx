@@ -55,40 +55,29 @@ const findingCodes=[
  ['INSPECTION_AUDIT_EVIDENCE_INVALID','شواهد Audit بازرسی'],
  ['SOURCE_OBSERVATION_NOT_COMPARABLE','عدم‌مقایسه‌پذیری مشاهده']
 ] as const;
-function countCsvDataRows(text:string):number{
+const csvSchema='S100_NATIONAL_INSPECTION_CSV_SCHEMA_V1';
+const csvHeader=['شناسه برنامه','نسخه ملی','درخواست','بدون بازرسی','با بازرسی','یادداشت بازرسی','یکپارچگی سازگار','یکپارچگی ناسازگار','مقایسه ناموجود','منبع منطبق','منبع متغیر','تازگی نامشخص','Digest نامعتبر درخواست','ساختار نامعتبر درخواست','عدم تطبیق انتخاب کانون','پرچم اختیار نامشخص','شواهد Audit نامعتبر درخواست','شواهد Outbox نامعتبر درخواست','یکپارچگی درخواست اصلی نامعتبر','یکپارچگی مشاهده نامعتبر','شواهد Audit بازرسی نامعتبر','مشاهده غیرقابل‌مقایسه','آخرین مشاهده فنی'];
+function inspectCsv(text:string):number{
  if(!text.startsWith('\uFEFF'))throw Error('فایل CSV فاقد نشان UTF-8 معتبر است؛ فایلی ساخته نشد.');
- let records=0,inQuotes=false,afterQuote=false,fieldStart=true,recordStarted=false;
+ const records:string[][]=[];let fields:string[]=[],value='',inQuotes=false,afterQuote=false,fieldStart=true,recordStarted=false;
+ const finishField=()=>{fields.push(value);value='';fieldStart=true;};
+ const finishRecord=()=>{finishField();records.push(fields);fields=[];recordStarted=false;};
  for(let i=1;i<text.length;i++){
   const ch=text[i];
-  if(inQuotes){
-   if(ch==='"'){
-    if(text[i+1]==='"')i++;
-    else{inQuotes=false;afterQuote=true;}
-   }
-   continue;
-  }
-  if(afterQuote){
-   if(ch===','){afterQuote=false;fieldStart=true;recordStarted=true;continue;}
-   if(ch==='\r'&&text[i+1]==='\n'){
-    records++;afterQuote=false;fieldStart=true;recordStarted=false;i++;continue;
-   }
-   throw Error('ساختار رکوردهای CSV معتبر نیست؛ فایلی ساخته نشد.');
-  }
-  if(ch==='"'){
-   if(!fieldStart)throw Error('ساختار رکوردهای CSV معتبر نیست؛ فایلی ساخته نشد.');
-   inQuotes=true;fieldStart=false;recordStarted=true;continue;
-  }
-  if(ch===','){fieldStart=true;recordStarted=true;continue;}
-  if(ch==='\r'&&text[i+1]==='\n'){
-   records++;fieldStart=true;recordStarted=false;i++;continue;
-  }
+  if(inQuotes){if(ch==='"'){if(text[i+1]==='"'){value+='"';i++;}else{inQuotes=false;afterQuote=true;}}else value+=ch;continue;}
+  if(afterQuote){if(ch===','){afterQuote=false;finishField();recordStarted=true;continue;}if(ch==='\r'&&text[i+1]==='\n'){finishRecord();afterQuote=false;i++;continue;}throw Error('ساختار رکوردهای CSV معتبر نیست؛ فایلی ساخته نشد.');}
+  if(ch==='"'){if(!fieldStart)throw Error('ساختار رکوردهای CSV معتبر نیست؛ فایلی ساخته نشد.');inQuotes=true;fieldStart=false;recordStarted=true;continue;}
+  if(ch===','){finishField();recordStarted=true;continue;}
+  if(ch==='\r'&&text[i+1]==='\n'){finishRecord();i++;continue;}
   if(ch==='\r'||ch==='\n')throw Error('پایان رکوردهای CSV معتبر نیست؛ فایلی ساخته نشد.');
-  fieldStart=false;recordStarted=true;
+  value+=ch;fieldStart=false;recordStarted=true;
  }
- if(inQuotes)throw Error('ساختار رکوردهای CSV معتبر نیست؛ فایلی ساخته نشد.');
- if(recordStarted)records++;
- if(records===0)throw Error('فایل CSV سرستون معتبری ندارد؛ فایلی ساخته نشد.');
- return records-1;
+ if(inQuotes)throw Error('ساختار CSV معتبر نیست؛ فایلی ساخته نشد.');
+ if(recordStarted||afterQuote)finishRecord();
+ if(records.length===0)throw Error('فایل CSV سرستون معتبری ندارد؛ فایلی ساخته نشد.');
+ if(records[0].length!==csvHeader.length||records[0].some((cell,index)=>cell!==csvHeader[index]))throw Error('سرستون CSV با طرح‌وارهٔ اعلام‌شده سازگار نیست؛ فایلی ساخته نشد.');
+ if(records.some(record=>record.length!==csvHeader.length))throw Error('تعداد ستون‌های یکی از ردیف‌های CSV نامعتبر است؛ فایلی ساخته نشد.');
+ return records.length-1;
 }
 export function NationalInspectionRollupWorkbench(){
  const [s,setS]=useState<State>(initial),[reload,setReload]=useState(0),[opened,setOpened]=useState(false),[findingsOnly,setFindingsOnly]=useState(false),[findingCode,setFindingCode]=useState('');
@@ -111,10 +100,11 @@ export function NationalInspectionRollupWorkbench(){
    if(response.status===413)throw Error('حجم خروجی از سقف ۱۰٬۰۰۰ گروه بیشتر است؛ فیلتر دقیق‌تری انتخاب کنید.');
    if(!response.ok)throw Error('فایل کامل پوشش بازرسی فعلاً در دسترس نیست.');
    const contract=response.headers.get('X-National-Inspection-Export-Contract');
+   const schema=response.headers.get('X-National-Inspection-Export-Schema');
    const rawCount=response.headers.get('X-National-Inspection-Export-Row-Count')||'';
    const expectedDigest=response.headers.get('X-National-Inspection-Export-SHA256')||'';
    const rowCount=Number(rawCount);
-   if(contract!=='S98_NATIONAL_INSPECTION_CSV_RECEIPT_V1'||
+   if(contract!=='S98_NATIONAL_INSPECTION_CSV_RECEIPT_V1'||schema!==csvSchema||
     !/^(0|[1-9]\d{0,4})$/.test(rawCount)||!Number.isSafeInteger(rowCount)||rowCount>10000||
     !/^[a-f0-9]{64}$/.test(expectedDigest))
     throw Error('رسید یکپارچگی خروجی CSV معتبر نیست؛ فایلی ساخته نشد.');
@@ -127,7 +117,7 @@ export function NationalInspectionRollupWorkbench(){
    let csvText:string;
    try{csvText=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes);}
    catch{throw Error('کدگذاری UTF-8 فایل CSV معتبر نیست؛ فایلی ساخته نشد.');}
-   if(countCsvDataRows(csvText)!==rowCount)
+   if(inspectCsv(csvText)!==rowCount)
     throw Error('تعداد ردیف‌های CSV با رسید سرور یکسان نیست؛ فایلی ساخته نشد.');
    if(!globalThis.crypto?.subtle)
     throw Error('اعتبارسنجی اثرانگشت CSV در این مرورگر در دسترس نیست؛ فایلی ساخته نشد.');
