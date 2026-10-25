@@ -55,6 +55,41 @@ const findingCodes=[
  ['INSPECTION_AUDIT_EVIDENCE_INVALID','شواهد Audit بازرسی'],
  ['SOURCE_OBSERVATION_NOT_COMPARABLE','عدم‌مقایسه‌پذیری مشاهده']
 ] as const;
+function countCsvDataRows(text:string):number{
+ if(!text.startsWith('\uFEFF'))throw Error('فایل CSV فاقد نشان UTF-8 معتبر است؛ فایلی ساخته نشد.');
+ let records=0,inQuotes=false,afterQuote=false,fieldStart=true,recordStarted=false;
+ for(let i=1;i<text.length;i++){
+  const ch=text[i];
+  if(inQuotes){
+   if(ch==='"'){
+    if(text[i+1]==='"')i++;
+    else{inQuotes=false;afterQuote=true;}
+   }
+   continue;
+  }
+  if(afterQuote){
+   if(ch===','){afterQuote=false;fieldStart=true;recordStarted=true;continue;}
+   if(ch==='\r'&&text[i+1]==='\n'){
+    records++;afterQuote=false;fieldStart=true;recordStarted=false;i++;continue;
+   }
+   throw Error('ساختار رکوردهای CSV معتبر نیست؛ فایلی ساخته نشد.');
+  }
+  if(ch==='"'){
+   if(!fieldStart)throw Error('ساختار رکوردهای CSV معتبر نیست؛ فایلی ساخته نشد.');
+   inQuotes=true;fieldStart=false;recordStarted=true;continue;
+  }
+  if(ch===','){fieldStart=true;recordStarted=true;continue;}
+  if(ch==='\r'&&text[i+1]==='\n'){
+   records++;fieldStart=true;recordStarted=false;i++;continue;
+  }
+  if(ch==='\r'||ch==='\n')throw Error('پایان رکوردهای CSV معتبر نیست؛ فایلی ساخته نشد.');
+  fieldStart=false;recordStarted=true;
+ }
+ if(inQuotes)throw Error('ساختار رکوردهای CSV معتبر نیست؛ فایلی ساخته نشد.');
+ if(recordStarted)records++;
+ if(records===0)throw Error('فایل CSV سرستون معتبری ندارد؛ فایلی ساخته نشد.');
+ return records-1;
+}
 export function NationalInspectionRollupWorkbench(){
  const [s,setS]=useState<State>(initial),[reload,setReload]=useState(0),[opened,setOpened]=useState(false),[findingsOnly,setFindingsOnly]=useState(false),[findingCode,setFindingCode]=useState('');
  const [targetProgramInput,setTargetProgramInput]=useState(''),[targetVersionInput,setTargetVersionInput]=useState(''),[target,setTarget]=useState<Target|null>(null),[targetError,setTargetError]=useState('');
@@ -89,6 +124,11 @@ export function NationalInspectionRollupWorkbench(){
    const bytes=new Uint8Array(await blob.arrayBuffer());
    if(bytes[0]!==0xef||bytes[1]!==0xbb||bytes[2]!==0xbf)
     throw Error('فایل CSV فاقد نشان UTF-8 معتبر است؛ فایلی ساخته نشد.');
+   let csvText:string;
+   try{csvText=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes);}
+   catch{throw Error('کدگذاری UTF-8 فایل CSV معتبر نیست؛ فایلی ساخته نشد.');}
+   if(countCsvDataRows(csvText)!==rowCount)
+    throw Error('تعداد ردیف‌های CSV با رسید سرور یکسان نیست؛ فایلی ساخته نشد.');
    if(!globalThis.crypto?.subtle)
     throw Error('اعتبارسنجی اثرانگشت CSV در این مرورگر در دسترس نیست؛ فایلی ساخته نشد.');
    const digestBytes=new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256',bytes));

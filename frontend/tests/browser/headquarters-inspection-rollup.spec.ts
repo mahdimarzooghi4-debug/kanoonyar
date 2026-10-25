@@ -94,7 +94,10 @@ test('CSV export uses one atomic filtered endpoint response and excludes private
   if(u.pathname.endsWith('/export.csv')){
    requested.push(u);
    const header='"شناسه برنامه","نسخه ملی","درخواست","آخرین مشاهده فنی"';
-   const rows=Array.from({length:22},(_,i)=>'"'+(i===0?"'=1+1":'export-'+String(i+1).padStart(2,'0'))+'","1","1",""');
+   const rows=Array.from({length:22},(_,i)=>{
+    const id=i===0?"'=1+1":i===1?'export-02 first\r\nsecond':'export-'+String(i+1).padStart(2,'0');
+    return [id,'1','1',''].map(value=>'"'+value.replaceAll('"','""')+'"').join(',');
+   });
    const csv='\uFEFF'+header+'\r\n'+rows.join('\r\n')+'\r\n';
    const digest=createHash('sha256').update(csv,'utf8').digest('hex');
    return r.fulfill({status:200,contentType:'text/csv; charset=utf-8',body:csv,headers:{
@@ -123,7 +126,7 @@ test('CSV export uses one atomic filtered endpoint response and excludes private
  const filePath=await download.path();expect(filePath).not.toBeNull();
  const csv=await readFile(filePath!,'utf8');
  expect(csv.charCodeAt(0)).toBe(0xFEFF);
- expect(csv.split('\r\n')).toHaveLength(24);
+ expect(csv.split('\r\n')).toHaveLength(25);
  expect(csv.split('\r\n')[1]).toContain('"\'=1+1"');
  expect(csv).not.toContain('centerId');
  expect(csv).not.toContain('technicalNote');
@@ -148,6 +151,27 @@ test('CSV export refuses a file whose receipt digest does not match',async({page
  await expect(page.getByRole('rowheader',{name:'ready / ۱'})).toBeVisible();
  await page.getByRole('button',{name:'دانلود CSV تجمیعی'}).click();
  await expect(page.locator('section[aria-labelledby="inspection-rollup-title"] [role="alert"]')).toContainText('اثر انگشت');
+ expect(downloads).toBe(0);
+});
+test('CSV export refuses a receipt whose row count disagrees with quoted records',async({page})=>{
+ let downloads=0;
+ page.on('download',()=>{downloads++;});
+ await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>{
+  const u=new URL(r.request().url());
+  if(u.pathname.endsWith('/export.csv')){
+   const csv='\uFEFF"شناسه برنامه"\r\n"synthetic"\r\n';
+   return r.fulfill({status:200,contentType:'text/csv; charset=utf-8',body:csv,headers:{
+    'X-National-Inspection-Export-Contract':'S98_NATIONAL_INSPECTION_CSV_RECEIPT_V1',
+    'X-National-Inspection-Export-Row-Count':'2',
+    'X-National-Inspection-Export-SHA256':createHash('sha256').update(csv,'utf8').digest('hex')
+   }});
+  }
+  return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('ready')],nextCursor:null})});
+ });
+ await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();
+ await expect(page.getByRole('rowheader',{name:'ready / ۱'})).toBeVisible();
+ await page.getByRole('button',{name:'دانلود CSV تجمیعی'}).click();
+ await expect(page.locator('section[aria-labelledby="inspection-rollup-title"] [role="alert"]')).toContainText('تعداد ردیف');
  expect(downloads).toBe(0);
 });
 test('CSV export does not start a download when the backend rejects the row limit',async({page})=>{
