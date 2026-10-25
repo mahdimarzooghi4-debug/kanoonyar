@@ -77,4 +77,34 @@ public sealed class NationalInspectionDossierEndpointTests
             NationalInspectionReadOperation.InspectionDossierPage, "national-1", 3,
             FindingsOnly: false, FindingCode: null), authorization.LastScope);
     }
+
+    [Fact]
+    public async Task CSV_export_has_distinct_exact_target_scope_and_rejects_page_cursor()
+    {
+        var authorization = new FixedAuthorization(false);
+        Assert.Equal(403, await Status(await NationalInspectionDossierEndpoint.ExportCsv(
+            Context("?programId=national-2&nationalVersion=8"), Actor(), Config(), authorization, default)));
+        Assert.Equal(new NationalInspectionReadScope(
+            NationalInspectionReadOperation.InspectionDossierCsvExport, "national-2", 8,
+            FindingsOnly: false, FindingCode: null), authorization.LastScope);
+
+        var untouchedAuthorization = new FixedAuthorization(true);
+        Assert.Equal(400, await Status(await NationalInspectionDossierEndpoint.ExportCsv(
+            Context("?programId=national-2&nationalVersion=8&beforeInspectedAt=2026-10-17T12:00:00Z&beforeNoteId=00000000-0000-0000-0000-000000000001"),
+            Actor(), Config(), untouchedAuthorization, default)));
+        Assert.Null(untouchedAuthorization.LastScope);
+    }
+
+    [Fact]
+    public async Task CSV_export_authorization_failure_is_default_deny_before_database_access()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["NATIONAL_INSPECTION_DOSSIER_READ_DATABASE_URL"] =
+                "Host=127.0.0.1;Port=1;Database=missing;Username=none;Password=none;Timeout=1"
+        }).Build();
+        var denial = new UnapprovedNationalInspectionReadAuthorization();
+        Assert.Equal(403, await Status(await NationalInspectionDossierEndpoint.ExportCsv(
+            Context("?programId=national-2&nationalVersion=8"), Actor(), config, denial, default)));
+    }
 }

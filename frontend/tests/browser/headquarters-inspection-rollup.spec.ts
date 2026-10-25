@@ -5,6 +5,10 @@ test.skip(process.env.KANOONYAR_BROWSER_EXPERIENCE !== 'headquarters', 'Headquar
 const exportHeaders=['شناسه برنامه','نسخه ملی','درخواست','بدون بازرسی','با بازرسی','یادداشت بازرسی','یکپارچگی سازگار','یکپارچگی ناسازگار','مقایسه ناموجود','منبع منطبق','منبع متغیر','تازگی نامشخص','Digest نامعتبر درخواست','ساختار نامعتبر درخواست','عدم تطبیق انتخاب کانون','پرچم اختیار نامشخص','شواهد Audit نامعتبر درخواست','شواهد Outbox نامعتبر درخواست','یکپارچگی درخواست اصلی نامعتبر','یکپارچگی مشاهده نامعتبر','شواهد Audit بازرسی نامعتبر','مشاهده غیرقابل‌مقایسه','آخرین مشاهده فنی'];
 const csvCell=(value:string)=>'"'+value.replaceAll('"','""')+'"';
 const exportCsv=(ids:string[])=>'\uFEFF'+exportHeaders.map(csvCell).join(',')+'\r\n'+ids.map((id,index)=>{const values=Array(23).fill('');values[0]=id;values[1]='1';values[2]='1';if(index===1)values[22]='first\r\nsecond';return values.map(csvCell).join(',');}).join('\r\n')+'\r\n';
+const dossierCsvHeaders=['program_id','national_version','request_id','note_id','inspected_at','source_changed_since_request','original_request_integrity_valid','observation_integrity_valid','audit_and_outbox_integrity_valid','current_source_matches_observation','publication_state_changed','center_registry_change_count','exact_issuance_change_count','source_observation_comparable','human_review_recorded','issuance_authorized','issuance_executed'];
+const dossierCsv=(programId:string)=>'\uFEFF'+dossierCsvHeaders.map(csvCell).join(',')+'\r\n'+[
+ programId,'4','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','ffffffff-ffff-ffff-ffff-ffffffffffff','2026-10-17T12:00:00.0000000Z','true','true','true','true','true','false','1','0','true','false','false','false'
+].map(csvCell).join(',')+'\r\n';
 const dossierRow=(noteId:string)=>({requestId:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',noteId,inspectedAt:'2026-10-17T12:00:00.0000000Z',sourceChangedSinceRequest:true,originalRequestIntegrityValid:true,observationIntegrityValid:true,auditAndOutboxIntegrityValid:true,currentSourceMatchesObservation:true,publicationStateChanged:false,centerRegistryChangeCount:1,exactIssuanceChangeCount:0,sourceObservationComparable:true,humanReviewRecorded:false,issuanceAuthorized:false,issuanceExecuted:false});
 const row=(programId:string,version=1)=>({rollupContractVersion:'S90_NATIONAL_INSPECTION_ROLLUP_V2',programId,nationalVersion:version,reviewRequestCount:2,requestsWithoutInspectionCount:1,requestsWithInspectionCount:1,inspectionNoteCount:1,integrityConsistentNoteCount:1,integrityInconsistentNoteCount:0,sourceComparisonUnavailableNoteCount:0,currentSourceMatchNoteCount:0,currentSourceDriftNoteCount:1,sourceFreshnessUnclassifiedNoteCount:0,sourceSnapshotDigestInvalidRequestCount:0,sourceEnvelopeInvalidRequestCount:0,centerSelectionMismatchRequestCount:0,authorityFlagsNotClearRequestCount:0,auditEvidenceInvalidRequestCount:0,outboxEvidenceInvalidRequestCount:0,originalRequestIntegrityInvalidNoteCount:0,observationIntegrityInvalidNoteCount:0,inspectionAuditEvidenceInvalidNoteCount:0,sourceObservationNotComparableNoteCount:0,latestTechnicalObservationAt:'2026-10-16T12:00:00Z',humanReviewRecorded:false,issuanceAuthorized:false,issuanceExecuted:false});
 test('forbidden inspection read shows no rollup data',async({page})=>{
@@ -112,6 +116,43 @@ test('technical dossier rejects any asserted human decision or issuance state',a
  await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('dossier-program',4)],nextCursor:null})}));
  await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await expect(page.getByRole('rowheader',{name:'dossier-program / ۴'})).toBeVisible();await page.getByRole('button',{name:'نمایش پرونده فنی'}).click();
  const dossier=page.locator('section[aria-labelledby="inspection-dossier-title"]');await expect(dossier.getByRole('alert')).toContainText('با قرارداد بازرسی سازگار نیست');await expect(dossier.getByRole('table')).toHaveCount(0);
+});
+test('exact-version dossier CSV verifies schema, row count and SHA-256 before download',async({page})=>{
+ let requested:URL|null=null;
+ await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('dossier-program',4)],nextCursor:null})}));
+ await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({contractVersion:'S101_NATIONAL_INSPECTION_DOSSIER_V1',programId:'dossier-program',nationalVersion:4,inspections:[dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff')],nextCursor:null})}));
+ await page.route('**/api/v1/headquarters/national-issuance/review-dossier/export.csv**',r=>{
+  requested=new URL(r.request().url());expect(requested.searchParams.get('programId')).toBe('dossier-program');expect(requested.searchParams.get('nationalVersion')).toBe('4');
+  const csv=dossierCsv('dossier-program'),digest=createHash('sha256').update(csv,'utf8').digest('hex');
+  return r.fulfill({status:200,contentType:'text/csv; charset=utf-8',body:csv,headers:{
+   'X-National-Inspection-Dossier-Export-Contract':'S103_NATIONAL_INSPECTION_DOSSIER_CSV_RECEIPT_V1',
+   'X-National-Inspection-Dossier-Export-Schema':'S103_NATIONAL_INSPECTION_DOSSIER_CSV_V1',
+   'X-National-Inspection-Dossier-Export-Row-Count':'1','X-National-Inspection-Dossier-Export-SHA256':digest
+  }});
+ });
+ await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await expect(page.getByRole('rowheader',{name:'dossier-program / ۴'})).toBeVisible();
+ await page.getByRole('button',{name:'نمایش پرونده فنی'}).click();const dossier=page.locator('section[aria-labelledby="inspection-dossier-title"]');
+ const downloadPromise=page.waitForEvent('download');await dossier.getByRole('button',{name:'دانلود CSV پروندهٔ فنی'}).click();
+ const download=await downloadPromise;expect(download.suggestedFilename()).toBe('national-inspection-dossier.csv');expect(requested).not.toBeNull();
+ await expect(dossier.getByRole('status')).toContainText('شامل ۱ یادداشت فنی');
+});
+test('dossier CSV refuses corrupt digest and over-limit partial exports',async({page})=>{
+ let mode='digest';let downloads=0;page.on('download',()=>downloads++);
+ await page.route('**/api/v1/headquarters/national-issuance/review-rollup**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rollups:[row('dossier-program',4)],nextCursor:null})}));
+ await page.route('**/api/v1/headquarters/national-issuance/review-dossier**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({contractVersion:'S101_NATIONAL_INSPECTION_DOSSIER_V1',programId:'dossier-program',nationalVersion:4,inspections:[dossierRow('ffffffff-ffff-ffff-ffff-ffffffffffff')],nextCursor:null})}));
+ await page.route('**/api/v1/headquarters/national-issuance/review-dossier/export.csv**',r=>{
+  if(mode==='limit')return r.fulfill({status:413,contentType:'application/problem+json',body:'{}'});
+  return r.fulfill({status:200,contentType:'text/csv; charset=utf-8',body:dossierCsv('dossier-program'),headers:{
+   'X-National-Inspection-Dossier-Export-Contract':'S103_NATIONAL_INSPECTION_DOSSIER_CSV_RECEIPT_V1',
+   'X-National-Inspection-Dossier-Export-Schema':'S103_NATIONAL_INSPECTION_DOSSIER_CSV_V1',
+   'X-National-Inspection-Dossier-Export-Row-Count':'1','X-National-Inspection-Dossier-Export-SHA256':'0'.repeat(64)
+  }});
+ });
+ await page.goto('/');await page.getByRole('button',{name:'نمایش خلاصه پوشش فنی'}).click();await page.getByRole('button',{name:'نمایش پرونده فنی'}).click();
+ const dossier=page.locator('section[aria-labelledby="inspection-dossier-title"]');await dossier.getByRole('button',{name:'دانلود CSV پروندهٔ فنی'}).click();
+ await expect(dossier.getByRole('alert')).toContainText('اثر انگشت');expect(downloads).toBe(0);
+ mode='limit';await dossier.getByRole('button',{name:'دانلود CSV پروندهٔ فنی'}).click();
+ await expect(dossier.getByRole('alert')).toContainText('خروجی ناقص ساخته نشد');expect(downloads).toBe(0);
 });
 test('CSV export uses one atomic filtered endpoint response and excludes private fields',async({page})=>{
  const requested:URL[]=[];

@@ -98,7 +98,9 @@ const findingCodes=[
 ] as const;
 const csvSchema='S100_NATIONAL_INSPECTION_CSV_SCHEMA_V1';
 const csvHeader=['شناسه برنامه','نسخه ملی','درخواست','بدون بازرسی','با بازرسی','یادداشت بازرسی','یکپارچگی سازگار','یکپارچگی ناسازگار','مقایسه ناموجود','منبع منطبق','منبع متغیر','تازگی نامشخص','Digest نامعتبر درخواست','ساختار نامعتبر درخواست','عدم تطبیق انتخاب کانون','پرچم اختیار نامشخص','شواهد Audit نامعتبر درخواست','شواهد Outbox نامعتبر درخواست','یکپارچگی درخواست اصلی نامعتبر','یکپارچگی مشاهده نامعتبر','شواهد Audit بازرسی نامعتبر','مشاهده غیرقابل‌مقایسه','آخرین مشاهده فنی'];
-function inspectCsv(text:string):number{
+const dossierCsvSchema='S103_NATIONAL_INSPECTION_DOSSIER_CSV_V1';
+const dossierCsvHeader=['program_id','national_version','request_id','note_id','inspected_at','source_changed_since_request','original_request_integrity_valid','observation_integrity_valid','audit_and_outbox_integrity_valid','current_source_matches_observation','publication_state_changed','center_registry_change_count','exact_issuance_change_count','source_observation_comparable','human_review_recorded','issuance_authorized','issuance_executed'];
+function inspectCsv(text:string,expectedHeader:readonly string[]=csvHeader):number{
  if(!text.startsWith('\uFEFF'))throw Error('فایل CSV فاقد نشان UTF-8 معتبر است؛ فایلی ساخته نشد.');
  const records:string[][]=[];let fields:string[]=[],value='',inQuotes=false,afterQuote=false,fieldStart=true,recordStarted=false;
  const finishField=()=>{fields.push(value);value='';fieldStart=true;};
@@ -116,14 +118,15 @@ function inspectCsv(text:string):number{
  if(inQuotes)throw Error('ساختار CSV معتبر نیست؛ فایلی ساخته نشد.');
  if(recordStarted||afterQuote)finishRecord();
  if(records.length===0)throw Error('فایل CSV سرستون معتبری ندارد؛ فایلی ساخته نشد.');
- if(records[0].length!==csvHeader.length||records[0].some((cell,index)=>cell!==csvHeader[index]))throw Error('سرستون CSV با طرح‌وارهٔ اعلام‌شده سازگار نیست؛ فایلی ساخته نشد.');
- if(records.some(record=>record.length!==csvHeader.length))throw Error('تعداد ستون‌های یکی از ردیف‌های CSV نامعتبر است؛ فایلی ساخته نشد.');
+ if(records[0].length!==expectedHeader.length||records[0].some((cell,index)=>cell!==expectedHeader[index]))throw Error('سرستون CSV با طرح‌وارهٔ اعلام‌شده سازگار نیست؛ فایلی ساخته نشد.');
+ if(records.some(record=>record.length!==expectedHeader.length))throw Error('تعداد ستون‌های یکی از ردیف‌های CSV نامعتبر است؛ فایلی ساخته نشد.');
  return records.length-1;
 }
 export function NationalInspectionRollupWorkbench(){
  const [s,setS]=useState<State>(initial),[reload,setReload]=useState(0),[opened,setOpened]=useState(false),[findingsOnly,setFindingsOnly]=useState(false),[findingCode,setFindingCode]=useState('');
  const [targetProgramInput,setTargetProgramInput]=useState(''),[targetVersionInput,setTargetVersionInput]=useState(''),[target,setTarget]=useState<Target|null>(null),[targetError,setTargetError]=useState('');
  const [exporting,setExporting]=useState(false),[exportError,setExportError]=useState(''),[exportStatus,setExportStatus]=useState('');
+ const [exportingDossier,setExportingDossier]=useState(false),[dossierExportError,setDossierExportError]=useState(''),[dossierExportStatus,setDossierExportStatus]=useState('');
  const [dossier,setDossier]=useState<DossierState>(closedDossier),dossierRequest=useRef(0);
  useEffect(()=>{if(!opened)return;const c=new AbortController();setS(initial);void read(null,c.signal,findingsOnly,findingCode,target).then(p=>{if(!c.signal.aborted)setS({status:'ready',error:'',pages:[p],index:0});}).catch(e=>{if(!c.signal.aborted)setS({status:'error',error:e instanceof Error?e.message:'خلاصه پوشش بازرسی فعلاً در دسترس نیست.',pages:[],index:0});});return()=>c.abort();},[reload,opened,findingsOnly,findingCode,target]);
  async function showDossier(selected:Target){
@@ -141,6 +144,41 @@ export function NationalInspectionRollupWorkbench(){
    if(next.inspections.some(row=>prior.has(row.noteId)))throw Error('صفحهٔ بعدی پروندهٔ فنی تکراری یا نامعتبر است.');
    if(request===dossierRequest.current)setDossier({...dossier,status:'ready',error:'',pages:[...dossier.pages,next],index:dossier.index+1});
   }catch(e){if(request===dossierRequest.current)setDossier({...dossier,status:'error',error:e instanceof Error?e.message:'صفحهٔ بعدی پروندهٔ فنی در دسترس نیست.'});}
+ }
+ async function exportDossier(){
+  const selected=dossier.target;if(!selected||exportingDossier)return;
+  setExportingDossier(true);setDossierExportError('');setDossierExportStatus('');
+  try{
+   const params=new URLSearchParams({programId:selected.programId,nationalVersion:String(selected.nationalVersion)});
+   const response=await fetch('/api/v1/headquarters/national-issuance/review-dossier/export.csv?'+params.toString(),
+    {cache:'no-store',credentials:'same-origin',headers:{Accept:'text/csv'}});
+   if(response.status===401)throw Error('برای دریافت پروندهٔ فنی، ورود سازمانی لازم است.');
+   if(response.status===403)throw Error('دسترسی دریافت پروندهٔ فنی در این محیط فعال یا مجاز نیست.');
+   if(response.status===413)throw Error('حجم پروندهٔ فنی از سقف ۱۰٬۰۰۰ یادداشت بیشتر است؛ خروجی ناقص ساخته نشد.');
+   if(!response.ok)throw Error('خروجی کامل پروندهٔ فنی فعلاً در دسترس نیست.');
+   const contract=response.headers.get('X-National-Inspection-Dossier-Export-Contract');
+   const schema=response.headers.get('X-National-Inspection-Dossier-Export-Schema');
+   const rawCount=response.headers.get('X-National-Inspection-Dossier-Export-Row-Count')||'';
+   const expectedDigest=response.headers.get('X-National-Inspection-Dossier-Export-SHA256')||'';
+   const rowCount=Number(rawCount);
+   if(contract!=='S103_NATIONAL_INSPECTION_DOSSIER_CSV_RECEIPT_V1'||schema!==dossierCsvSchema||
+    !/^(0|[1-9]\d{0,4})$/.test(rawCount)||!Number.isSafeInteger(rowCount)||rowCount>10000||
+    !/^[a-f0-9]{64}$/.test(expectedDigest))throw Error('رسید یکپارچگی خروجی پروندهٔ فنی معتبر نیست؛ فایلی ساخته نشد.');
+   const blob=await response.blob();if(!blob.type.toLowerCase().startsWith('text/csv')||blob.size<3)throw Error('پاسخ CSV پروندهٔ فنی معتبر نیست؛ فایلی ساخته نشد.');
+   const bytes=new Uint8Array(await blob.arrayBuffer());
+   if(bytes[0]!==0xef||bytes[1]!==0xbb||bytes[2]!==0xbf)throw Error('فایل CSV فاقد نشان UTF-8 معتبر است؛ فایلی ساخته نشد.');
+   let csvText:string;try{csvText=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes);}catch{throw Error('کدگذاری UTF-8 فایل CSV معتبر نیست؛ فایلی ساخته نشد.');}
+   if(inspectCsv(csvText,dossierCsvHeader)!==rowCount)throw Error('تعداد ردیف‌های CSV با رسید سرور یکسان نیست؛ فایلی ساخته نشد.');
+   if(!globalThis.crypto?.subtle)throw Error('اعتبارسنجی اثرانگشت CSV در این مرورگر در دسترس نیست؛ فایلی ساخته نشد.');
+   const digestBytes=new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256',bytes));
+   const actualDigest=Array.from(digestBytes,value=>value.toString(16).padStart(2,'0')).join('');
+   if(actualDigest!==expectedDigest)throw Error('اثر انگشت فایل CSV با رسید سرور یکسان نیست؛ فایلی ساخته نشد.');
+   const url=URL.createObjectURL(blob),anchor=document.createElement('a');anchor.href=url;
+   anchor.download='national-inspection-dossier.csv';anchor.style.display='none';document.body.appendChild(anchor);
+   anchor.click();anchor.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+   setDossierExportStatus('پروندهٔ دقیق شامل '+n(rowCount)+' یادداشت فنی است؛ SHA-256: '+actualDigest);
+  }catch(e){setDossierExportError(e instanceof Error?e.message:'خروجی پروندهٔ فنی کامل ساخته نشد؛ دوباره تلاش کنید.');}
+  finally{setExportingDossier(false);}
  }
  async function exportAll(){
   if(!opened||s.status!=='ready'||exporting)return;
@@ -239,6 +277,9 @@ export function NationalInspectionRollupWorkbench(){
    <h3 id="inspection-dossier-title">پروندهٔ فنی یادداشت‌های بازرسی — {dossier.target.programId} / {n(dossier.target.nationalVersion)}</h3>
    <p>فقط شناسه و وضعیت فنیِ شواهد نمایش داده می‌شود. این پرونده بررسی انسانی، مجوز یا صدور ابلاغ را ثبت نمی‌کند.</p>
    <button type="button" onClick={closeDossier}>بستن پرونده فنی</button>
+   <button type="button" disabled={exportingDossier} onClick={()=>void exportDossier()}>{exportingDossier?'در حال اعتبارسنجی CSV پرونده…':'دانلود CSV پروندهٔ فنی'}</button>
+   {exportingDossier&&<p role="status">خروجی نسخهٔ دقیق تا تطبیق طرح‌واره، تعداد ردیف‌ها و اثرانگشت دانلود نمی‌شود.</p>}
+   {dossierExportError&&<p role="alert">{dossierExportError}</p>}{dossierExportStatus&&<p role="status">{dossierExportStatus}</p>}
    {dossier.status==='loading'&&<p role="status">در حال دریافت پروندهٔ فنی…</p>}
    {dossier.status==='error'&&<div role="alert"><p>{dossier.error}</p><button type="button" onClick={()=>void showDossier(dossier.target!)}>تلاش دوباره</button></div>}
    {dossier.status==='ready'&&(()=>{const current=dossier.pages[dossier.index];return <>
