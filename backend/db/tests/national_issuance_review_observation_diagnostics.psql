@@ -1,0 +1,75 @@
+\set ON_ERROR_STOP on
+-- S81 verifies deterministic, privacy-minimized reasons for semantic observations.
+DO $s81_observation_diagnostics$
+DECLARE
+ v_count bigint;
+ v_distinct_notes bigint;
+BEGIN
+ IF NOT EXISTS (
+   SELECT 1 FROM pg_class c
+   WHERE c.oid='programs.national_issuance_review_observation_diagnostics'::regclass
+     AND c.relkind='v'
+     AND 'security_invoker=true'=ANY(COALESCE(c.reloptions,ARRAY[]::text[]))
+ ) THEN RAISE EXCEPTION 'S81 diagnostic view is not SECURITY INVOKER'; END IF;
+
+ IF (SELECT count(*) FROM pg_attribute
+     WHERE attrelid='programs.national_issuance_review_observation_diagnostics'::regclass
+       AND attnum>0 AND NOT attisdropped)<>6
+ OR (SELECT array_agg(attname::text ORDER BY attnum) FROM pg_attribute
+     WHERE attrelid='programs.national_issuance_review_observation_diagnostics'::regclass
+       AND attnum>0 AND NOT attisdropped)<>ARRAY[
+       'diagnostic_contract_version','request_id','note_id','program_id',
+       'national_version','diagnostic_code']
+ OR EXISTS (
+   SELECT 1 FROM pg_attribute
+   WHERE attrelid='programs.national_issuance_review_observation_diagnostics'::regclass
+     AND attnum>0 AND NOT attisdropped
+     AND attname=ANY(ARRAY[
+       'center_id','explicit_center_ids','original_source_snapshot',
+       'observed_source_snapshot','technical_note',
+       'unverified_inspector_subject','unverified_requester_subject'])
+ ) THEN RAISE EXCEPTION 'S81 diagnostic view exposes private fields or unstable shape'; END IF;
+
+ IF has_table_privilege('public',
+      'programs.national_issuance_review_observation_diagnostics','SELECT')
+ OR has_table_privilege('kanoonyar_s61_inspection_denied_ci',
+      'programs.national_issuance_review_observation_diagnostics','SELECT')
+ OR has_table_privilege('kanoonyar_s60_unprivileged_ci',
+      'programs.national_issuance_review_observation_diagnostics','SELECT')
+ THEN RAISE EXCEPTION 'S81 diagnostics granted restricted read access'; END IF;
+
+ SELECT count(*),count(DISTINCT note_id) INTO v_count,v_distinct_notes
+ FROM programs.national_issuance_review_observation_diagnostics
+ WHERE note_id=ANY(ARRAY[
+   'aa790000-0000-4000-8000-000000000001'::uuid,
+   'aa790000-0000-4000-8000-000000000002'::uuid,
+   'aa790000-0000-4000-8000-000000000003'::uuid,
+   'aa790000-0000-4000-8000-000000000004'::uuid]);
+ IF v_count<>4 OR v_distinct_notes<>4 OR EXISTS (
+   SELECT 1
+   FROM (VALUES
+     ('aa790000-0000-4000-8000-000000000001'::uuid,'OBSERVED_CENTER_IDENTIFIER_INVALID'),
+     ('aa790000-0000-4000-8000-000000000002'::uuid,'OBSERVED_CENTER_IDENTIFIER_DUPLICATE'),
+     ('aa790000-0000-4000-8000-000000000003'::uuid,'OBSERVED_CENTER_FACTS_INVALID'),
+     ('aa790000-0000-4000-8000-000000000004'::uuid,'OBSERVED_CENTER_FACTS_INVALID')
+   ) expected(note_id,diagnostic_code)
+   LEFT JOIN programs.national_issuance_review_observation_diagnostics actual
+     ON actual.note_id=expected.note_id
+   WHERE actual.diagnostic_code IS DISTINCT FROM expected.diagnostic_code
+      OR actual.diagnostic_contract_version IS DISTINCT FROM 'S81_OBSERVATION_DIAGNOSTIC_V1'
+ ) THEN RAISE EXCEPTION 'S81 semantic fixtures did not map to exact diagnostic reasons'; END IF;
+
+ IF EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_observation_diagnostics d
+   JOIN programs.national_issuance_review_inspection_dossier dossier
+     ON dossier.note_id=d.note_id
+   WHERE d.note_id=ANY(ARRAY[
+     'aa790000-0000-4000-8000-000000000001'::uuid,
+     'aa790000-0000-4000-8000-000000000002'::uuid,
+     'aa790000-0000-4000-8000-000000000003'::uuid,
+     'aa790000-0000-4000-8000-000000000004'::uuid])
+     AND (dossier.observation_integrity_valid IS DISTINCT FROM true
+       OR dossier.original_request_integrity_valid IS DISTINCT FROM true
+       OR dossier.audit_and_outbox_integrity_valid IS DISTINCT FROM true)
+ ) THEN RAISE EXCEPTION 'S81 semantic reason classification did not isolate comparability'; END IF;
+END;$s81_observation_diagnostics$;
