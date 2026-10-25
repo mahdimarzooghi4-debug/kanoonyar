@@ -12,6 +12,13 @@ BEGIN
      AND 'security_invoker=true'=ANY(COALESCE(c.reloptions,ARRAY[]::text[]))
  ) THEN RAISE EXCEPTION 'S62 dossier is not a SECURITY INVOKER view'; END IF;
 
+ IF NOT EXISTS (
+   SELECT 1 FROM pg_class c
+   WHERE c.oid='programs.national_issuance_review_inspection_summary'::regclass
+     AND c.relkind='v'
+     AND 'security_invoker=true'=ANY(COALESCE(c.reloptions,ARRAY[]::text[]))
+ ) THEN RAISE EXCEPTION 'S71 summary is not a SECURITY INVOKER view'; END IF;
+
  IF EXISTS (
    SELECT 1 FROM pg_attribute
    WHERE attrelid='programs.national_issuance_review_inspection_dossier'::regclass
@@ -26,6 +33,10 @@ BEGIN
     'programs.national_issuance_review_inspection_dossier','SELECT')
  OR has_table_privilege('kanoonyar_s60_unprivileged_ci',
     'programs.national_issuance_review_inspection_dossier','SELECT')
+ OR has_table_privilege('kanoonyar_s61_inspection_denied_ci',
+    'programs.national_issuance_review_inspection_summary','SELECT')
+ OR has_table_privilege('kanoonyar_s60_unprivileged_ci',
+    'programs.national_issuance_review_inspection_summary','SELECT')
  THEN RAISE EXCEPTION 'Restricted operational SQL account can read technical dossier'; END IF;
 
  SELECT count(*) INTO dossier_count
@@ -49,6 +60,16 @@ BEGIN
  OR (SELECT count(*) FROM programs.national_issuance_review_inspection_dossier
      WHERE NOT source_changed_since_request)<>1
  THEN RAISE EXCEPTION 'S62 dossier lost changed/unchanged historical observations'; END IF;
+
+ IF EXISTS (
+   SELECT 1 FROM pg_attribute
+   WHERE attrelid='programs.national_issuance_review_inspection_summary'::regclass
+     AND attnum>0 AND NOT attisdropped
+     AND attname=ANY(ARRAY[
+       'note_id','technical_note','unverified_inspector_subject',
+       'explicit_center_ids','observed_source_snapshot',
+       'original_source_snapshot'])
+ ) THEN RAISE EXCEPTION 'S71 summary exposes private evidence fields'; END IF;
 
  IF EXISTS (
    SELECT 1 FROM programs.national_issuance_review_inspection_dossier
@@ -108,6 +129,31 @@ BEGIN
    SELECT 1 FROM programs.national_issuance_review_inspection_dossier
    WHERE source_observation_comparable IS DISTINCT FROM true
  ) THEN RAISE EXCEPTION 'S70 rejected a valid historical observation scope'; END IF;
+
+ -- One row per original request. Tied latest timestamps are represented
+ -- explicitly; the synthetic source has one distinct latest note per request.
+ IF (SELECT count(*) FROM programs.national_issuance_review_inspection_summary)<>2
+ OR (SELECT inspection_note_count
+     FROM programs.national_issuance_review_inspection_summary
+     WHERE request_id='aa600000-0000-4000-8000-000000000001')<>2
+ OR (SELECT inspection_note_count
+     FROM programs.national_issuance_review_inspection_summary
+     WHERE request_id='aa600000-0000-4000-8000-000000000011')<>1
+ OR EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_summary
+   WHERE latest_observation_candidate_count<>1
+      OR latest_observation_ambiguous
+      OR latest_technical_observation_at IS NULL
+      OR latest_source_observation_comparable IS DISTINCT FROM true
+      OR current_source_matches_latest_observation IS DISTINCT FROM true
+      OR latest_evidence_integrity_valid IS DISTINCT FROM true
+      OR latest_publication_state_changed IS DISTINCT FROM false
+      OR latest_center_registry_change_count<>0
+      OR latest_exact_issuance_change_count<>0
+      OR human_review_recorded
+      OR issuance_authorized
+      OR issuance_executed
+ ) THEN RAISE EXCEPTION 'S71 summary failed request-count or latest-observation checks'; END IF;
 
  -- Test-only direct insertion simulates a well-formed, correctly hashed note
  -- whose observation omits most of the immutable request's selected centers.
@@ -245,6 +291,10 @@ BEGIN
  BEGIN
    PERFORM 1 FROM programs.national_issuance_review_inspection_dossier;
    RAISE EXCEPTION 'Restricted account read the S62 technical dossier';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ BEGIN
+   PERFORM 1 FROM programs.national_issuance_review_inspection_summary;
+   RAISE EXCEPTION 'Restricted account read the S71 summary';
  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 END;$deny$;
 \connect - postgres
