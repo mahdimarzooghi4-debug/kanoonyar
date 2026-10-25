@@ -12,7 +12,8 @@ export default defineConfig({
     command: 'npm run preview:' + experience,
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: false,
-    env: { KANOONYAR_EXPERIENCE: experience },
+    env: { KANOONYAR_EXPERIENCE: experience,
+      KANOONYAR_AUDIENCE_TEST_BUNDLE: experience === 'audience' ? '1' : '0' },
     timeout: 30000,
   },
 });

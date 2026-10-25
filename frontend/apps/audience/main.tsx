@@ -8,7 +8,7 @@ createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <Shell title="پرتال مخاطبان">
       <PublicNationalPrograms />
-      <AudienceIdentityBoundary />
+      {import.meta.env.MODE === 'audience-ci' && <AudienceIdentityBoundary />}
     </Shell>
   </React.StrictMode>,
 );

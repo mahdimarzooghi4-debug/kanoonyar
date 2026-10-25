@@ -10,7 +10,8 @@ if (!requested || !experiences.some(name => name === requested)) {
 export default defineConfig({
   root: resolve(__dirname, 'apps', requested),
   build: {
-    outDir: resolve(__dirname, 'dist', requested),
+    outDir: resolve(__dirname, 'dist', requested === 'audience' &&
+      process.env.KANOONYAR_AUDIENCE_TEST_BUNDLE === '1' ? 'audience-ci' : requested),
     emptyOutDir: true,
   },
 });
