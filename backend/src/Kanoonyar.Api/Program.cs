@@ -1,12 +1,17 @@
 using Kanoonyar.Api.Security;
 using Kanoonyar.Api.Programs;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddHealthChecks();
 builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<INationalInspectionReadAuthorization, UnapprovedNationalInspectionReadAuthorization>();
 var oidcConfigured = builder.AddConfiguredOidc();
+builder.Services.AddHealthChecks()
+    .AddCheck("stage-oidc-configuration", () =>
+        builder.Environment.IsDevelopment() || oidcConfigured
+            ? HealthCheckResult.Healthy()
+            : HealthCheckResult.Unhealthy("OIDC configuration is required for readiness outside Development."));
 
 builder.Services.AddSingleton<ILocalPlanDraftWriteAuthorization, UnapprovedLocalPlanDraftWriteAuthorization>();
 builder.Services.AddSingleton<ILocalPlanDraftReadAuthorization, UnapprovedLocalPlanDraftReadAuthorization>();
