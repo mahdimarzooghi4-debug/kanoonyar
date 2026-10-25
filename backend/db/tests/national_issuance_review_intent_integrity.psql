@@ -27,6 +27,7 @@
 \ir ../migrations/0060_national_issuance_inspection_finding_codes.sql
 \ir ../migrations/0061_national_issuance_observation_diagnostic_reasons.sql
 \ir ../migrations/0062_national_issuance_source_freshness_diagnostics.sql
+\ir ../migrations/0063_national_issuance_national_inspection_rollup.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,
  registered_by_subject,registered_at)
@@ -295,3 +296,4 @@ END;$s73_fixture$;
 \ir national_issuance_review_inspection_findings.psql
 \ir national_issuance_review_observation_diagnostics.psql
 \ir national_issuance_review_source_freshness_diagnostics.psql
+\ir national_issuance_review_national_rollup.psql
