@@ -66,13 +66,14 @@ function parseDossierPage(value:unknown,target:Target,findingsOnly:boolean,findi
   const nullableCount=(v:unknown)=>v===null||(typeof v==='number'&&Number.isSafeInteger(v)&&v>=0);
   if(typeof r.requestId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.requestId)||
    typeof r.noteId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.noteId)||seen.has(r.noteId)||
-   typeof r.inspectedAt!=='string'||!Number.isFinite(Date.parse(r.inspectedAt))||
+   typeof r.inspectedAt!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$/.test(r.inspectedAt)||!Number.isFinite(Date.parse(r.inspectedAt))||new Date(Date.parse(r.inspectedAt)).toISOString().slice(0,19)!==r.inspectedAt.slice(0,19)||
    ['sourceChangedSinceRequest','originalRequestIntegrityValid','observationIntegrityValid','auditAndOutboxIntegrityValid','currentSourceMatchesObservation'].some(k=>typeof r[k]!=='boolean')||
    !nullableBool(r.publicationStateChanged)||!nullableCount(r.centerRegistryChangeCount)||!nullableCount(r.exactIssuanceChangeCount)||!nullableBool(r.sourceObservationComparable)||
    r.humanReviewRecorded!==false||r.issuanceAuthorized!==false||r.issuanceExecuted!==false||
    !Array.isArray(r.findingCodes)||r.findingCodes.some((code,index,codes)=>typeof code!=='string'||!knownDossierFindingCodes.has(code)||(index>0&&String(codes[index-1])>=code)))return null;
   seen.add(r.noteId);rows.push(r as unknown as Inspection);
  }
+ for(let index=1;index<rows.length;index++)if(rows[index-1].inspectedAt<rows[index].inspectedAt)return null;
  let next:DossierCursor|null=null;
  if(root.nextCursor!==null){
   if(!root.nextCursor||typeof root.nextCursor!=='object'||rows.length!==50)return null;
