@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 type Cursor={beforeProgramId:string;beforeNationalVersion:number};
+type Target={programId:string;nationalVersion:number};
 type Row={rollupContractVersion:'S90_NATIONAL_INSPECTION_ROLLUP_V2';programId:string;nationalVersion:number;reviewRequestCount:number;requestsWithoutInspectionCount:number;requestsWithInspectionCount:number;inspectionNoteCount:number;integrityConsistentNoteCount:number;integrityInconsistentNoteCount:number;sourceComparisonUnavailableNoteCount:number;currentSourceMatchNoteCount:number;currentSourceDriftNoteCount:number;sourceFreshnessUnclassifiedNoteCount:number;sourceSnapshotDigestInvalidRequestCount:number;sourceEnvelopeInvalidRequestCount:number;centerSelectionMismatchRequestCount:number;authorityFlagsNotClearRequestCount:number;auditEvidenceInvalidRequestCount:number;outboxEvidenceInvalidRequestCount:number;originalRequestIntegrityInvalidNoteCount:number;observationIntegrityInvalidNoteCount:number;inspectionAuditEvidenceInvalidNoteCount:number;sourceObservationNotComparableNoteCount:number;latestTechnicalObservationAt:string|null;humanReviewRecorded:false;issuanceAuthorized:false;issuanceExecuted:false};
 type Page={rollups:Row[];nextCursor:Cursor|null};
 type State={status:'loading'|'ready'|'error';error:string;pages:Page[];index:number};
@@ -28,11 +29,12 @@ function parsePage(value:unknown):Page|null {
  }
  return {rollups:rows,nextCursor:next};
 }
-async function read(cursor:Cursor|null,signal:AbortSignal,findingsOnly:boolean,findingCode:string):Promise<Page>{
+async function read(cursor:Cursor|null,signal:AbortSignal,findingsOnly:boolean,findingCode:string,target:Target|null):Promise<Page>{
  const params=new URLSearchParams();
  if(cursor){params.set('beforeProgramId',cursor.beforeProgramId);params.set('beforeNationalVersion',String(cursor.beforeNationalVersion));}
  if(findingsOnly)params.set('findingsOnly','true');
  if(findingCode)params.set('findingCode',findingCode);
+ if(target){params.set('targetProgramId',target.programId);params.set('targetNationalVersion',String(target.nationalVersion));}
  const encoded=params.toString(),query=encoded?'?'+encoded:'';
  const response=await fetch('/api/v1/headquarters/national-issuance/review-rollup'+query,{signal,cache:'no-store',credentials:'same-origin'});
  if(response.status===401)throw Error('برای مشاهده این بخش، ورود سازمانی لازم است.');
@@ -55,9 +57,10 @@ const findingCodes=[
 ] as const;
 export function NationalInspectionRollupWorkbench(){
  const [s,setS]=useState<State>(initial),[reload,setReload]=useState(0),[opened,setOpened]=useState(false),[findingsOnly,setFindingsOnly]=useState(false),[findingCode,setFindingCode]=useState('');
- useEffect(()=>{if(!opened)return;const c=new AbortController();setS(initial);void read(null,c.signal,findingsOnly,findingCode).then(p=>{if(!c.signal.aborted)setS({status:'ready',error:'',pages:[p],index:0});}).catch(e=>{if(!c.signal.aborted)setS({status:'error',error:e instanceof Error?e.message:'خلاصه پوشش بازرسی فعلاً در دسترس نیست.',pages:[],index:0});});return()=>c.abort();},[reload,opened,findingsOnly,findingCode]);
+ const [targetProgramInput,setTargetProgramInput]=useState(''),[targetVersionInput,setTargetVersionInput]=useState(''),[target,setTarget]=useState<Target|null>(null),[targetError,setTargetError]=useState('');
+ useEffect(()=>{if(!opened)return;const c=new AbortController();setS(initial);void read(null,c.signal,findingsOnly,findingCode,target).then(p=>{if(!c.signal.aborted)setS({status:'ready',error:'',pages:[p],index:0});}).catch(e=>{if(!c.signal.aborted)setS({status:'error',error:e instanceof Error?e.message:'خلاصه پوشش بازرسی فعلاً در دسترس نیست.',pages:[],index:0});});return()=>c.abort();},[reload,opened,findingsOnly,findingCode,target]);
  async function next(){const current=s.pages[s.index];if(!current?.nextCursor||s.status!=='ready')return;if(s.pages[s.index+1]){setS({...s,index:s.index+1});return;}
-  setS({...s,status:'loading'});try{const p=await read(current.nextCursor,new AbortController().signal,findingsOnly,findingCode);
+  setS({...s,status:'loading'});try{const p=await read(current.nextCursor,new AbortController().signal,findingsOnly,findingCode,target);
    const priorKeys=new Set(s.pages.flatMap(pg=>pg.rollups.map(r=>JSON.stringify([r.programId,r.nationalVersion]))));
    const pageKeys=p.rollups.map(r=>JSON.stringify([r.programId,r.nationalVersion]));
    if(pageKeys.some(key=>priorKeys.has(key))||new Set(pageKeys).size!==pageKeys.length)throw Error('صفحه بعدی پوشش بازرسی تکراری یا نامعتبر است.');
@@ -68,6 +71,17 @@ export function NationalInspectionRollupWorkbench(){
   <h2 id="inspection-rollup-title">پوشش فنی بازرسی درخواست‌های ابلاغ ملی</h2>
   <p>این داده‌ها خلاصه فنیِ درخواست‌ها و یادداشت‌های ثبت‌شده‌اند؛ کدهای خطا فقط شمارش تشخیصی‌اند و تأیید انسانی، مجوز یا صدور ابلاغ را نشان نمی‌دهند.</p>
   {!opened&&<button type="button" onClick={()=>setOpened(true)}>نمایش خلاصه پوشش فنی</button>}
+  {opened&&<form onSubmit={event=>{event.preventDefault();const programId=targetProgramInput.trim(),nationalVersion=Number(targetVersionInput);if(!programId||programId.length>256||!Number.isSafeInteger(nationalVersion)||nationalVersion<1){setTargetError('شناسه برنامه و نسخه معتبر را وارد کنید.');return;}setTargetError('');setTarget({programId,nationalVersion});}}>
+   <label>شناسه برنامه ملی
+    <input aria-label="شناسه برنامه ملی" required maxLength={256} value={targetProgramInput} onChange={event=>setTargetProgramInput(event.target.value)}/>
+   </label>
+   <label>نسخه ملی
+    <input aria-label="نسخه ملی" required type="number" min={1} step={1} value={targetVersionInput} onChange={event=>setTargetVersionInput(event.target.value)}/>
+   </label>
+   <button type="submit">یافتن نسخه دقیق</button>
+   {targetError&&<p role="alert">{targetError}</p>}
+   {target&&<button type="button" onClick={()=>{setTarget(null);setTargetProgramInput('');setTargetVersionInput('');setTargetError('');}}>نمایش همه نسخه‌ها</button>}
+  </form>}
   {opened&&<button type="button" aria-pressed={findingsOnly} onClick={()=>{if(findingsOnly)setFindingCode('');setFindingsOnly(value=>!value);}}>فقط گروه‌های دارای کد فنی</button>}
   {opened&&findingsOnly&&<><p>این فیلتر فقط وجود کد تشخیصی فنی را جست‌وجو می‌کند؛ یافته‌ها تصمیم یا مجوز نیستند.</p>
    <label>کد فنی مشخص

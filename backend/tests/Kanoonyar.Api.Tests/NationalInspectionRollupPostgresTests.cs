@@ -201,7 +201,8 @@ public sealed class NationalInspectionRollupPostgresTests
     }
 
     private static async Task<JsonElement> Page(IConfiguration configuration, string? beforeProgramId = null,
-        int? beforeVersion = null, bool findingsOnly = false, string? findingCode = null)
+        int? beforeVersion = null, bool findingsOnly = false, string? findingCode = null,
+        string? targetProgramId = null, int? targetNationalVersion = null)
     {
         var context = new DefaultHttpContext();
         var query = new List<KeyValuePair<string,string?>>();
@@ -213,6 +214,12 @@ public sealed class NationalInspectionRollupPostgresTests
         }
         if (findingsOnly) query.Add(new("findingsOnly", "true"));
         if (findingCode is not null) query.Add(new("findingCode", findingCode));
+        if (targetProgramId is not null && targetNationalVersion.HasValue)
+        {
+            query.Add(new("targetProgramId", targetProgramId));
+            query.Add(new("targetNationalVersion",
+                targetNationalVersion.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
         if (query.Count > 0) context.Request.QueryString = QueryString.Create(query);
         var result = await NationalInspectionRollupEndpoint.List(context, Actor(), configuration,
             new TestOnlyAllowAuthorization(), CancellationToken.None);
@@ -313,6 +320,18 @@ public sealed class NationalInspectionRollupPostgresTests
             Assert.Equal(21, fixtures.Count(x =>
                 x.GetProperty("inspectionAuditEvidenceInvalidNoteCount").GetInt64() == 1));
             Assert.True(pages >= 2);
+
+            var exactTarget = await Page(configuration, targetProgramId: prefix + "-02", targetNationalVersion: 1);
+            var exactTargetRow = Assert.Single(exactTarget.GetProperty("rollups").EnumerateArray());
+            Assert.Equal(prefix + "-02", exactTargetRow.GetProperty("programId").GetString());
+            Assert.Equal(1, exactTargetRow.GetProperty("nationalVersion").GetInt32());
+            var exactTargetFinding = await Page(configuration, findingsOnly: true,
+                findingCode: "INSPECTION_AUDIT_EVIDENCE_INVALID",
+                targetProgramId: prefix + "-02", targetNationalVersion: 1);
+            Assert.Single(exactTargetFinding.GetProperty("rollups").EnumerateArray());
+            var missingTarget = await Page(configuration,
+                targetProgramId: prefix + "-missing", targetNationalVersion: 1);
+            Assert.Empty(missingTarget.GetProperty("rollups").EnumerateArray());
 
             var filtered = new List<JsonElement>();
             string? filterBeforeId = null;
