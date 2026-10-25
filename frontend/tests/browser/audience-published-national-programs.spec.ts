@@ -154,3 +154,101 @@ test('published text comparison preserves duplicate source entries and exact tex
   await expect(entries.filter({hasText:'عبارت افزوده‌شده در نسخه جاری: هدف اضافه'})).toHaveCount(1);
   await expect(entries.filter({hasText:'عبارت موجود در نسخه پیشین و غایب از نسخه جاری: هدف حذف'})).toHaveCount(1);
 });
+
+
+test('shareable published comparison reads and verifies both exact public versions', async ({page}) => {
+  const reads: URL[] = [];
+  await page.route('**/api/**', async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname === '/api/v1/programs/published/version') {
+      reads.push(url);
+      const version = Number(url.searchParams.get('version'));
+      const row = version === 1 ? published[2] : published[0];
+      return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(row)});
+    }
+    if (url.pathname === '/api/v1/programs/published')
+      return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({programs:published})});
+    return route.fulfill({status:404,body:'not found'});
+  });
+  await page.goto('/?compareProgramId=national-a&earlierVersion=1&currentVersion=2');
+  const comparison = page.getByRole('region',{name:'مقایسه قابل اشتراک نسخه‌های منتشرشده'});
+  await expect(comparison.getByRole('heading',{name:'مقایسه دقیق دو نسخه منتشرشده برنامه ملی'})).toBeVisible();
+  await expect(comparison).toContainText('شناسه و شماره هر دو نسخه با منبع رسمی انتشار تطبیق داده شد.');
+  await expect(comparison).toContainText('هدف تاریخی نسخه اول');
+  await expect(comparison).toContainText('هدف واقعی نسخه دوم');
+  await expect(comparison).toContainText('الزام تاریخی نسخه اول');
+  await expect(comparison).toContainText('الزام نسخه دوم');
+  expect(reads).toHaveLength(2);
+  expect(reads.map(url => url.searchParams.get('programId')).sort()).toEqual(['national-a','national-a']);
+  expect(reads.map(url => Number(url.searchParams.get('version'))).sort()).toEqual([1,2]);
+});
+
+test('comparison links reject ambiguous or malformed references without exact reads', async ({page}) => {
+  let versionReads = 0;
+  await page.route('**/api/**', async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname === '/api/v1/programs/published/version') {
+      versionReads++;
+      return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(published[0])});
+    }
+    if (url.pathname === '/api/v1/programs/published')
+      return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({programs:[]})});
+    return route.fulfill({status:404,body:'not found'});
+  });
+  for (const query of [
+    'compareProgramId=national-a&earlierVersion=1&currentVersion=2&extra=1',
+    'compareProgramId=national-a&compareProgramId=national-b&earlierVersion=1&currentVersion=2',
+    'compareProgramId=national-a&earlierVersion=2&currentVersion=1',
+    'compareProgramId=national-a&earlierVersion=01&currentVersion=2',
+  ]) {
+    await page.goto('/?' + query);
+    await expect(page.getByRole('alert')).toContainText('پیوند مقایسه معتبر نیست');
+  }
+  expect(versionReads).toBe(0);
+});
+
+test('a mismatched or unavailable exact version suppresses the whole shared comparison', async ({page}) => {
+  let mode: 'mismatch' | 'unavailable' = 'mismatch';
+  await page.route('**/api/**', async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname === '/api/v1/programs/published/version') {
+      const version = Number(url.searchParams.get('version'));
+      if (mode === 'unavailable' && version === 2)
+        return route.fulfill({status:503,contentType:'application/problem+json',body:'{}'});
+      const row = version === 1 ? published[2] : mode === 'mismatch'
+        ? {...published[0],version:3} : published[0];
+      return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(row)});
+    }
+    if (url.pathname === '/api/v1/programs/published')
+      return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({programs:[]})});
+    return route.fulfill({status:404,body:'not found'});
+  });
+  const url = '/?compareProgramId=national-a&earlierVersion=1&currentVersion=2';
+  await page.goto(url);
+  await expect(page.getByRole('alert')).toContainText('انتشار رسمی هر دو نسخه تأیید نشد');
+  await expect(page.getByText('هدف تاریخی نسخه اول')).toHaveCount(0);
+  await expect(page.getByText('هدف واقعی نسخه دوم')).toHaveCount(0);
+  mode = 'unavailable';
+  await page.goto(url);
+  await expect(page.getByRole('alert')).toContainText('انتشار رسمی هر دو نسخه تأیید نشد');
+  await expect(page.getByText('هدف تاریخی نسخه اول')).toHaveCount(0);
+  await expect(page.getByText('هدف واقعی نسخه دوم')).toHaveCount(0);
+});
+
+test('selected published versions produce a share link pinned to that program and version pair', async ({page}) => {
+  await page.route('**/api/v1/programs/published',route=>route.fulfill({
+    status:200,contentType:'application/json',body:JSON.stringify({programs:published}),
+  }));
+  await page.goto('/');
+  const cards=page.locator('section[aria-label="فهرست برنامه‌های ملی منتشرشده"] li');
+  await cards.filter({hasText:'شناسه برنامه: national-a'})
+    .getByRole('button',{name:'مشاهده نسخه‌ها و الزامات برنامه'}).click();
+  const detail=page.getByRole('region',{name:'جزئیات برنامه ملی انتخاب‌شده'});
+  await detail.getByRole('combobox',{name:'نسخه منتشرشده پیشین برای مقایسه'}).selectOption('1');
+  const link=detail.getByRole('link',{name:'پیوند قابل اشتراک مقایسه نسخه 1 و 2'});
+  const href=new URL(await link.getAttribute('href')!, 'http://localhost');
+  expect(href.searchParams.get('compareProgramId')).toBe('national-a');
+  expect(href.searchParams.get('earlierVersion')).toBe('1');
+  expect(href.searchParams.get('currentVersion')).toBe('2');
+  expect([...href.searchParams.keys()].sort()).toEqual(['compareProgramId','currentVersion','earlierVersion']);
+});
