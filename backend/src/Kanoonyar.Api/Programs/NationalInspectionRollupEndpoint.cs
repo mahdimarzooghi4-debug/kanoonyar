@@ -28,6 +28,19 @@ public sealed class UnapprovedNationalInspectionRollupReadAuthorization
 public static class NationalInspectionRollupEndpoint
 {
     private const int PageSize = 20;
+    private static readonly HashSet<string> FindingCodes = new(StringComparer.Ordinal)
+    {
+        "SOURCE_SNAPSHOT_DIGEST_INVALID",
+        "SOURCE_ENVELOPE_INVALID",
+        "CENTER_SELECTION_MISMATCH",
+        "AUTHORITY_FLAGS_NOT_CLEAR",
+        "AUDIT_EVIDENCE_INVALID",
+        "OUTBOX_EVIDENCE_INVALID",
+        "ORIGINAL_REQUEST_INTEGRITY_INVALID",
+        "OBSERVATION_INTEGRITY_INVALID",
+        "INSPECTION_AUDIT_EVIDENCE_INVALID",
+        "SOURCE_OBSERVATION_NOT_COMPARABLE"
+    };
 
     private sealed record Cursor(string ProgramId, int NationalVersion);
     private sealed record Row(
@@ -71,7 +84,7 @@ public static class NationalInspectionRollupEndpoint
         if (string.IsNullOrWhiteSpace(actor.FindFirst("sub")?.Value))
             return Results.Problem(statusCode: 403, title: "Verified subject required");
 
-        var cursorResult = ParseCursor(context.Request.Query, out var cursor, out var findingsOnly);
+        var cursorResult = ParseCursor(context.Request.Query, out var cursor, out var findingsOnly, out var findingCode);
         if (cursorResult is not null) return cursorResult;
 
         bool permitted;
@@ -135,6 +148,17 @@ public static class NationalInspectionRollupEndpoint
                     OR observation_integrity_invalid_note_count > 0
                     OR inspection_audit_evidence_invalid_note_count > 0
                     OR source_observation_not_comparable_note_count > 0)
+                  AND (@finding_code::text IS NULL
+                    OR (@finding_code='SOURCE_SNAPSHOT_DIGEST_INVALID' AND source_snapshot_digest_invalid_request_count > 0)
+                    OR (@finding_code='SOURCE_ENVELOPE_INVALID' AND source_envelope_invalid_request_count > 0)
+                    OR (@finding_code='CENTER_SELECTION_MISMATCH' AND center_selection_mismatch_request_count > 0)
+                    OR (@finding_code='AUTHORITY_FLAGS_NOT_CLEAR' AND authority_flags_not_clear_request_count > 0)
+                    OR (@finding_code='AUDIT_EVIDENCE_INVALID' AND audit_evidence_invalid_request_count > 0)
+                    OR (@finding_code='OUTBOX_EVIDENCE_INVALID' AND outbox_evidence_invalid_request_count > 0)
+                    OR (@finding_code='ORIGINAL_REQUEST_INTEGRITY_INVALID' AND original_request_integrity_invalid_note_count > 0)
+                    OR (@finding_code='OBSERVATION_INTEGRITY_INVALID' AND observation_integrity_invalid_note_count > 0)
+                    OR (@finding_code='INSPECTION_AUDIT_EVIDENCE_INVALID' AND inspection_audit_evidence_invalid_note_count > 0)
+                    OR (@finding_code='SOURCE_OBSERVATION_NOT_COMPARABLE' AND source_observation_not_comparable_note_count > 0))
                 ORDER BY program_id DESC,national_version DESC
                 LIMIT 21
                 """;
@@ -144,6 +168,8 @@ public static class NationalInspectionRollupEndpoint
             command.Parameters.Add("before_version", NpgsqlDbType.Integer).Value =
                 cursor is null ? DBNull.Value : cursor.NationalVersion;
             command.Parameters.Add("findings_only", NpgsqlDbType.Boolean).Value = findingsOnly;
+            command.Parameters.Add("finding_code", NpgsqlDbType.Text).Value =
+                findingCode is null ? DBNull.Value : findingCode;
 
             var rows = new List<Row>(PageSize + 1);
             await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
@@ -189,10 +215,11 @@ public static class NationalInspectionRollupEndpoint
     }
 
     private static IResult? ParseCursor(
-        IQueryCollection query, out Cursor? cursor, out bool findingsOnly)
+        IQueryCollection query, out Cursor? cursor, out bool findingsOnly, out string? findingCode)
     {
         cursor = null;
         findingsOnly = false;
+        findingCode = null;
         var hasFindingsOnly = query.ContainsKey("findingsOnly");
         if (hasFindingsOnly)
         {
@@ -202,10 +229,19 @@ public static class NationalInspectionRollupEndpoint
             findingsOnly = rawFindingsOnly == "true";
         }
 
+        var hasFindingCode = query.ContainsKey("findingCode");
+        if (hasFindingCode)
+        {
+            if (query["findingCode"].Count != 1) return Results.BadRequest();
+            findingCode = query["findingCode"].ToString();
+            if (!FindingCodes.Contains(findingCode)) return Results.BadRequest();
+            if (hasFindingsOnly && !findingsOnly) return Results.BadRequest();
+        }
+
         var hasProgram = query.ContainsKey("beforeProgramId");
         var hasVersion = query.ContainsKey("beforeNationalVersion");
         if (hasProgram != hasVersion) return Results.BadRequest();
-        var expectedParameters = (hasFindingsOnly ? 1 : 0) + (hasProgram ? 2 : 0);
+        var expectedParameters = (hasFindingsOnly ? 1 : 0) + (hasFindingCode ? 1 : 0) + (hasProgram ? 2 : 0);
         if (query.Count != expectedParameters) return Results.BadRequest();
         if (!hasProgram) return null;
         if (query["beforeProgramId"].Count != 1 ||
