@@ -55,10 +55,77 @@ const findingCodes=[
  ['INSPECTION_AUDIT_EVIDENCE_INVALID','شواهد Audit بازرسی'],
  ['SOURCE_OBSERVATION_NOT_COMPARABLE','عدم‌مقایسه‌پذیری مشاهده']
 ] as const;
+const maxExportRows=10000,maxExportPages=500;
+const exportColumns=[
+ ['programId','شناسه برنامه'],
+ ['nationalVersion','نسخه ملی'],
+ ['reviewRequestCount','درخواست'],
+ ['requestsWithoutInspectionCount','بدون بازرسی'],
+ ['requestsWithInspectionCount','با بازرسی'],
+ ['inspectionNoteCount','یادداشت بازرسی'],
+ ['integrityConsistentNoteCount','یکپارچگی سازگار'],
+ ['integrityInconsistentNoteCount','یکپارچگی ناسازگار'],
+ ['sourceComparisonUnavailableNoteCount','مقایسه ناموجود'],
+ ['currentSourceMatchNoteCount','منبع منطبق'],
+ ['currentSourceDriftNoteCount','منبع متغیر'],
+ ['sourceFreshnessUnclassifiedNoteCount','تازگی نامشخص'],
+ ['sourceSnapshotDigestInvalidRequestCount','Digest نامعتبر درخواست'],
+ ['sourceEnvelopeInvalidRequestCount','ساختار نامعتبر درخواست'],
+ ['centerSelectionMismatchRequestCount','عدم تطبیق انتخاب کانون'],
+ ['authorityFlagsNotClearRequestCount','پرچم اختیار نامشخص'],
+ ['auditEvidenceInvalidRequestCount','شواهد Audit نامعتبر درخواست'],
+ ['outboxEvidenceInvalidRequestCount','شواهد Outbox نامعتبر درخواست'],
+ ['originalRequestIntegrityInvalidNoteCount','یکپارچگی درخواست اصلی نامعتبر'],
+ ['observationIntegrityInvalidNoteCount','یکپارچگی مشاهده نامعتبر'],
+ ['inspectionAuditEvidenceInvalidNoteCount','شواهد Audit بازرسی نامعتبر'],
+ ['sourceObservationNotComparableNoteCount','مشاهده غیرقابل‌مقایسه'],
+ ['latestTechnicalObservationAt','آخرین مشاهده فنی']
+] as const;
+function csvCell(value:unknown):string{
+ let text=String(value??'');
+ if(/^[\u0000-\u0020]*[=+\-@]/.test(text))text="'"+text;
+ return '"'+text.replaceAll('"','""')+'"';
+}
+function toCsv(rows:Row[]):string{
+ const lines=[exportColumns.map(([,label])=>csvCell(label)).join(',')];
+ for(const row of rows)lines.push(exportColumns.map(([key])=>csvCell(row[key])).join(','));
+ return '\uFEFF'+lines.join('\r\n')+'\r\n';
+}
 export function NationalInspectionRollupWorkbench(){
  const [s,setS]=useState<State>(initial),[reload,setReload]=useState(0),[opened,setOpened]=useState(false),[findingsOnly,setFindingsOnly]=useState(false),[findingCode,setFindingCode]=useState('');
  const [targetProgramInput,setTargetProgramInput]=useState(''),[targetVersionInput,setTargetVersionInput]=useState(''),[target,setTarget]=useState<Target|null>(null),[targetError,setTargetError]=useState('');
+ const [exporting,setExporting]=useState(false),[exportError,setExportError]=useState(''),[exportStatus,setExportStatus]=useState('');
  useEffect(()=>{if(!opened)return;const c=new AbortController();setS(initial);void read(null,c.signal,findingsOnly,findingCode,target).then(p=>{if(!c.signal.aborted)setS({status:'ready',error:'',pages:[p],index:0});}).catch(e=>{if(!c.signal.aborted)setS({status:'error',error:e instanceof Error?e.message:'خلاصه پوشش بازرسی فعلاً در دسترس نیست.',pages:[],index:0});});return()=>c.abort();},[reload,opened,findingsOnly,findingCode,target]);
+ async function exportAll(){
+  if(!opened||s.status!=='ready'||exporting)return;
+  setExporting(true);setExportError('');setExportStatus('');
+  const controller=new AbortController(),all:Row[]=[],seen=new Set<string>(),cursors=new Set<string>();
+  let cursor:Cursor|null=null,pageCount=0;
+  try{
+   while(true){
+    pageCount++;
+    if(pageCount>maxExportPages)throw Error('تعداد صفحات خروجی از سقف امن بیشتر است؛ فیلترهای دقیق‌تری انتخاب کنید.');
+    const page=await read(cursor,controller.signal,findingsOnly,findingCode,target);
+    for(const row of page.rollups){
+     const key=JSON.stringify([row.programId,row.nationalVersion]);
+     if(seen.has(key))throw Error('خروجی به‌دلیل تکراری بودن گروه‌ها متوقف شد؛ فایل ساخته نشد.');
+     seen.add(key);all.push(row);
+     if(all.length>maxExportRows)throw Error('حجم خروجی از سقف امن بیشتر است؛ فیلترهای دقیق‌تری انتخاب کنید.');
+    }
+    if(!page.nextCursor)break;
+    const cursorKey=JSON.stringify([page.nextCursor.beforeProgramId,page.nextCursor.beforeNationalVersion]);
+    if(cursors.has(cursorKey))throw Error('صفحه‌بندی خروجی معتبر نیست؛ فایل ساخته نشد.');
+    cursors.add(cursorKey);cursor=page.nextCursor;
+   }
+   const blob=new Blob([toCsv(all)],{type:'text/csv;charset=utf-8'});
+   const url=URL.createObjectURL(blob),anchor=document.createElement('a');
+   anchor.href=url;anchor.download='national-inspection-rollup.csv';anchor.style.display='none';
+   document.body.appendChild(anchor);anchor.click();anchor.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+   setExportStatus('فایل CSV شامل '+n(all.length)+' ردیف تجمیعی آماده شد.');
+  }catch(e){
+   setExportError(e instanceof Error?e.message:'خروجی کامل ساخته نشد؛ دوباره تلاش کنید.');
+  }finally{setExporting(false);}
+ }
  async function next(){const current=s.pages[s.index];if(!current?.nextCursor||s.status!=='ready')return;if(s.pages[s.index+1]){setS({...s,index:s.index+1});return;}
   setS({...s,status:'loading'});try{const p=await read(current.nextCursor,new AbortController().signal,findingsOnly,findingCode,target);
    const priorKeys=new Set(s.pages.flatMap(pg=>pg.rollups.map(r=>JSON.stringify([r.programId,r.nationalVersion]))));
@@ -73,23 +140,27 @@ export function NationalInspectionRollupWorkbench(){
   {!opened&&<button type="button" onClick={()=>setOpened(true)}>نمایش خلاصه پوشش فنی</button>}
   {opened&&<form onSubmit={event=>{event.preventDefault();const programId=targetProgramInput.trim(),nationalVersion=Number(targetVersionInput);if(!programId||programId.length>256||!Number.isSafeInteger(nationalVersion)||nationalVersion<1){setTargetError('شناسه برنامه و نسخه معتبر را وارد کنید.');return;}setTargetError('');setTarget({programId,nationalVersion});}}>
    <label>شناسه برنامه ملی
-    <input aria-label="شناسه برنامه ملی" required maxLength={256} value={targetProgramInput} onChange={event=>setTargetProgramInput(event.target.value)}/>
+    <input aria-label="شناسه برنامه ملی" required maxLength={256} disabled={exporting} value={targetProgramInput} onChange={event=>setTargetProgramInput(event.target.value)}/>
    </label>
    <label>نسخه ملی
-    <input aria-label="نسخه ملی" required type="number" min={1} step={1} value={targetVersionInput} onChange={event=>setTargetVersionInput(event.target.value)}/>
+    <input aria-label="نسخه ملی" required type="number" min={1} step={1} disabled={exporting} value={targetVersionInput} onChange={event=>setTargetVersionInput(event.target.value)}/>
    </label>
-   <button type="submit">یافتن نسخه دقیق</button>
+   <button type="submit" disabled={exporting}>یافتن نسخه دقیق</button>
    {targetError&&<p role="alert">{targetError}</p>}
-   {target&&<button type="button" onClick={()=>{setTarget(null);setTargetProgramInput('');setTargetVersionInput('');setTargetError('');}}>نمایش همه نسخه‌ها</button>}
+   {target&&<button type="button" disabled={exporting} onClick={()=>{setTarget(null);setTargetProgramInput('');setTargetVersionInput('');setTargetError('');}}>نمایش همه نسخه‌ها</button>}
   </form>}
-  {opened&&<button type="button" aria-pressed={findingsOnly} onClick={()=>{if(findingsOnly)setFindingCode('');setFindingsOnly(value=>!value);}}>فقط گروه‌های دارای کد فنی</button>}
+  {opened&&<button type="button" aria-pressed={findingsOnly} disabled={exporting} onClick={()=>{if(findingsOnly)setFindingCode('');setFindingsOnly(value=>!value);}}>فقط گروه‌های دارای کد فنی</button>}
   {opened&&findingsOnly&&<><p>این فیلتر فقط وجود کد تشخیصی فنی را جست‌وجو می‌کند؛ یافته‌ها تصمیم یا مجوز نیستند.</p>
    <label>کد فنی مشخص
-    <select aria-label="کد فنی مشخص" value={findingCode} onChange={e=>setFindingCode(e.target.value)}>
+    <select aria-label="کد فنی مشخص" disabled={exporting} value={findingCode} onChange={e=>setFindingCode(e.target.value)}>
      <option value="">همه کدهای فنی</option>
      {findingCodes.map(([code,label])=><option key={code} value={code}>{code} — {label}</option>)}
     </select>
    </label></>}
+  {s.status==='ready'&&<div><button type="button" disabled={exporting} onClick={()=>void exportAll()}>{exporting?'در حال آماده‌سازی CSV…':'دانلود CSV تجمیعی'}</button>
+   {exporting&&<p role="status">همه صفحات مطابق فیلترها اعتبارسنجی می‌شوند؛ دانلود تا پایان کامل انجام نمی‌شود.</p>}
+   {exportError&&<p role="alert">{exportError}</p>}{exportStatus&&<p role="status">{exportStatus}</p>}
+  </div>}
   {s.status==='loading'&&<p role="status">در حال دریافت خلاصه پوشش…</p>}
   {s.status==='error'&&<div role="alert"><p>{s.error}</p><button onClick={()=>setReload(x=>x+1)}>تلاش دوباره</button></div>}
   {s.status==='ready'&&page&&(page.rollups.length===0?<p role="status">{findingCode?'گروهی با این کد فنی ثبت نشده.':findingsOnly?'گروهی با کد فنی ثبت‌شده وجود ندارد.':'گروه برنامه/نسخه‌ای برای نمایش وجود ندارد.'}</p>:
@@ -98,6 +169,6 @@ export function NationalInspectionRollupWorkbench(){
    </tr></thead><tbody>{page.rollups.map(r=><tr key={r.programId+':'+r.nationalVersion}>
     <th scope="row">{r.programId} / {n(r.nationalVersion)}</th><td>{n(r.reviewRequestCount)}</td><td>{n(r.requestsWithoutInspectionCount)}</td><td>{n(r.requestsWithInspectionCount)}</td><td>{n(r.inspectionNoteCount)}</td><td>{n(r.integrityConsistentNoteCount)} / {n(r.integrityInconsistentNoteCount)}</td><td>{n(r.sourceComparisonUnavailableNoteCount)}</td><td>{n(r.currentSourceMatchNoteCount)} / {n(r.currentSourceDriftNoteCount)}</td><td>{n(r.sourceFreshnessUnclassifiedNoteCount)}</td><td><span>Digest: {n(r.sourceSnapshotDigestInvalidRequestCount)}؛ Envelope: {n(r.sourceEnvelopeInvalidRequestCount)}؛ انتخاب کانون: {n(r.centerSelectionMismatchRequestCount)}؛ پرچم اختیار: {n(r.authorityFlagsNotClearRequestCount)}؛ Audit: {n(r.auditEvidenceInvalidRequestCount)}؛ Outbox: {n(r.outboxEvidenceInvalidRequestCount)}</span></td><td><span>درخواست اصلی: {n(r.originalRequestIntegrityInvalidNoteCount)}؛ مشاهده: {n(r.observationIntegrityInvalidNoteCount)}؛ Audit: {n(r.inspectionAuditEvidenceInvalidNoteCount)}؛ عدم‌مقایسه‌پذیری: {n(r.sourceObservationNotComparableNoteCount)}</span></td><td>{r.latestTechnicalObservationAt?new Date(r.latestTechnicalObservationAt).toLocaleString('fa-IR'):'ثبت نشده'}</td>
    </tr>)}</tbody></table></div>)}
-  {s.status==='ready'&&<nav aria-label="صفحه‌های خلاصه پوشش بازرسی"><button disabled={s.index===0} onClick={()=>setS({...s,index:s.index-1})}>قبلی</button><span aria-live="polite"> صفحه {n(s.index+1)} </span><button disabled={!page?.nextCursor} onClick={()=>void next()}>بعدی</button></nav>}
+  {s.status==='ready'&&<nav aria-label="صفحه‌های خلاصه پوشش بازرسی"><button disabled={exporting||s.index===0} onClick={()=>setS({...s,index:s.index-1})}>قبلی</button><span aria-live="polite"> صفحه {n(s.index+1)} </span><button disabled={exporting||!page?.nextCursor} onClick={()=>void next()}>بعدی</button></nav>}
  </section>;
 }
