@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHealthChecks();
 builder.Services.AddProblemDetails();
+builder.Services.AddSingleton<INationalInspectionRollupReadAuthorization, UnapprovedNationalInspectionRollupReadAuthorization>();
 var oidcConfigured = builder.AddConfiguredOidc();
 
 builder.Services.AddSingleton<ILocalPlanDraftWriteAuthorization, UnapprovedLocalPlanDraftWriteAuthorization>();
@@ -40,6 +41,7 @@ if (oidcConfigured)
     app.UseAuthentication();
     app.UseAuthorization();
     app.MapGet("/api/v1/identity/me", AuthenticatedSubjectEndpoint.GetSubject).RequireAuthorization();
+    app.MapGet("/api/v1/headquarters/national-issuance/review-rollup", NationalInspectionRollupEndpoint.List).RequireAuthorization();
     app.MapGet("/api/v1/identity/center-memberships", CenterMembershipEndpoint.GetMine).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/evidence-register", CenterCampaignEvidenceRegisterEndpoint.Get).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links/{associationId:guid}/review-workspace", CenterCampaignReviewWorkspaceEndpoint.Get).RequireAuthorization();
@@ -117,6 +119,8 @@ else
     app.MapGet("/api/v1/identity/me", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapGet("/api/v1/identity/center-memberships", () =>
+        Results.Problem(statusCode: 503, title: "OIDC not configured"));
+    app.MapGet("/api/v1/headquarters/national-issuance/review-rollup", () =>
         Results.Problem(statusCode: 503, title: "OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/evidence-register", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
     app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links/{associationId:guid}/review-workspace", () => Results.Problem(statusCode:503,title:"OIDC not configured"));
