@@ -17,6 +17,7 @@
 \ir ../migrations/0050_national_issuance_observation_scope_integrity.sql
 \ir ../migrations/0051_national_issuance_inspection_summary.sql
 \ir ../migrations/0052_national_issuance_inspection_history_metrics.sql
+\ir ../migrations/0053_national_issuance_request_source_integrity.sql
 
 INSERT INTO centers.registry(center_id,display_name,is_active,
  registered_by_subject,registered_at)
@@ -254,5 +255,31 @@ BEGIN
  SELECT count(*) INTO n FROM programs.national_program_issuances;
  IF n<>2 THEN RAISE EXCEPTION 'Real issuance count mutated %',n; END IF;
 END;$final$;
+
+-- S73 adds a valid original request with no technical inspection notes.
+-- The summary must report zero notes and independently verify the source.
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT programs.capture_national_issuance_review_intent(
+ 'aa600000-0000-4000-8000-000000000021',
+ 's60-original-program',2,ARRAY['s60-center-06'],
+ 'UNVERIFIED-s73-fixture-actor','Synthetic zero-note integrity fixture only',
+ 'aa600000-0000-4000-8000-000000000022',
+ 'aa600000-0000-4000-8000-000000000023','s73-zero-note');
+COMMIT;
+DO $s73_fixture$
+DECLARE n bigint;
+BEGIN
+ IF (SELECT count(*) FROM programs.national_issuance_review_intents)<>3
+ THEN RAISE EXCEPTION 'S73 fixture request cardinality mismatch'; END IF;
+ IF (SELECT count(*) FROM governance.command_audit
+   WHERE action_code='NATIONAL_ISSUANCE_REVIEW_INTENT_CAPTURED')<>3
+ OR (SELECT count(*) FROM governance.outbox_events
+   WHERE event_type='NationalIssuanceReviewIntentCaptured')<>3
+ THEN RAISE EXCEPTION 'S73 fixture audit/outbox pairing mismatch'; END IF;
+ IF EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_inspection_notes
+   WHERE request_id='aa600000-0000-4000-8000-000000000021'
+ ) THEN RAISE EXCEPTION 'S73 zero-note request unexpectedly has an inspection note'; END IF;
+END;$s73_fixture$;
 
 \ir national_issuance_review_inspection_integrity.psql
