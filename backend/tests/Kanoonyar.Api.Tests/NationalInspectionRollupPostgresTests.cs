@@ -430,10 +430,11 @@ public sealed class NationalInspectionRollupPostgresTests
 
             await SeedAdditionalInspectionNotes(AdminUrl, prefix + "-01", 50);
             var dossierFirst = await Dossier(configuration, prefix + "-01", 1);
-            Assert.Equal("S105_NATIONAL_INSPECTION_DOSSIER_V3",
+            Assert.Equal("S106_NATIONAL_INSPECTION_DOSSIER_V4",
                 dossierFirst.GetProperty("contractVersion").GetString());
             var dossierRows = dossierFirst.GetProperty("inspections").EnumerateArray().ToArray();
             Assert.Equal(50, dossierRows.Length);
+            Assert.Equal(51, dossierFirst.GetProperty("matchingNoteCount").GetInt64());
             Assert.All(dossierRows, row =>
             {
                 Assert.Equal(16, row.EnumerateObject().Count());
@@ -459,7 +460,12 @@ public sealed class NationalInspectionRollupPostgresTests
                 dossierCursor.GetProperty("beforeNoteId").GetGuid());
             var lastDossierRows = dossierSecond.GetProperty("inspections").EnumerateArray().ToArray();
             Assert.Single(lastDossierRows);
+            Assert.Equal(51, dossierSecond.GetProperty("matchingNoteCount").GetInt64());
             Assert.Equal(JsonValueKind.Null, dossierSecond.GetProperty("nextCursor").ValueKind);
+            var emptyDossierPage = await Dossier(configuration, prefix + "-01", 1,
+                "1900-01-01T00:00:00Z", Guid.Parse("00000000-0000-0000-0000-000000000001"));
+            Assert.Empty(emptyDossierPage.GetProperty("inspections").EnumerateArray());
+            Assert.Equal(51, emptyDossierPage.GetProperty("matchingNoteCount").GetInt64());
             Assert.DoesNotContain(lastDossierRows[0].GetProperty("noteId").GetGuid(),
                 dossierRows.Select(row => row.GetProperty("noteId").GetGuid()));
 
@@ -471,6 +477,7 @@ public sealed class NationalInspectionRollupPostgresTests
             var filteredDossierNote = Assert.Single(filteredDossier.GetProperty("inspections").EnumerateArray());
             Assert.Equal("INSPECTION_AUDIT_EVIDENCE_INVALID",
                 Assert.Single(filteredDossierNote.GetProperty("findingCodes").EnumerateArray()).GetString());
+            Assert.Equal(1, filteredDossier.GetProperty("matchingNoteCount").GetInt64());
             var attributedCsvContext = new DefaultHttpContext();
             attributedCsvContext.Request.QueryString = new QueryString(
                 "?programId=" + Uri.EscapeDataString(prefix + "-02") + "&nationalVersion=1");
