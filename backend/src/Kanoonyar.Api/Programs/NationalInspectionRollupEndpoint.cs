@@ -13,19 +13,6 @@ namespace Kanoonyar.Api.Programs;
 /// Paginated read path for aggregate national inspection evidence.
 /// Access remains unavailable until a separately approved HQ read policy exists.
 /// </summary>
-public interface INationalInspectionRollupReadAuthorization
-{
-    ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, CancellationToken cancellationToken);
-}
-
-/// <summary>No approved HQ review-read policy exists; deny every runtime request.</summary>
-public sealed class UnapprovedNationalInspectionRollupReadAuthorization
-    : INationalInspectionRollupReadAuthorization
-{
-    public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, CancellationToken cancellationToken) =>
-        ValueTask.FromResult(false);
-}
-
 public static class NationalInspectionRollupEndpoint
 {
     private const int PageSize = 20;
@@ -79,7 +66,7 @@ public static class NationalInspectionRollupEndpoint
         HttpContext context,
         ClaimsPrincipal actor,
         IConfiguration configuration,
-        INationalInspectionRollupReadAuthorization authorization,
+        INationalInspectionReadAuthorization authorization,
         CancellationToken cancellationToken) =>
         Execute(context, actor, configuration, authorization, cancellationToken, exportCsv: false);
 
@@ -87,7 +74,7 @@ public static class NationalInspectionRollupEndpoint
         HttpContext context,
         ClaimsPrincipal actor,
         IConfiguration configuration,
-        INationalInspectionRollupReadAuthorization authorization,
+        INationalInspectionReadAuthorization authorization,
         CancellationToken cancellationToken) =>
         Execute(context, actor, configuration, authorization, cancellationToken, exportCsv: true);
 
@@ -95,7 +82,7 @@ public static class NationalInspectionRollupEndpoint
         HttpContext context,
         ClaimsPrincipal actor,
         IConfiguration configuration,
-        INationalInspectionRollupReadAuthorization authorization,
+        INationalInspectionReadAuthorization authorization,
         CancellationToken cancellationToken,
         bool exportCsv)
     {
@@ -110,7 +97,15 @@ public static class NationalInspectionRollupEndpoint
         bool permitted;
         try
         {
-            permitted = await authorization.IsAuthorizedAsync(actor, cancellationToken);
+            permitted = await authorization.IsAuthorizedAsync(actor,
+                new NationalInspectionReadScope(
+                    exportCsv ? NationalInspectionReadOperation.RollupCsvExport :
+                        NationalInspectionReadOperation.RollupPage,
+                    target?.ProgramId,
+                    target?.NationalVersion,
+                    findingsOnly,
+                    findingCode),
+                cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

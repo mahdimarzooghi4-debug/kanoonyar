@@ -8,19 +8,6 @@ using NpgsqlTypes;
 
 namespace Kanoonyar.Api.Programs;
 
-public interface INationalInspectionDossierReadAuthorization
-{
-    ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, CancellationToken cancellationToken);
-}
-
-/// <summary>No approved headquarters dossier-read policy exists; deny every runtime request.</summary>
-public sealed class UnapprovedNationalInspectionDossierReadAuthorization
-    : INationalInspectionDossierReadAuthorization
-{
-    public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, CancellationToken cancellationToken) =>
-        ValueTask.FromResult(false);
-}
-
 /// <summary>Read-only technical drill-down for immutable national inspection notes.</summary>
 public static class NationalInspectionDossierEndpoint
 {
@@ -49,7 +36,7 @@ public static class NationalInspectionDossierEndpoint
         HttpContext context,
         ClaimsPrincipal actor,
         IConfiguration configuration,
-        INationalInspectionDossierReadAuthorization authorization,
+        INationalInspectionReadAuthorization authorization,
         CancellationToken cancellationToken)
     {
         if (actor.Identity?.IsAuthenticated != true)
@@ -94,7 +81,14 @@ public static class NationalInspectionDossierEndpoint
         bool permitted;
         try
         {
-            permitted = await authorization.IsAuthorizedAsync(actor, cancellationToken);
+            permitted = await authorization.IsAuthorizedAsync(actor,
+                new NationalInspectionReadScope(
+                    NationalInspectionReadOperation.InspectionDossierPage,
+                    target.ProgramId,
+                    target.NationalVersion,
+                    FindingsOnly: false,
+                    FindingCode: null),
+                cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

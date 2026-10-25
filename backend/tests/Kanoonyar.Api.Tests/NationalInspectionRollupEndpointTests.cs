@@ -9,10 +9,16 @@ namespace Kanoonyar.Api.Tests;
 
 public sealed class NationalInspectionRollupEndpointTests
 {
-    private sealed class FixedAuthorization(bool permitted) : INationalInspectionRollupReadAuthorization
+    private sealed class FixedAuthorization(bool permitted) : INationalInspectionReadAuthorization
     {
-        public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, CancellationToken cancellationToken) =>
-            ValueTask.FromResult(permitted);
+        public NationalInspectionReadScope? LastScope { get; private set; }
+
+        public ValueTask<bool> IsAuthorizedAsync(ClaimsPrincipal actor, NationalInspectionReadScope scope,
+            CancellationToken cancellationToken)
+        {
+            LastScope = scope;
+            return ValueTask.FromResult(permitted);
+        }
     }
 
     private static ClaimsPrincipal Actor(string? subject = "synthetic-hq-subject", bool authenticated = true) =>
@@ -24,7 +30,7 @@ public sealed class NationalInspectionRollupEndpointTests
         (result as IStatusCodeHttpResult)?.StatusCode ?? 200;
 
     private static Task<IResult> Call(string query = "", ClaimsPrincipal? actor = null,
-        INationalInspectionRollupReadAuthorization? authorization = null,
+        INationalInspectionReadAuthorization? authorization = null,
         IConfiguration? configuration = null, bool exportCsv = false)
     {
         var context = new DefaultHttpContext();
@@ -32,11 +38,11 @@ public sealed class NationalInspectionRollupEndpointTests
         return exportCsv
             ? NationalInspectionRollupEndpoint.ExportCsv(context, actor ?? Actor(),
                 configuration ?? new ConfigurationBuilder().Build(),
-                authorization ?? new UnapprovedNationalInspectionRollupReadAuthorization(),
+                authorization ?? new UnapprovedNationalInspectionReadAuthorization(),
                 CancellationToken.None)
             : NationalInspectionRollupEndpoint.List(context, actor ?? Actor(),
                 configuration ?? new ConfigurationBuilder().Build(),
-                authorization ?? new UnapprovedNationalInspectionRollupReadAuthorization(),
+                authorization ?? new UnapprovedNationalInspectionReadAuthorization(),
                 CancellationToken.None);
     }
 
@@ -117,6 +123,19 @@ public sealed class NationalInspectionRollupEndpointTests
     [InlineData("?targetProgramId=alpha&targetNationalVersion=2&findingsOnly=true&findingCode=INSPECTION_AUDIT_EVIDENCE_INVALID")]
     public async Task Valid_filter_and_cursor_combinations_reach_default_deny(string query) =>
         Assert.Equal(403, Status(await Call(query)));
+
+    [Theory]
+    [InlineData(false, NationalInspectionReadOperation.RollupPage)]
+    [InlineData(true, NationalInspectionReadOperation.RollupCsvExport)]
+    public async Task Authorization_receives_exact_normalized_read_scope(
+        bool exportCsv, NationalInspectionReadOperation operation)
+    {
+        var authorization = new FixedAuthorization(false);
+        var query = "?targetProgramId=alpha&targetNationalVersion=7&findingsOnly=true&findingCode=SOURCE_ENVELOPE_INVALID";
+        Assert.Equal(403, Status(await Call(query, authorization: authorization, exportCsv: exportCsv)));
+        Assert.Equal(new NationalInspectionReadScope(operation, "alpha", 7, true,
+            "SOURCE_ENVELOPE_INVALID"), authorization.LastScope);
+    }
 
     [Fact]
     public async Task Authorized_reader_without_configured_storage_gets_safe_unavailable_response()
