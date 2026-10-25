@@ -39,7 +39,8 @@ public static class NationalInspectionDossierEndpoint
         bool? SourceObservationComparable,
         bool HumanReviewRecorded,
         bool IssuanceAuthorized,
-        bool IssuanceExecuted);
+        bool IssuanceExecuted,
+        string[] FindingCodes);
 
     public static Task<IResult> List(
         HttpContext context,
@@ -165,18 +166,23 @@ public static class NationalInspectionDossierEndpoint
 
             await using var command = new NpgsqlCommand(
                 """
-                SELECT request_id,note_id,inspection_recorded_at,source_changed_since_request,
-                  original_request_integrity_valid,observation_integrity_valid,
-                  audit_and_outbox_integrity_valid,current_source_matches_observation,
-                  publication_state_changed,center_registry_change_count,
-                  exact_issuance_change_count,source_observation_comparable,
-                  human_review_recorded,issuance_authorized,issuance_executed
+                SELECT d.request_id,d.note_id,d.inspection_recorded_at,d.source_changed_since_request,
+                  d.original_request_integrity_valid,d.observation_integrity_valid,
+                  d.audit_and_outbox_integrity_valid,d.current_source_matches_observation,
+                  d.publication_state_changed,d.center_registry_change_count,
+                  d.exact_issuance_change_count,d.source_observation_comparable,
+                  d.human_review_recorded,d.issuance_authorized,d.issuance_executed,
+                  finding_codes.codes AS finding_codes
                 FROM programs.national_issuance_review_inspection_dossier d
-                WHERE d.program_id=@program_id AND d.national_version=@national_version
-                  AND (@findings_only = false OR EXISTS (
-                    SELECT 1 FROM programs.national_issuance_review_inspection_findings f
+                CROSS JOIN LATERAL (
+                  SELECT ARRAY(SELECT f.finding_code
+                    FROM programs.national_issuance_review_inspection_findings f
                     WHERE f.program_id=d.program_id AND f.national_version=d.national_version
-                      AND f.note_id=d.note_id AND (@finding_code::text IS NULL OR f.finding_code=@finding_code)))
+                      AND f.note_id=d.note_id ORDER BY f.finding_code) AS codes
+                ) finding_codes
+                WHERE d.program_id=@program_id AND d.national_version=@national_version
+                  AND (@findings_only = false OR cardinality(finding_codes.codes) > 0)
+                  AND (@finding_code::text IS NULL OR @finding_code = ANY(finding_codes.codes))
                   AND (@before_at::timestamptz IS NULL
                     OR (d.inspection_recorded_at,d.note_id)<(@before_at::timestamptz,@before_note_id::uuid))
                 ORDER BY d.inspection_recorded_at DESC,d.note_id DESC
@@ -208,7 +214,8 @@ public static class NationalInspectionDossierEndpoint
                         reader.IsDBNull(9) ? null : reader.GetInt64(9),
                         reader.IsDBNull(10) ? null : reader.GetInt64(10),
                         reader.IsDBNull(11) ? null : reader.GetBoolean(11),
-                        reader.GetBoolean(12), reader.GetBoolean(13), reader.GetBoolean(14)));
+                        reader.GetBoolean(12), reader.GetBoolean(13), reader.GetBoolean(14),
+                        reader.GetFieldValue<string[]>(15)));
                 }
             }
 
@@ -220,9 +227,9 @@ public static class NationalInspectionDossierEndpoint
 
                 var csv = BuildCsv(target, rows);
                 context.Response.Headers["X-National-Inspection-Dossier-Export-Contract"] =
-                    "S103_NATIONAL_INSPECTION_DOSSIER_CSV_RECEIPT_V1";
+                    "S105_NATIONAL_INSPECTION_DOSSIER_CSV_RECEIPT_V2";
                 context.Response.Headers["X-National-Inspection-Dossier-Export-Schema"] =
-                    "S103_NATIONAL_INSPECTION_DOSSIER_CSV_V1";
+                    "S105_NATIONAL_INSPECTION_DOSSIER_CSV_V2";
                 context.Response.Headers["X-National-Inspection-Dossier-Export-Row-Count"] =
                     rows.Count.ToString(CultureInfo.InvariantCulture);
                 context.Response.Headers["X-National-Inspection-Dossier-Export-SHA256"] =
@@ -237,7 +244,7 @@ public static class NationalInspectionDossierEndpoint
             await transaction.CommitAsync(cancellationToken);
             return Results.Ok(new
             {
-                contractVersion = "S104_NATIONAL_INSPECTION_DOSSIER_V2",
+                contractVersion = "S105_NATIONAL_INSPECTION_DOSSIER_V3",
                 programId = target.ProgramId,
                 nationalVersion = target.NationalVersion,
                 findingsOnly,
@@ -272,7 +279,7 @@ public static class NationalInspectionDossierEndpoint
             "current_source_matches_observation", "publication_state_changed",
             "center_registry_change_count", "exact_issuance_change_count",
             "source_observation_comparable", "human_review_recorded",
-            "issuance_authorized", "issuance_executed"
+            "issuance_authorized", "issuance_executed", "finding_codes"
         }.Select(CsvCell));
         builder.Append("\r\n");
 
@@ -296,7 +303,8 @@ public static class NationalInspectionDossierEndpoint
                 row.SourceObservationComparable?.ToString().ToLowerInvariant() ?? "",
                 row.HumanReviewRecorded.ToString().ToLowerInvariant(),
                 row.IssuanceAuthorized.ToString().ToLowerInvariant(),
-                row.IssuanceExecuted.ToString().ToLowerInvariant()
+                row.IssuanceExecuted.ToString().ToLowerInvariant(),
+                CsvCell(string.Join(';', row.FindingCodes))
             }.Select(CsvCell));
             builder.Append("\r\n");
         }
