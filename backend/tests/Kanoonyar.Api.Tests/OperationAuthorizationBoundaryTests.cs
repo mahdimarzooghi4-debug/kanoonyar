@@ -64,6 +64,7 @@ GET /api/v1/centers/{centerId}/site/templates
 GET /api/v1/centers/{centerId}/site/templates/{templateId:guid}/revisions
 GET /api/v1/headquarters/national-issuance/review-rollup
 GET /api/v1/headquarters/national-issuance/review-rollup/export.csv
+GET /api/v1/headquarters/national-issuance/review-dossier
 GET /api/v1/identity/center-memberships
 GET /api/v1/identity/me
 POST /api/v1/centers/{centerId}/activity-reports/sourced
@@ -168,6 +169,8 @@ POST /api/v1/centers/{centerId}/site/templates/revisions
             services.GetRequiredService<ILocalPlanDraftReadAuthorization>());
         Assert.IsType<UnapprovedLocalPlanDraftWriteAuthorization>(
             services.GetRequiredService<ILocalPlanDraftWriteAuthorization>());
+        Assert.IsType<UnapprovedNationalInspectionDossierReadAuthorization>(
+            services.GetRequiredService<INationalInspectionDossierReadAuthorization>());
     }
 
     [Fact]
@@ -176,13 +179,15 @@ POST /api/v1/centers/{centerId}/site/templates/revisions
         using var factory = Create(configured: false);
         var endpoints = Endpoints(factory);
         var expected = ExpectedAuthenticatedRoutes.OrderBy(x => x, StringComparer.Ordinal).ToArray();
+        var expectedWithoutOidcOnlyRoute = expected.Where(route =>
+            route != "GET /api/v1/headquarters/national-issuance/review-dossier").ToArray();
         var actual = Inventory(endpoints);
-        Assert.Equal(expected.Concat(new[] { "GET /api/v1/programs/published",
+        Assert.Equal(expectedWithoutOidcOnlyRoute.Concat(new[] { "GET /api/v1/programs/published",
             "GET /api/v1/programs/published/version" })
             .OrderBy(x => x, StringComparer.Ordinal), actual);
 
         using var client = factory.CreateClient();
-        foreach (var route in expected)
+        foreach (var route in expectedWithoutOidcOnlyRoute)
         {
             var separator = route.IndexOf(' ');
             var method = route[..separator];

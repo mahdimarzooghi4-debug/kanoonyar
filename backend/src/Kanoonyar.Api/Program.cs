@@ -6,6 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHealthChecks();
 builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<INationalInspectionRollupReadAuthorization, UnapprovedNationalInspectionRollupReadAuthorization>();
+builder.Services.AddSingleton<INationalInspectionDossierReadAuthorization, UnapprovedNationalInspectionDossierReadAuthorization>();
 var oidcConfigured = builder.AddConfiguredOidc();
 
 builder.Services.AddSingleton<ILocalPlanDraftWriteAuthorization, UnapprovedLocalPlanDraftWriteAuthorization>();
@@ -43,6 +44,7 @@ if (oidcConfigured)
     app.MapGet("/api/v1/identity/me", AuthenticatedSubjectEndpoint.GetSubject).RequireAuthorization();
     app.MapGet("/api/v1/headquarters/national-issuance/review-rollup/export.csv", NationalInspectionRollupEndpoint.ExportCsv).RequireAuthorization();
     app.MapGet("/api/v1/headquarters/national-issuance/review-rollup", NationalInspectionRollupEndpoint.List).RequireAuthorization();
+    app.MapGet("/api/v1/headquarters/national-issuance/review-dossier", NationalInspectionDossierEndpoint.List).RequireAuthorization();
     app.MapGet("/api/v1/identity/center-memberships", CenterMembershipEndpoint.GetMine).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/evidence-register", CenterCampaignEvidenceRegisterEndpoint.Get).RequireAuthorization();
     app.MapGet("/api/v1/centers/{centerId}/campaigns/{campaignId:guid}/report-links/{associationId:guid}/review-workspace", CenterCampaignReviewWorkspaceEndpoint.Get).RequireAuthorization();
