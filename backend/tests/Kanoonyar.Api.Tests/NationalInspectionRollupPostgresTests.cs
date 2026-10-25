@@ -93,6 +93,17 @@ public sealed class NationalInspectionRollupPostgresTests
         await using var admin = new NpgsqlConnection(adminUrl);
         await admin.OpenAsync();
         await using var transaction = await admin.BeginTransactionAsync(IsolationLevel.RepeatableRead);
+        var centerId = prefix + "-center";
+        await using (var center = new NpgsqlCommand(
+            """
+            INSERT INTO centers.registry
+              (center_id,display_name,is_active,registered_by_subject,registered_at)
+            VALUES (@center,'S92 synthetic drift center',true,'s92-ci-fixture',now())
+            """, admin, transaction))
+        {
+            center.Parameters.AddWithValue("center", centerId);
+            await center.ExecuteNonQueryAsync();
+        }
         await using (var versions = new NpgsqlCommand(
             """
             INSERT INTO programs.national_program_versions
@@ -112,24 +123,50 @@ public sealed class NationalInspectionRollupPostgresTests
             await versions.ExecuteNonQueryAsync();
         }
 
+        Guid driftRequestId = Guid.Empty;
         for (var i = 1; i <= 22; i++)
         {
             var programId = prefix + "-" + i.ToString("D2", System.Globalization.CultureInfo.InvariantCulture);
+            var requestId = Guid.NewGuid();
+            if (i == 1) driftRequestId = requestId;
             await using var capture = new NpgsqlCommand(
                 """
                 SELECT programs.capture_national_issuance_review_intent(
-                  @request,@program,1,ARRAY['center-a']::text[],
+                  @request,@program,1,ARRAY[@center]::text[],
                   'UNVERIFIED-s84-ci-fixture','Synthetic API pagination only',
                   @audit,@event,@correlation)
                 """, admin, transaction);
-            capture.Parameters.AddWithValue("request", Guid.NewGuid());
+            capture.Parameters.AddWithValue("request", requestId);
             capture.Parameters.AddWithValue("program", programId);
+            capture.Parameters.AddWithValue("center", centerId);
             capture.Parameters.AddWithValue("audit", Guid.NewGuid());
             capture.Parameters.AddWithValue("event", Guid.NewGuid());
             capture.Parameters.AddWithValue("correlation", Guid.NewGuid().ToString("N"));
             await capture.ExecuteNonQueryAsync();
         }
+        if (driftRequestId == Guid.Empty) throw new InvalidOperationException("S92 drift request was not captured");
+        await using (var note = new NpgsqlCommand(
+            """
+            SELECT programs.capture_national_issuance_review_inspection_note(
+              @note,@request,'UNVERIFIED-s92-ci-fixture',
+              'Synthetic source freshness observation only',@audit,@event,@correlation)
+            """, admin, transaction))
+        {
+            note.Parameters.AddWithValue("note", Guid.NewGuid());
+            note.Parameters.AddWithValue("request", driftRequestId);
+            note.Parameters.AddWithValue("audit", Guid.NewGuid());
+            note.Parameters.AddWithValue("event", Guid.NewGuid());
+            note.Parameters.AddWithValue("correlation", Guid.NewGuid().ToString("N"));
+            await note.ExecuteNonQueryAsync();
+        }
+
         await transaction.CommitAsync();
+        await using (var drift = new NpgsqlCommand(
+            "UPDATE centers.registry SET is_active=false WHERE center_id=@center", admin))
+        {
+            drift.Parameters.AddWithValue("center", centerId);
+            Assert.Equal(1, await drift.ExecuteNonQueryAsync());
+        }
         return prefix;
     }
 
@@ -217,6 +254,17 @@ public sealed class NationalInspectionRollupPostgresTests
             Assert.Equal(22, fixtures.Length);
             Assert.Equal(22, fixtures.Select(x => x.GetProperty("programId").GetString())
                 .Distinct(StringComparer.Ordinal).Count());
+            var driftRow = Assert.Single(fixtures.Where(x =>
+                x.GetProperty("programId").GetString() == prefix + "-01"));
+            Assert.Equal(1, driftRow.GetProperty("reviewRequestCount").GetInt64());
+            Assert.Equal(1, driftRow.GetProperty("inspectionNoteCount").GetInt64());
+            Assert.Equal(0, driftRow.GetProperty("currentSourceMatchNoteCount").GetInt64());
+            Assert.Equal(1, driftRow.GetProperty("currentSourceDriftNoteCount").GetInt64());
+            Assert.NotEqual(JsonValueKind.Null,
+                driftRow.GetProperty("latestTechnicalObservationAt").ValueKind);
+            Assert.False(driftRow.GetProperty("humanReviewRecorded").GetBoolean());
+            Assert.False(driftRow.GetProperty("issuanceAuthorized").GetBoolean());
+            Assert.False(driftRow.GetProperty("issuanceExecuted").GetBoolean());
             foreach (var row in fixtures)
             {
                 foreach (var componentCount in new[]
