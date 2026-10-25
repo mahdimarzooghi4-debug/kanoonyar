@@ -18,9 +18,15 @@
 - حفاظت از داده‌ها و مجوزهای مالی واقعی پیش‌شرط قابلیت‌های حساس‌اند.
 - هیچ سیاست، امتیاز، آستانهٔ ارزیابی یا گردش تأیید نامصوبی فرض نمی‌شود.
 
-## مسیر ادامه
+## مسیر تولید
 
-Business → Technical → Product Backlog → Sprint → Code → Code Review → Figma → Stage → QA/Testing → Release Approval → Production → Monitoring → Improvement
+Business → Technical → Product Backlog → Sprint → Code → Code Review → Stage → QA/Testing → Release Approval → Production → Monitoring → Improvement
+
+## اولویت فعلی کانون‌یار
+
+۱. تثبیت CI و به‌روز نگه‌داشتن مستندات وضعیت.
+۲. طراحی در Figma برای پنل کانون، پنل ستاد و پرتال مخاطبان.
+۳. آماده‌سازی Stage، سپس QA رسمی و تصمیم‌گیری دربارهٔ انتشار.
 
 ## اسناد
 
