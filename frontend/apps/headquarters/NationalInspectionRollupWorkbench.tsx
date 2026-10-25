@@ -28,8 +28,11 @@ function parsePage(value:unknown):Page|null {
  }
  return {rollups:rows,nextCursor:next};
 }
-async function read(cursor:Cursor|null,signal:AbortSignal):Promise<Page>{
- const query=cursor?'?'+new URLSearchParams({beforeProgramId:cursor.beforeProgramId,beforeNationalVersion:String(cursor.beforeNationalVersion)}):'';
+async function read(cursor:Cursor|null,signal:AbortSignal,findingsOnly:boolean):Promise<Page>{
+ const params=new URLSearchParams();
+ if(cursor){params.set('beforeProgramId',cursor.beforeProgramId);params.set('beforeNationalVersion',String(cursor.beforeNationalVersion));}
+ if(findingsOnly)params.set('findingsOnly','true');
+ const encoded=params.toString(),query=encoded?'?'+encoded:'';
  const response=await fetch('/api/v1/headquarters/national-issuance/review-rollup'+query,{signal,cache:'no-store',credentials:'same-origin'});
  if(response.status===401)throw Error('برای مشاهده این بخش، ورود سازمانی لازم است.');
  if(response.status===403)throw Error('دسترسی خواندن پوشش بازرسی در این محیط فعال یا مجاز نیست.');
@@ -38,10 +41,10 @@ async function read(cursor:Cursor|null,signal:AbortSignal):Promise<Page>{
 }
 const n=(v:number)=>new Intl.NumberFormat('fa-IR').format(v);
 export function NationalInspectionRollupWorkbench(){
- const [s,setS]=useState<State>(initial),[reload,setReload]=useState(0),[opened,setOpened]=useState(false);
- useEffect(()=>{if(!opened)return;const c=new AbortController();setS(initial);void read(null,c.signal).then(p=>{if(!c.signal.aborted)setS({status:'ready',error:'',pages:[p],index:0});}).catch(e=>{if(!c.signal.aborted)setS({status:'error',error:e instanceof Error?e.message:'خلاصه پوشش بازرسی فعلاً در دسترس نیست.',pages:[],index:0});});return()=>c.abort();},[reload,opened]);
+ const [s,setS]=useState<State>(initial),[reload,setReload]=useState(0),[opened,setOpened]=useState(false),[findingsOnly,setFindingsOnly]=useState(false);
+ useEffect(()=>{if(!opened)return;const c=new AbortController();setS(initial);void read(null,c.signal,findingsOnly).then(p=>{if(!c.signal.aborted)setS({status:'ready',error:'',pages:[p],index:0});}).catch(e=>{if(!c.signal.aborted)setS({status:'error',error:e instanceof Error?e.message:'خلاصه پوشش بازرسی فعلاً در دسترس نیست.',pages:[],index:0});});return()=>c.abort();},[reload,opened,findingsOnly]);
  async function next(){const current=s.pages[s.index];if(!current?.nextCursor||s.status!=='ready')return;if(s.pages[s.index+1]){setS({...s,index:s.index+1});return;}
-  setS({...s,status:'loading'});try{const p=await read(current.nextCursor,new AbortController().signal);
+  setS({...s,status:'loading'});try{const p=await read(current.nextCursor,new AbortController().signal,findingsOnly);
    const priorKeys=new Set(s.pages.flatMap(pg=>pg.rollups.map(r=>JSON.stringify([r.programId,r.nationalVersion]))));
    const pageKeys=p.rollups.map(r=>JSON.stringify([r.programId,r.nationalVersion]));
    if(pageKeys.some(key=>priorKeys.has(key))||new Set(pageKeys).size!==pageKeys.length)throw Error('صفحه بعدی پوشش بازرسی تکراری یا نامعتبر است.');
@@ -52,9 +55,11 @@ export function NationalInspectionRollupWorkbench(){
   <h2 id="inspection-rollup-title">پوشش فنی بازرسی درخواست‌های ابلاغ ملی</h2>
   <p>این داده‌ها خلاصه فنیِ درخواست‌ها و یادداشت‌های ثبت‌شده‌اند؛ کدهای خطا فقط شمارش تشخیصی‌اند و تأیید انسانی، مجوز یا صدور ابلاغ را نشان نمی‌دهند.</p>
   {!opened&&<button type="button" onClick={()=>setOpened(true)}>نمایش خلاصه پوشش فنی</button>}
+  {opened&&<button type="button" aria-pressed={findingsOnly} onClick={()=>setFindingsOnly(value=>!value)}>فقط گروه‌های دارای کد فنی</button>}
+  {opened&&findingsOnly&&<p>این فیلتر فقط وجود کد تشخیصی فنی را جست‌وجو می‌کند؛ یافته‌ها تصمیم یا مجوز نیستند.</p>}
   {s.status==='loading'&&<p role="status">در حال دریافت خلاصه پوشش…</p>}
   {s.status==='error'&&<div role="alert"><p>{s.error}</p><button onClick={()=>setReload(x=>x+1)}>تلاش دوباره</button></div>}
-  {s.status==='ready'&&page&&(page.rollups.length===0?<p role="status">گروه برنامه/نسخه‌ای برای نمایش وجود ندارد.</p>:
+  {s.status==='ready'&&page&&(page.rollups.length===0?<p role="status">{findingsOnly?'گروهی با کد فنی ثبت‌شده وجود ندارد.':'گروه برنامه/نسخه‌ای برای نمایش وجود ندارد.'}</p>:
    <div style={{overflowX:'auto'}}><table><caption>خلاصه پوشش فنی به تفکیک نسخه برنامه ملی</caption><thead><tr>
     <th>برنامه / نسخه</th><th>درخواست</th><th>بدون بازرسی</th><th>با بازرسی</th><th>یادداشت</th><th>سازگار / ناسازگار</th><th>مقایسه ناموجود</th><th>منطبق / متغیر</th><th>تازگی نامشخص</th><th>خطاهای فنی درخواست، به تفکیک کد</th><th>خطاهای فنی یادداشت، به تفکیک کد</th><th>آخرین مشاهده فنی</th>
    </tr></thead><tbody>{page.rollups.map(r=><tr key={r.programId+':'+r.nationalVersion}>
