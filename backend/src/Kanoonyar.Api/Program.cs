@@ -7,11 +7,13 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<INationalInspectionReadAuthorization, UnapprovedNationalInspectionReadAuthorization>();
 var oidcConfigured = builder.AddConfiguredOidc();
+builder.Services.AddHttpClient("oidc-discovery", client => client.Timeout = TimeSpan.FromSeconds(4));
 builder.Services.AddHealthChecks()
     .AddCheck("stage-oidc-configuration", () =>
         builder.Environment.IsDevelopment() || oidcConfigured
             ? HealthCheckResult.Healthy()
-            : HealthCheckResult.Unhealthy("OIDC configuration is required for readiness outside Development."));
+            : HealthCheckResult.Unhealthy("OIDC configuration is required for readiness outside Development."))
+    .AddCheck<OidcDiscoveryHealthCheck>("stage-oidc-discovery");
 
 builder.Services.AddSingleton<ILocalPlanDraftWriteAuthorization, UnapprovedLocalPlanDraftWriteAuthorization>();
 builder.Services.AddSingleton<ILocalPlanDraftReadAuthorization, UnapprovedLocalPlanDraftReadAuthorization>();
