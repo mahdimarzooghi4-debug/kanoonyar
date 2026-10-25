@@ -75,16 +75,30 @@ export function NationalInspectionRollupWorkbench(){
    if(response.status===403)throw Error('دسترسی دریافت فایل پوشش بازرسی در این محیط فعال یا مجاز نیست.');
    if(response.status===413)throw Error('حجم خروجی از سقف ۱۰٬۰۰۰ گروه بیشتر است؛ فیلتر دقیق‌تری انتخاب کنید.');
    if(!response.ok)throw Error('فایل کامل پوشش بازرسی فعلاً در دسترس نیست.');
+   const contract=response.headers.get('X-National-Inspection-Export-Contract');
+   const rawCount=response.headers.get('X-National-Inspection-Export-Row-Count')||'';
+   const expectedDigest=response.headers.get('X-National-Inspection-Export-SHA256')||'';
+   const rowCount=Number(rawCount);
+   if(contract!=='S98_NATIONAL_INSPECTION_CSV_RECEIPT_V1'||
+    !/^(0|[1-9]\d{0,4})$/.test(rawCount)||!Number.isSafeInteger(rowCount)||rowCount>10000||
+    !/^[a-f0-9]{64}$/.test(expectedDigest))
+    throw Error('رسید یکپارچگی خروجی CSV معتبر نیست؛ فایلی ساخته نشد.');
    const blob=await response.blob();
    if(!blob.type.toLowerCase().startsWith('text/csv')||blob.size<3)
     throw Error('پاسخ خروجی CSV معتبر نیست؛ فایلی ساخته نشد.');
-   const signature=new Uint8Array(await blob.slice(0,3).arrayBuffer());
-   if(signature[0]!==0xef||signature[1]!==0xbb||signature[2]!==0xbf)
+   const bytes=new Uint8Array(await blob.arrayBuffer());
+   if(bytes[0]!==0xef||bytes[1]!==0xbb||bytes[2]!==0xbf)
     throw Error('فایل CSV فاقد نشان UTF-8 معتبر است؛ فایلی ساخته نشد.');
+   if(!globalThis.crypto?.subtle)
+    throw Error('اعتبارسنجی اثرانگشت CSV در این مرورگر در دسترس نیست؛ فایلی ساخته نشد.');
+   const digestBytes=new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256',bytes));
+   const actualDigest=Array.from(digestBytes,value=>value.toString(16).padStart(2,'0')).join('');
+   if(actualDigest!==expectedDigest)
+    throw Error('اثر انگشت فایل CSV با رسید سرور یکسان نیست؛ فایلی ساخته نشد.');
    const url=URL.createObjectURL(blob),anchor=document.createElement('a');
    anchor.href=url;anchor.download='national-inspection-rollup.csv';anchor.style.display='none';
    document.body.appendChild(anchor);anchor.click();anchor.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
-   setExportStatus('فایل CSV کامل و تجمیعی آماده شد.');
+   setExportStatus('فایل CSV شامل '+n(rowCount)+' ردیف است؛ SHA-256: '+actualDigest);
   }catch(e){
    setExportError(e instanceof Error?e.message:'خروجی کامل ساخته نشد؛ دوباره تلاش کنید.');
   }finally{setExporting(false);}
