@@ -36,8 +36,8 @@ test('over 500 genuinely published versions load completely across a real source
   await page.getByRole('button',{name:'مشاهده نسخه‌ها و الزامات برنامه'}).click();
   const compare=page.getByRole('combobox',{name:'نسخه منتشرشده پیشین برای مقایسه'});
   await compare.selectOption('1');
-  await expect(page.getByText('هدف منتشرشده 502')).toBeVisible();
-  await expect(page.getByText('هدف منتشرشده 1')).toBeVisible();
+  await expect(page.getByText('هدف منتشرشده 502').first()).toBeVisible();
+  await expect(page.getByText('هدف منتشرشده 1').first()).toBeVisible();
  }
  expect(calls).toHaveLength(2);
  expect(calls[0]).toBe('');
