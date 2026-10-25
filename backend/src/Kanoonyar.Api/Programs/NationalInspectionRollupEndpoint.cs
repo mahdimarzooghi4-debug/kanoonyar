@@ -1,6 +1,7 @@
 using System.Data;
 using System.Globalization;
 using System.Security.Claims;
+using System.Text;
 using Kanoonyar.Api.Security;
 using Microsoft.AspNetCore.Http;
 using Npgsql;
@@ -28,6 +29,7 @@ public sealed class UnapprovedNationalInspectionRollupReadAuthorization
 public static class NationalInspectionRollupEndpoint
 {
     private const int PageSize = 20;
+    private const int MaximumCsvRows = 10_000;
     private static readonly HashSet<string> FindingCodes = new(StringComparer.Ordinal)
     {
         "SOURCE_SNAPSHOT_DIGEST_INVALID",
@@ -73,19 +75,36 @@ public static class NationalInspectionRollupEndpoint
         bool IssuanceAuthorized,
         bool IssuanceExecuted);
 
-    public static async Task<IResult> List(
+    public static Task<IResult> List(
         HttpContext context,
         ClaimsPrincipal actor,
         IConfiguration configuration,
         INationalInspectionRollupReadAuthorization authorization,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        Execute(context, actor, configuration, authorization, cancellationToken, exportCsv: false);
+
+    public static Task<IResult> ExportCsv(
+        HttpContext context,
+        ClaimsPrincipal actor,
+        IConfiguration configuration,
+        INationalInspectionRollupReadAuthorization authorization,
+        CancellationToken cancellationToken) =>
+        Execute(context, actor, configuration, authorization, cancellationToken, exportCsv: true);
+
+    private static async Task<IResult> Execute(
+        HttpContext context,
+        ClaimsPrincipal actor,
+        IConfiguration configuration,
+        INationalInspectionRollupReadAuthorization authorization,
+        CancellationToken cancellationToken,
+        bool exportCsv)
     {
         if (actor.Identity?.IsAuthenticated != true)
             return Results.Problem(statusCode: 401, title: "Authentication required");
         if (string.IsNullOrWhiteSpace(actor.FindFirst("sub")?.Value))
             return Results.Problem(statusCode: 403, title: "Verified subject required");
 
-        var cursorResult = ParseCursor(context.Request.Query, out var cursor, out var findingsOnly, out var findingCode, out var target);
+        var cursorResult = ParseCursor(context.Request.Query, exportCsv, out var cursor, out var findingsOnly, out var findingCode, out var target);
         if (cursorResult is not null) return cursorResult;
 
         bool permitted;
@@ -163,7 +182,7 @@ public static class NationalInspectionRollupEndpoint
                   AND (@target_program_id::text IS NULL OR program_id=@target_program_id::text)
                   AND (@target_national_version::integer IS NULL OR national_version=@target_national_version::integer)
                 ORDER BY program_id DESC,national_version DESC
-                LIMIT 21
+                LIMIT @row_limit
                 """;
             await using var command = new NpgsqlCommand(sql, connection, transaction);
             command.Parameters.Add("before_program_id", NpgsqlDbType.Text).Value =
@@ -177,8 +196,10 @@ public static class NationalInspectionRollupEndpoint
                 target is null ? DBNull.Value : target.ProgramId;
             command.Parameters.Add("target_national_version", NpgsqlDbType.Integer).Value =
                 target is null ? DBNull.Value : target.NationalVersion;
+            command.Parameters.Add("row_limit", NpgsqlDbType.Integer).Value =
+                exportCsv ? MaximumCsvRows + 1 : PageSize + 1;
 
-            var rows = new List<Row>(PageSize + 1);
+            var rows = new List<Row>(exportCsv ? MaximumCsvRows + 1 : PageSize + 1);
             await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
             {
                 while (await reader.ReadAsync(cancellationToken))
@@ -196,6 +217,17 @@ public static class NationalInspectionRollupEndpoint
                         reader.IsDBNull(23) ? null : reader.GetDateTime(23),
                         reader.GetBoolean(24), reader.GetBoolean(25), reader.GetBoolean(26)));
                 }
+            }
+
+            if (exportCsv)
+            {
+                if (rows.Count > MaximumCsvRows)
+                    return Results.Problem(statusCode: StatusCodes.Status413PayloadTooLarge,
+                        title: "National inspection export exceeds the safe row limit");
+
+                var csv = BuildCsv(rows);
+                await transaction.CommitAsync(cancellationToken);
+                return Results.File(csv, "text/csv; charset=utf-8", "national-inspection-rollup.csv");
             }
 
             var hasMore = rows.Count > PageSize;
@@ -222,8 +254,8 @@ public static class NationalInspectionRollupEndpoint
     }
 
     private static IResult? ParseCursor(
-        IQueryCollection query, out Cursor? cursor, out bool findingsOnly, out string? findingCode,
-        out Target? target)
+        IQueryCollection query, bool exportCsv, out Cursor? cursor, out bool findingsOnly,
+        out string? findingCode, out Target? target)
     {
         cursor = null;
         findingsOnly = false;
@@ -266,6 +298,7 @@ public static class NationalInspectionRollupEndpoint
 
         var hasProgram = query.ContainsKey("beforeProgramId");
         var hasVersion = query.ContainsKey("beforeNationalVersion");
+        if (exportCsv && (hasProgram || hasVersion)) return Results.BadRequest();
         if (hasProgram != hasVersion || (hasProgram && hasTargetProgram)) return Results.BadRequest();
         var expectedParameters = (hasFindingsOnly ? 1 : 0) + (hasFindingCode ? 1 : 0) +
             (hasProgram ? 2 : 0) + (hasTargetProgram ? 2 : 0);
@@ -285,5 +318,68 @@ public static class NationalInspectionRollupEndpoint
 
         cursor = new Cursor(programId, version);
         return null;
+    }
+
+    private static byte[] BuildCsv(IReadOnlyList<Row> rows)
+    {
+        var builder = new StringBuilder();
+        builder.Append('\uFEFF');
+        builder.AppendJoin(',', new[]
+        {
+            CsvCell("شناسه برنامه"), CsvCell("نسخه ملی"), CsvCell("درخواست"),
+            CsvCell("بدون بازرسی"), CsvCell("با بازرسی"), CsvCell("یادداشت بازرسی"),
+            CsvCell("یکپارچگی سازگار"), CsvCell("یکپارچگی ناسازگار"),
+            CsvCell("مقایسه ناموجود"), CsvCell("منبع منطبق"), CsvCell("منبع متغیر"),
+            CsvCell("تازگی نامشخص"), CsvCell("Digest نامعتبر درخواست"),
+            CsvCell("ساختار نامعتبر درخواست"), CsvCell("عدم تطبیق انتخاب کانون"),
+            CsvCell("پرچم اختیار نامشخص"), CsvCell("شواهد Audit نامعتبر درخواست"),
+            CsvCell("شواهد Outbox نامعتبر درخواست"),
+            CsvCell("یکپارچگی درخواست اصلی نامعتبر"), CsvCell("یکپارچگی مشاهده نامعتبر"),
+            CsvCell("شواهد Audit بازرسی نامعتبر"), CsvCell("مشاهده غیرقابل‌مقایسه"),
+            CsvCell("آخرین مشاهده فنی")
+        });
+        builder.Append("\r\n");
+
+        foreach (var row in rows)
+        {
+            builder.AppendJoin(',', new[]
+            {
+                CsvCell(row.ProgramId),
+                CsvCell(row.NationalVersion.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.ReviewRequestCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.RequestsWithoutInspectionCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.RequestsWithInspectionCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.InspectionNoteCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.IntegrityConsistentNoteCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.IntegrityInconsistentNoteCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.SourceComparisonUnavailableNoteCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.CurrentSourceMatchNoteCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.CurrentSourceDriftNoteCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.SourceFreshnessUnclassifiedNoteCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.SourceSnapshotDigestInvalidRequestCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.SourceEnvelopeInvalidRequestCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.CenterSelectionMismatchRequestCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.AuthorityFlagsNotClearRequestCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.AuditEvidenceInvalidRequestCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.OutboxEvidenceInvalidRequestCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.OriginalRequestIntegrityInvalidNoteCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.ObservationIntegrityInvalidNoteCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.InspectionAuditEvidenceInvalidNoteCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.SourceObservationNotComparableNoteCount.ToString(CultureInfo.InvariantCulture)),
+                CsvCell(row.LatestTechnicalObservationAt?.ToString("O", CultureInfo.InvariantCulture) ?? "")
+            });
+            builder.Append("\r\n");
+        }
+
+        return Encoding.UTF8.GetBytes(builder.ToString());
+    }
+
+    private static string CsvCell(string value)
+    {
+        var first = 0;
+        while (first < value.Length && value[first] <= 0x20) first++;
+        if (first < value.Length && value[first] is '=' or '+' or '-' or '@')
+            value = "'" + value;
+        return "\"" + value.Replace("\"", "\"\"") + "\"";
     }
 }
