@@ -1,0 +1,77 @@
+\set ON_ERROR_STOP on
+-- S82 verifies freshness classification and suppresses drift claims for incomparable notes.
+DO $s82_source_freshness$
+DECLARE v_count bigint; v_distinct_codes bigint;
+BEGIN
+ IF NOT EXISTS (
+   SELECT 1 FROM pg_class c
+   WHERE c.oid='programs.national_issuance_review_source_freshness_diagnostics'::regclass
+     AND c.relkind='v'
+     AND 'security_invoker=true'=ANY(COALESCE(c.reloptions,ARRAY[]::text[]))
+ ) THEN RAISE EXCEPTION 'S82 freshness view is not SECURITY INVOKER'; END IF;
+
+ IF (SELECT count(*) FROM pg_attribute
+     WHERE attrelid='programs.national_issuance_review_source_freshness_diagnostics'::regclass
+       AND attnum>0 AND NOT attisdropped)<>7
+ OR (SELECT array_agg(attname::text ORDER BY attnum) FROM pg_attribute
+     WHERE attrelid='programs.national_issuance_review_source_freshness_diagnostics'::regclass
+       AND attnum>0 AND NOT attisdropped)<>ARRAY[
+       'diagnostic_contract_version','request_id','note_id','program_id',
+       'national_version','diagnostic_code','change_count']
+ OR EXISTS (
+   SELECT 1 FROM pg_attribute
+   WHERE attrelid='programs.national_issuance_review_source_freshness_diagnostics'::regclass
+     AND attnum>0 AND NOT attisdropped
+     AND attname=ANY(ARRAY[
+       'center_id','explicit_center_ids','original_source_snapshot',
+       'observed_source_snapshot','technical_note',
+       'unverified_inspector_subject','unverified_requester_subject'])
+ ) THEN RAISE EXCEPTION 'S82 freshness view exposes private fields or unstable shape'; END IF;
+
+ IF has_table_privilege('public',
+      'programs.national_issuance_review_source_freshness_diagnostics','SELECT')
+ OR has_table_privilege('kanoonyar_s61_inspection_denied_ci',
+      'programs.national_issuance_review_source_freshness_diagnostics','SELECT')
+ OR has_table_privilege('kanoonyar_s60_unprivileged_ci',
+      'programs.national_issuance_review_source_freshness_diagnostics','SELECT')
+ THEN RAISE EXCEPTION 'S82 freshness diagnostics granted restricted read access'; END IF;
+
+ SELECT count(*),count(DISTINCT diagnostic_code) INTO v_count,v_distinct_codes
+ FROM programs.national_issuance_review_source_freshness_diagnostics
+ WHERE note_id='aa610000-0000-4000-8000-000000000001';
+ IF v_count<>1 OR v_distinct_codes<>1 OR NOT EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_source_freshness_diagnostics
+   WHERE note_id='aa610000-0000-4000-8000-000000000001'
+     AND diagnostic_contract_version='S82_SOURCE_FRESHNESS_V1'
+     AND diagnostic_code='EXACT_ISSUANCE_CHANGED'
+     AND change_count=1
+ ) THEN RAISE EXCEPTION 'S82 failed current issuance drift classification'; END IF;
+
+ IF (SELECT count(*) FROM programs.national_issuance_review_source_freshness_diagnostics
+     WHERE note_id='aa610000-0000-4000-8000-000000000011'
+       AND diagnostic_code='CURRENT_SOURCE_MATCHES_OBSERVATION'
+       AND change_count=0)<>1
+ OR (SELECT count(*) FROM programs.national_issuance_review_source_freshness_diagnostics
+     WHERE note_id='aa610000-0000-4000-8000-000000000021'
+       AND diagnostic_code='CURRENT_SOURCE_MATCHES_OBSERVATION'
+       AND change_count=0)<>1
+ THEN RAISE EXCEPTION 'S82 flagged unchanged current observations as stale'; END IF;
+
+ SELECT count(*),count(DISTINCT diagnostic_code) INTO v_count,v_distinct_codes
+ FROM programs.national_issuance_review_source_freshness_diagnostics
+ WHERE note_id=ANY(ARRAY[
+   'aa790000-0000-4000-8000-000000000001'::uuid,
+   'aa790000-0000-4000-8000-000000000002'::uuid,
+   'aa790000-0000-4000-8000-000000000003'::uuid,
+   'aa790000-0000-4000-8000-000000000004'::uuid]);
+ IF v_count<>4 OR v_distinct_codes<>1 OR EXISTS (
+   SELECT 1 FROM programs.national_issuance_review_source_freshness_diagnostics
+   WHERE note_id=ANY(ARRAY[
+     'aa790000-0000-4000-8000-000000000001'::uuid,
+     'aa790000-0000-4000-8000-000000000002'::uuid,
+     'aa790000-0000-4000-8000-000000000003'::uuid,
+     'aa790000-0000-4000-8000-000000000004'::uuid])
+     AND (diagnostic_code<>'SOURCE_COMPARISON_UNAVAILABLE'
+       OR change_count IS NOT NULL)
+ ) THEN RAISE EXCEPTION 'S82 reported drift for semantically incomparable observations'; END IF;
+END;$s82_source_freshness$;
