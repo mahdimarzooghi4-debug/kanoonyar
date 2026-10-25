@@ -184,7 +184,7 @@ jobs:
         working-directory: ai
         run: python -m pip install -e .
       - name: Upgrade Python build tooling to patched setuptools
-        run: python -m pip install 'setuptools>=83,<84'
+        run: python -m pip install 'setuptools>=84.1.0,<85'
       - name: Audit installed Python dependencies
         working-directory: ai
         run: |
