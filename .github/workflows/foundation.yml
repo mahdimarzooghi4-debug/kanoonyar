@@ -19,6 +19,8 @@ jobs:
         run: dotnet restore backend/Kanoonyar.slnx -p:NuGetAudit=true -p:NuGetAuditLevel=high -p:TreatWarningsAsErrors=true
       - name: Build API
         run: dotnet build backend/Kanoonyar.slnx --configuration Release
+      - name: Build API container image
+        run: docker build --file Dockerfile --tag kanoonyar-api:ci .
       - name: Test foundation
         run: dotnet test backend/Kanoonyar.slnx --configuration Release --no-build
   postgres-integrity:
