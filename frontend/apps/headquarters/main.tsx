@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Shell } from '../../packages/ui/Shell';
+import { NationalInspectionRollupWorkbench } from './NationalInspectionRollupWorkbench';
 
 type Program = { programId: string; version: number; title: string;
   nationalObjectives: string[]; mandatoryRequirements: string[] };
@@ -116,6 +117,7 @@ function NationalProgramCatalog() {
           <h4>الزامات اجباری</h4>
           <ul>{p.mandatoryRequirements.map((item,i) => <li key={i}>{item}</li>)}</ul>
         </article>))}
+      <NationalInspectionRollupWorkbench />
     </main>
   </>;
 }
