@@ -49,6 +49,51 @@ public sealed class NationalProgramPaginationPostgresTests
         Assert.Equal(400, (reply as IStatusCodeHttpResult)?.StatusCode);
     }
 
+    private static async Task<(int Status, JsonElement? Body)> PublishedVersion(
+        IConfiguration config, string id, int version)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString("?programId=" +
+            Uri.EscapeDataString(id) + "&version=" +
+            version.ToString(CultureInfo.InvariantCulture));
+        var result = await NationalProgramReadEndpoint.ReadPublishedVersion(
+            context, config, CancellationToken.None);
+        var status = (result as IStatusCodeHttpResult)?.StatusCode ?? 0;
+        if (status != 200) return (status, null);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(
+            Assert.IsAssignableFrom<IValueHttpResult>(result).Value, JsonOptions));
+        return (status, json.RootElement.Clone());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("?programId=alpha")]
+    [InlineData("?version=1")]
+    [InlineData("?programId=alpha&version=0")]
+    [InlineData("?programId=alpha&version=01")]
+    [InlineData("?programId=alpha&version=-1")]
+    [InlineData("?programId=alpha&version=1&version=2")]
+    [InlineData("?programId=alpha&programId=beta&version=1")]
+    [InlineData("?programId=%20&version=1")]
+    [InlineData("?programId=alpha&version=2147483648")]
+    [InlineData("?programId=alpha&version=1&private=true")]
+    public async Task Direct_version_links_require_exact_unambiguous_identity_and_version(
+        string query)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString(query);
+        var result = await NationalProgramReadEndpoint.ReadPublishedVersion(
+            context, new ConfigurationBuilder().Build(), CancellationToken.None);
+        Assert.Equal(400, (result as IStatusCodeHttpResult)?.StatusCode);
+    }
+
+    [Fact]
+    public async Task Exact_version_read_has_no_publication_without_source_database()
+    {
+        var result = await PublishedVersion(new ConfigurationBuilder().Build(), "source-a", 1);
+        Assert.Equal(503, result.Status);
+    }
+
     [Fact]
     public async Task Over_five_hundred_genuine_published_versions_are_exhaustively_paged_by_original_key()
     {
@@ -161,5 +206,26 @@ public sealed class NationalProgramPaginationPostgresTests
         Assert.Equal(502,versions.Count);
         Assert.Equal(Enumerable.Range(1,502),versions);
         Assert.DoesNotContain(503,versions);
+
+        // New shareable exact-version contract uses the very same SELECT-only
+        // original publication source. It never silently substitutes the latest
+        // published version or discloses an unissued original definition.
+        foreach (var version in new[] { 1, 500, 502 })
+        {
+            var original = await PublishedVersion(config, id, version);
+            Assert.Equal(200, original.Status);
+            Assert.True(original.Body.HasValue);
+            Assert.Equal(id, original.Body.Value.GetProperty("programId").GetString());
+            Assert.Equal(version, original.Body.Value.GetProperty("version").GetInt32());
+            Assert.Equal("Synthetic published version " + version,
+                original.Body.Value.GetProperty("title").GetString());
+            Assert.Equal("synthetic goal",
+                original.Body.Value.GetProperty("nationalObjectives")[0].GetString());
+            Assert.False(original.Body.Value.TryGetProperty("publisherSubject", out _));
+            Assert.False(original.Body.Value.TryGetProperty("createdBySubject", out _));
+        }
+        Assert.Equal(404, (await PublishedVersion(config, id, 503)).Status);
+        Assert.Equal(404, (await PublishedVersion(config, id, 999)).Status);
+        Assert.Equal(404, (await PublishedVersion(config, "other-unknown-publication", 1)).Status);
     }
 }

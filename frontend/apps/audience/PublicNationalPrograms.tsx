@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
-type PublicProgram = {
+export type PublicProgram = {
   programId: string;
   version: number;
   title: string;
@@ -16,7 +16,7 @@ const ENDPOINT = '/api/v1/programs/published';
  * It contains no class enrolments, local center drafts or actor/member metadata.
  * Never render arbitrary unknown response keys or inferred participation.
  */
-function parsePublishedResponse(value: unknown): PublishedPage | null {
+export function parsePublishedResponse(value: unknown): PublishedPage | null {
   if (!value || typeof value !== 'object' || !('programs' in value)) return null;
   const rows = (value as { programs: unknown }).programs;
   if (!Array.isArray(rows) || rows.length > 500) return null;
@@ -58,9 +58,12 @@ function parsePublishedResponse(value: unknown): PublishedPage | null {
   return { rows: out, nextCursor: null };
 }
 
-function NationalVersion({ version, suffix }: { version: PublicProgram; suffix: string }) {
+export function NationalVersion({ version, suffix }: { version: PublicProgram; suffix: string }) {
   return <section aria-label={'نسخه ' + version.version + ' — ' + suffix}>
     <h4>{version.title} — نسخه منتشرشده {version.version}</h4>
+    <p><a href={'?' + new URLSearchParams({
+      programId: version.programId, version: String(version.version),
+    })}>پیوند مستقیم همین نسخه منتشرشده</a></p>
     <h5>اهداف ملی ثابت این نسخه</h5>
     {version.nationalObjectives.length ?
       <ul>{version.nationalObjectives.map((v, i) => <li key={i}>{v}</li>)}</ul> :
